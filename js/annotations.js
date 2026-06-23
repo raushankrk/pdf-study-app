@@ -4,11 +4,26 @@
 async function handleImageUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
-    addImageToSide(file, state.lastActiveSide);
+    
+    let side = state.lastActiveSide;
+    let startX = 0.35;
+    let startY = 0.35;
+
+    if (state.pendingImagePos) {
+        side = state.pendingImagePos.side;
+        startX = state.pendingImagePos.x;
+        startY = state.pendingImagePos.y;
+        state.pendingImagePos = null;
+    }
+
+    addImageToSide(file, side, startX, startY);
     e.target.value = '';
+    
+    // Switch to select tool so the user can manipulate the new image instantly
+    setAnnoTool('select');
 }
 
-async function addImageToSide(fileOrBlob, side) {
+async function addImageToSide(fileOrBlob, side, startX = 0.35, startY = 0.35) {
     if (!side || !state.view[side].docId) return;
 
     const reader = new FileReader();
@@ -24,11 +39,17 @@ async function addImageToSide(fileOrBlob, side) {
             const aspect = imgObj.height / imgObj.width;
             const newH = newW * aspect;
 
+            let x = startX - (newW / 2);
+            let y = startY - (newH / 2);
+            
+            x = Math.max(0, Math.min(1 - newW, x));
+            y = Math.max(0, Math.min(1 - newH, y));
+
             const newImage = {
                 id,
                 src: base64,
-                x: 0.35, 
-                y: 0.35,
+                x: x, 
+                y: y,
                 w: newW,
                 h: newH
             };
@@ -66,8 +87,25 @@ function handlePaste(e) {
         if (item.kind === 'file' && item.type.startsWith('image/')) {
             const blob = item.getAsFile();
             let targetSide = state.lastActiveSide;
+            let pasteX = 0.35;
+            let pasteY = 0.35;
 
-            if (!state.view[targetSide] || !state.view[targetSide].docId) {
+            const mX = state.globalMouse.x;
+            const mY = state.globalMouse.y;
+            let mouseSide = null;
+
+            const leftRect = els.leftPanel.getBoundingClientRect();
+            const rightRect = els.rightPanel.getBoundingClientRect();
+
+            if (mX >= leftRect.left && mX <= leftRect.right && mY >= leftRect.top && mY <= leftRect.bottom) mouseSide = 'left';
+            else if (mX >= rightRect.left && mX <= rightRect.right && mY >= rightRect.top && mY <= rightRect.bottom) mouseSide = 'right';
+
+            if (mouseSide && state.view[mouseSide].docId) {
+                targetSide = mouseSide;
+                const wrapperRect = els[mouseSide + 'Wrapper'].getBoundingClientRect();
+                pasteX = (mX - wrapperRect.left) / wrapperRect.width;
+                pasteY = (mY - wrapperRect.top) / wrapperRect.height;
+            } else if (!state.view[targetSide] || !state.view[targetSide].docId) {
                 const otherSide = targetSide === 'left' ? 'right' : 'left';
                 if (state.view[otherSide] && state.view[otherSide].docId) {
                     targetSide = otherSide;
@@ -76,8 +114,9 @@ function handlePaste(e) {
                 }
             }
 
-            addImageToSide(blob, targetSide);
+            addImageToSide(blob, targetSide, pasteX, pasteY);
             e.preventDefault();
+            setAnnoTool('select');
             return;
         }
     }

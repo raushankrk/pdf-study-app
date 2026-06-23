@@ -57,7 +57,7 @@ body:not(.annotation-mode) .textLayer span { cursor: text; }
 /* --- Annotation Canvas --- */
 .annotation-canvas { position: absolute; top: 0; left: 0; z-index: 55; pointer-events: none; touch-action: none; }
 body.annotation-mode .annotation-canvas { pointer-events: auto; }
-body.anno-pen .annotation-canvas, body.anno-pixel-eraser .annotation-canvas { cursor: crosshair; }
+body.anno-pen .annotation-canvas, body.anno-pixel-eraser .annotation-canvas, body.anno-image .annotation-canvas { cursor: crosshair; }
 body.anno-stroke-eraser .annotation-canvas { cursor: grab; }
 body.anno-stroke-eraser .annotation-canvas:active { cursor: grabbing; }
 body.anno-select .annotation-canvas { cursor: default; }

@@ -74,6 +74,14 @@ function handlePointerDown(e) {
         state.drawing.pointerId = e.pointerId;
         state.drawing.startSide = clickedSide;
 
+        if (state.annoTool === 'image') {
+            const pos = getMousePosInViewport(e, clickedSide);
+            state.pendingImagePos = { side: clickedSide, x: pos.x, y: pos.y };
+            els.imageInput.click();
+            state.drawing.active = false;
+            return;
+        }
+
         if (state.annoTool === 'select') {
             const pos = getMousePosInViewport(e, clickedSide);
             const pageData = state.annotations[state.view[clickedSide].docId]?.[state.view[clickedSide].pageNum];
@@ -211,6 +219,8 @@ function startDirectTextManipulation(e, domElement, type) {
 }
 
 function handlePointerMove(e) {
+    state.globalMouse = { x: e.clientX, y: e.clientY };
+
     const cursorEl = document.getElementById('tool-cursor');
     const cursorIcon = document.getElementById('tool-cursor-icon');
     
@@ -219,7 +229,7 @@ function handlePointerMove(e) {
     const showCustomCursor = (
         state.appMode === 'annotation' && 
         isInsideViewport &&
-        ['pen', 'highlighter', 'eraser-pixel', 'eraser-stroke'].includes(state.annoTool)
+        ['pen', 'highlighter', 'eraser-pixel', 'eraser-stroke', 'image'].includes(state.annoTool)
     );
 
     if (showCustomCursor) {
@@ -242,6 +252,10 @@ function handlePointerMove(e) {
         else if (state.annoTool === 'eraser-pixel' || state.annoTool === 'eraser-stroke') {
             cursorIcon.classList.add('fa-eraser');
             cursorEl.classList.add('mode-eraser');
+        }
+        else if (state.annoTool === 'image') {
+            cursorIcon.className = 'fa-regular fa-image';
+            cursorEl.classList.add('mode-image');
         }
     } 
     else {
@@ -591,9 +605,9 @@ async function handlePointerUp(e) {
         }
         renderAnnotations(side);
         renderTextLayer(side);
-    } else if (state.annoTool !== 'text' && state.annoTool !== 'eraser-stroke') {
+    } else if (state.annoTool !== 'text' && state.annoTool !== 'eraser-stroke' && state.annoTool !== 'image') {
         finishAnnotationStroke(side);
-    } else {
+    } else if (state.annoTool !== 'image') {
         const docId = state.view[side].docId;
         if(docId) saveAnnotationsToDB(docId, state.annotations[docId]);
     }
@@ -656,4 +670,4 @@ function handleViewportZoom(e, side) {
         
         els[side + 'ZoomLevel'].innerText = Math.round(effectiveScale * 100) + '%';
     }
-}     
+}

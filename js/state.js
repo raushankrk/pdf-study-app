@@ -48,6 +48,8 @@ const state = {
     },
     highlightRequest: null,
     projectFileHandle: null,
+    globalMouse: { x: 0, y: 0 },
+    pendingImagePos: null,
     search: {
         left: { query: '', results: [], index: -1, abortController: null },
         right: { query: '', results: [], index: -1, abortController: null }

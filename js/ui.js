@@ -63,7 +63,7 @@ function setAppMode(mode, save = true) {
     state.appMode = mode;
     if (save) saveSettings();
 
-    document.body.classList.remove('linking-mode', 'annotation-mode', 'anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'delete-link-mode');
+    document.body.classList.remove('linking-mode', 'annotation-mode', 'anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-image', 'delete-link-mode');
 
     [els.modeNavBtn, els.modeLinkBtn, els.modeDelLinkBtn, els.modeAnnoBtn].forEach(btn => {
         btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
@@ -96,13 +96,14 @@ function setAnnoTool(tool, save = true) {
     state.annoTool = tool;
     if (save) saveSettings();
 
-    const allTools = [els.toolSelect, els.toolPen, els.toolText, els.toolEraserPixel, els.toolEraserStroke, els.toolHighlighter];
+    const allTools = [els.toolSelect, els.toolPen, els.toolText, els.toolEraserPixel, els.toolEraserStroke, els.toolHighlighter, els.toolImage];
     allTools.forEach(btn => {
+        if (!btn) return;
         btn.classList.remove('bg-blue-50', 'text-blue-600', 'bg-purple-50', 'text-purple-600', 'bg-yellow-100', 'text-yellow-700');
         btn.classList.add('text-gray-500');
     });
 
-    document.body.classList.remove('anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-highlighter');
+    document.body.classList.remove('anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-highlighter', 'anno-image');
 
     if (!state.toolSettings) {
         state.toolSettings = {
@@ -156,6 +157,11 @@ function setAnnoTool(tool, save = true) {
         els.toolHighlighter.classList.add('bg-yellow-100', 'text-yellow-700');
         els.toolHighlighter.classList.remove('text-gray-500');
         document.body.classList.add('anno-highlighter');
+    }
+    else if (tool === 'image') {
+        els.toolImage.classList.add('bg-blue-50', 'text-blue-600');
+        els.toolImage.classList.remove('text-gray-500');
+        document.body.classList.add('anno-image');
     }
 }
 

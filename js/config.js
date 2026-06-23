@@ -42,6 +42,7 @@ const els = {
     toolText: document.getElementById('tool-text'),
     toolEraserPixel: document.getElementById('tool-eraser-pixel'),
     toolEraserStroke: document.getElementById('tool-eraser-stroke'),
+    toolImage: document.getElementById('tool-image'),
     colorPicker: document.getElementById('color-picker'),
     thicknessPicker: document.getElementById('thickness-picker'),
     importInput: document.getElementById('import-project-input'),
