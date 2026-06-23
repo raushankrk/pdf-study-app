@@ -416,6 +416,7 @@ async function handlePointerUp(e) {
 
     const side = state.drawing.startSide;
 
+    // Handle Text Annotation Finishing
     if (state.appMode === 'annotation' && state.annoTool === 'text') {
         if (state.drawing.mode === 'text-move' || state.drawing.mode === 'text-resize') {
             const docId = state.view[side].docId;
@@ -465,6 +466,7 @@ async function handlePointerUp(e) {
         }
     }
 
+    // Handle Link Connecting Finishing
     if (state.appMode === 'linking') {
         const leftRect = els.leftWrapper.getBoundingClientRect();
         const rightRect = els.rightWrapper.getBoundingClientRect();
@@ -506,6 +508,7 @@ async function handlePointerUp(e) {
 
         if (!validLink && endSide) showModal("Invalid Link", "Links must start and end on different pages.");
     } 
+    // Handle All Other Annotations Finishing
     else if (state.appMode === 'annotation') {
         if (state.annoTool === 'select') {
             if (state.selection.mode === 'marquee') {
@@ -594,23 +597,31 @@ async function handlePointerUp(e) {
                 } else {
                     clearSelection();
                 }
+            } 
+            // FIX applied here: Retain selected elements after modifying them.
+            else if (state.selection.mode === 'dragging' || state.selection.mode === 'resizing') {
+                state.selection.mode = 'idle';
+                const docId = state.view[side].docId;
+                if (docId) saveAnnotationsToDB(docId, state.annotations[docId]);
             } else {
-                clearSelection();
+                state.selection.mode = 'idle'; 
             }
-        } else {
+        } 
+        else {
             clearSelection();
             state.selection.mode = 'idle';
-            const docId = state.view[side].docId;
-            saveAnnotationsToDB(docId, state.annotations[docId]);
+            if (state.annoTool !== 'text' && state.annoTool !== 'eraser-stroke' && state.annoTool !== 'image') {
+                finishAnnotationStroke(side);
+            } else if (state.annoTool !== 'image') {
+                const docId = state.view[side].docId;
+                if(docId) saveAnnotationsToDB(docId, state.annotations[docId]);
+            }
         }
+        
         renderAnnotations(side);
         renderTextLayer(side);
-    } else if (state.annoTool !== 'text' && state.annoTool !== 'eraser-stroke' && state.annoTool !== 'image') {
-        finishAnnotationStroke(side);
-    } else if (state.annoTool !== 'image') {
-        const docId = state.view[side].docId;
-        if(docId) saveAnnotationsToDB(docId, state.annotations[docId]);
     }
+    
     state.drawing.active = false;
     e.target.releasePointerCapture(e.pointerId);
 }
