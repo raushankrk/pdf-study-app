@@ -1,0 +1,263 @@
+/* --- Scrollbar & Layout Styles --- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+
+.pdf-canvas {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: transform 0.2s;
+    display: block;
+}
+
+/* --- Text Layer --- */
+.textLayer {
+    position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+    overflow: hidden; line-height: 1.0; opacity: 1; z-index: 20; mix-blend-mode: multiply;
+}
+.textLayer > span {
+    color: transparent; position: absolute; white-space: pre; cursor: text;
+    transform-origin: 0% 0%; font-family: sans-serif;
+}
+.textLayer ::selection { background: rgba(59, 130, 246, 0.3); color: transparent; }
+
+/* In Navigation mode, enable native text selection and pointer events */
+body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode) .textLayer {
+    user-select: text;
+    pointer-events: auto; /* Crucial: Allows text to capture events */
+}
+body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode) .textLayer span {
+    pointer-events: auto; /* Ensure individual spans also capture events */
+}
+
+body.linking-mode .textLayer, body.annotation-mode .textLayer, body.delete-link-mode .textLayer { user-select: none; pointer-events: none; }
+body.linking-mode .textLayer span { cursor: crosshair !important; }
+body.annotation-mode .textLayer { pointer-events: none; }
+body:not(.annotation-mode) .textLayer span { cursor: text; }
+
+/* --- Search Highlights --- */
+.search-highlight-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 25; pointer-events: none; }
+.search-highlight {
+    background-color: rgba(255, 255, 0, 0.4); position: absolute;
+    border: 1px solid rgba(255, 200, 0, 0.6);
+}
+.search-highlight.active {
+    background-color: rgba(255, 100, 0, 0.5); border: 2px solid rgb(255, 69, 0); z-index: 26;
+}
+
+/* Citation Highlight Style */
+.citation-highlight {
+    background-color: rgba(236, 72, 153, 0.4); /* Pink-500 */
+    border: 2px solid rgba(219, 39, 119, 0.8);
+    position: absolute;
+    pointer-events: none;
+    z-index: 27;
+}
+
+/* --- Annotation Canvas --- */
+.annotation-canvas { position: absolute; top: 0; left: 0; z-index: 55; pointer-events: none; touch-action: none; }
+body.annotation-mode .annotation-canvas { pointer-events: auto; }
+body.anno-pen .annotation-canvas, body.anno-pixel-eraser .annotation-canvas { cursor: crosshair; }
+body.anno-stroke-eraser .annotation-canvas { cursor: grab; }
+body.anno-stroke-eraser .annotation-canvas:active { cursor: grabbing; }
+body.anno-select .annotation-canvas { cursor: default; }
+body.anno-select .annotation-canvas:active { cursor: grabbing; }
+
+/* --- Text Box Styles --- */
+.text-box {
+    position: absolute; background: transparent; border: 1px dashed #9ca3af; z-index: 60;
+    cursor: text; overflow: hidden; padding: 4px; font-family: sans-serif;
+    line-height: 1.2; word-wrap: break-word; white-space: pre-wrap; box-sizing: border-box;
+}
+.text-box:focus { outline: none; border: 1px solid #3b82f6; }
+
+body.anno-text .text-box:hover::before, body.anno-text .text-box:focus::before,
+body.anno-text .text-box:hover::after, body.anno-text .text-box:focus::after { opacity: 1; }
+
+.text-box::before {
+    content: ''; position: absolute; top: -6px; left: -6px; width: 12px; height: 12px;
+    background-color: #3b82f6; border: 1px solid white; border-radius: 50%;
+    cursor: move; opacity: 0; transition: opacity 0.2s; pointer-events: auto; z-index: 61;
+}
+.text-box::after {
+    content: ''; position: absolute; bottom: 0; right: 0; width: 0; height: 0;
+    border-style: solid; border-width: 0 0 12px 12px;
+    border-color: transparent transparent #3b82f6 transparent;
+    cursor: nwse-resize; opacity: 0; transition: opacity 0.2s; pointer-events: auto; z-index: 61;
+}
+
+body.anno-select .text-box.selected { border: 2px solid #3b82f6; cursor: move; }
+body.anno-select .text-box.selected::after { opacity: 1; background-color: #3b82f6; }
+
+/* --- Link Styles --- */
+body.delete-link-mode .link-marker { cursor: pointer !important; }
+body.delete-link-mode .link-marker:hover {
+    background-color: #dc2626 !important; border-color: #991b1b !important;
+    transform: translate(-50%, -50%) scale(1.2) rotate(45deg);
+    box-shadow: 0 0 10px rgba(220, 38, 38, 0.8);
+}
+.link-marker {
+    position: absolute; width: 28px; height: 28px; background-color: #ef4444;
+    border: 2px solid white; border-radius: 50%; transform: translate(-50%, -50%);
+    pointer-events: auto !important; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.4);
+    z-index: 59; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: white; transition: all 0.2s ease-in-out;
+}
+.link-marker:hover { background-color: #dc2626; transform: translate(-50%, -50%) scale(1.15); z-index: 61; }
+
+@keyframes markerPulse {
+    0% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+    70% { transform: translate(-50%, -50%) scale(1.4); box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); }
+    100% { transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+.marker-active { background-color: #3b82f6 !important; z-index: 100; animation: markerPulse 2s infinite; }
+
+/* --- Sidebar & UI Elements --- */
+.doc-item-actions { opacity: 0; transition: opacity 0.2s; display: flex; gap: 4px; }
+.group:hover .doc-item-actions { opacity: 1; }
+.action-btn { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: 4px; font-size: 10px; cursor: pointer; }
+.action-rename { background: #e0f2fe; color: #0369a1; }
+.action-rename:hover { background: #bae6fd; }
+.action-delete { background: #fee2e2; color: #b91c1c; }
+.action-delete:hover { background: #fecaca; }
+.rename-input { width: 100%; padding: 2px 4px; font-size: 0.875rem; border: 1px solid #3b82f6; border-radius: 4px; outline: none; background-color: white; }
+.modal-backdrop { background-color: rgba(0,0,0,0.5); }
+.spinner { border: 4px solid rgba(0, 0, 0, 0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #09f; animation: spin 1s linear infinite; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+#vertical-resizer { background-color: #e5e7eb; width: 6px; cursor: col-resize; transition: background-color 0.2s; z-index: 30; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+#vertical-resizer:hover, #vertical-resizer.resizing { background-color: #3b82f6; }
+#vertical-resizer::after { content: ''; width: 2px; height: 20px; background-color: #9ca3af; border-radius: 1px; }
+#vertical-resizer:hover::after { background-color: white; }
+body.resizing-active { user-select: none; cursor: col-resize; }
+body.resizing-active * { cursor: col-resize !important; }
+.search-result-item { cursor: pointer; }
+.search-result-item:hover { background-color: #f3f4f6; }
+body.anno-text .annotation-canvas { cursor: text; }
+
+/* --- Sidebar Toggles --- */
+#left-sidebar {
+    width: 16rem; /* w-64 */
+    transition: width 0.3s ease-in-out, padding 0.3s ease;
+    position: relative;
+}
+body.left-sidebar-collapsed #left-sidebar {
+    width: 0 !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden;
+}
+body.left-sidebar-collapsed .toggle-left-btn i { transform: rotate(180deg); }
+
+/* --- AI Sidebar Styles --- */
+#ai-sidebar {
+    width: 320px;
+    transition: width 0.3s ease-in-out;
+    display: flex; flex-direction: column;
+}
+body.ai-sidebar-collapsed #ai-sidebar { width: 0 !important; overflow: hidden; padding: 0; border: none; }
+body.ai-sidebar-collapsed .toggle-ai-btn i { transform: rotate(180deg); }
+
+#chat-history { scroll-behavior: smooth; flex: 1; overflow-y: auto; }
+.ai-message { display: flex; flex-direction: column; max-width: 90%; animation: fadeIn 0.3s ease; margin-bottom: 12px; }
+.ai-message.user { align-self: flex-end; align-items: flex-end; }
+.ai-message.assistant { align-self: flex-start; align-items: flex-start; }
+.ai-bubble { padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; }
+.ai-message.user .ai-bubble { background-color: #3b82f6; color: white; border-bottom-right-radius: 0; }
+.ai-message.assistant .ai-bubble { background-color: #f3f4f6; color: #1f2937; border-bottom-left-radius: 0; border: 1px solid #e5e7eb; }
+
+/* Citation Buttons in Chat */
+.citation-chip {
+    display: inline-block; background-color: #eff6ff; color: #2563eb;
+    font-size: 0.75rem; padding: 2px 8px; border-radius: 12px; cursor: pointer;
+    margin: 0 2px; vertical-align: middle; text-decoration: none;
+    border: 1px solid #bfdbfe; transition: all 0.2s; font-weight: bold;
+}
+.citation-chip:hover { background-color: #2563eb; color: white; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Chat List Styles */
+.chat-list-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e5e7eb;
+    cursor: pointer;
+    transition: background 0.2s;
+    font-size: 0.85rem;
+    color: #374151;
+    position: relative;
+}
+.chat-list-item:hover { background-color: #f9fafb; }
+.chat-list-item.active { background-color: #eff6ff; color: #2563eb; font-weight: 600; border-left: 3px solid #2563eb; }
+.chat-item-actions {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    opacity: 0; transition: opacity 0.2s; display: flex; gap: 4px;
+}
+.chat-list-item:hover .chat-item-actions { opacity: 1; }                
+/* --- Tool Cursor Styles --- */
+#tool-cursor {
+    font-size: 24px;
+    color: #374151; /* Default gray-700 */
+    /* Offset to align tip with mouse cursor point */
+    transform: translate(-5px, -20px) rotate(-45deg); 
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    transition: opacity 0.1s ease;
+}
+
+/* Highlighter specific styling */
+#tool-cursor.mode-highlighter {
+    color: #ca8a04; /* Yellow-600 */
+    transform: translate(-1px, -2px) rotate(-270deg); 
+}
+
+/* Eraser specific styling */
+#tool-cursor.mode-eraser {
+    color: #9ca3af; /* Gray-400 */
+    transform: translate(-1px, -2px) rotate(-270deg); 
+}
+
+/* Hide default cursor when tool is active */
+.cursor-none { 
+    cursor: none !important; 
+}
+/* Pen specific styling */
+#tool-cursor.mode-pen {
+    transform: translate(-1px, -2px) rotate(-270deg); 
+}
+/* --- Fix for double cursor (Pen/Eraser Crosshair) --- */
+/* Force hide default cursor on all canvas layers when 'cursor-none' class is active */
+body.cursor-none .pdf-canvas,
+body.cursor-none .annotation-canvas,
+body.cursor-none .textLayer,
+body.cursor-none .pdf-canvas-container {
+    cursor: none !important;
+}
+/* --- Lock Button Styles --- */
+.lock-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #9ca3af; /* Default Gray-400 */
+}
+.lock-btn:hover {
+    background-color: #f3f4f6;
+    color: #4b5563;
+}
+/* State: Locked (Red) */
+.lock-btn.locked {
+    color: #ef4444; /* Red-500 */
+}
+.lock-btn.locked:hover {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+.viewport-wrapper-active {
+    box-shadow: 0 0 0 3px #3b82f6; /* Blue ring indicating active state */
+    z-index: 10; /* Brings the active panel visually forward */
+}
