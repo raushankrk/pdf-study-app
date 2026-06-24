@@ -50,6 +50,10 @@
                 <button id="mode-link-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all" onclick="setAppMode('linking')" title="Draw Link Mode">
                     <i class="fa-solid fa-link"></i>
                 </button>
+                <!-- NEW SNIP & LINK BUTTON -->
+                <button id="mode-snip-link-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all" onclick="setAppMode('snip-link')" title="Snip Image & Link">
+                    <i class="fa-solid fa-scissors"></i>
+                </button>
                 <button id="mode-del-link-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all relative" onclick="setAppMode('delete-link')" title="Delete Link Mode (Click links to delete)">
                     <i class="fa-solid fa-eraser"></i>
                     <i class="fa-solid fa-link absolute -bottom-0.5 -right-0.5 text-[8px] text-red-500 bg-white rounded-full"></i>
@@ -181,11 +185,9 @@
                 <div class="h-10 bg-white border-b border-gray-300 flex items-center justify-between px-4 shrink-0 z-10">
                     <div class="flex items-center gap-2">
 
-                    <!-- ADD THIS BUTTON -->
                     <button id="lock-left-btn" onclick="toggleLock('left')" class="lock-btn" title="Lock Left Viewport">
                         <i class="fa-solid fa-lock-open"></i>
                     </button>
-                    <!-- ------------------ -->
 
                         <span class="text-sm font-bold text-gray-600 truncate w-24" id="left-view-title">None</span>
                         <div class="relative group/search">
@@ -243,12 +245,9 @@
                 <div class="h-10 bg-white border-b border-gray-300 flex items-center justify-between px-4 shrink-0 z-10">
                     <div class="flex items-center gap-2">
 
-                    <!-- ADD THIS BUTTON -->
                     <button id="lock-right-btn" onclick="toggleLock('right')" class="lock-btn" title="Lock Right Viewport">
                         <i class="fa-solid fa-lock-open"></i>
                     </button>
-                    <!-- ------------------ -->
-
 
                         <span class="text-sm font-bold text-gray-600 truncate w-24" id="right-view-title">None</span>
                         <div class="relative group/search">
@@ -303,6 +302,9 @@
                 <div id="text-creation-rect" style="display:none; position:absolute; border: 1px dashed #3b82f6; background: rgba(59, 130, 246, 0.1); pointer-events:none;"></div>
             </svg>
 
+            <!-- Floating Snip Preview Layer -->
+            <img id="snip-preview" class="hidden fixed pointer-events-none z-[9999] opacity-80 border-2 border-blue-500 border-dashed shadow-xl object-contain bg-white">
+
             <!-- AI Sidebar -->
             <aside id="ai-sidebar" class="bg-white border-l border-gray-200 flex flex-col shrink-0 z-20">
                 <!-- Header -->
@@ -311,7 +313,6 @@
                         <i class="fa-solid fa-robot text-blue-600"></i>
                         <span class="text-sm font-bold text-gray-700">AI Assistant</span>
                     </div>
-                    <!-- Toggle removed from here, moved to main header -->
                 </div>
 
                 <!-- Chat List (Top) -->

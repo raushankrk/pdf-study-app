@@ -34,6 +34,7 @@ const els = {
     textCreationRect: document.getElementById('text-creation-rect'),
     modeNavBtn: document.getElementById('mode-nav-btn'),
     modeLinkBtn: document.getElementById('mode-link-btn'),
+    modeSnipLinkBtn: document.getElementById('mode-snip-link-btn'), // SNIP BUTTON
     modeDelLinkBtn: document.getElementById('mode-del-link-btn'),
     modeAnnoBtn: document.getElementById('mode-anno-btn'),
     annoTools: document.getElementById('anno-tools'),
@@ -66,4 +67,5 @@ const els = {
     sendChatBtn: document.getElementById('send-chat-btn'),
     aiStatus: document.getElementById('ai-status'),
     toolHighlighter: document.getElementById('tool-highlighter'),
+    snipPreview: document.getElementById('snip-preview') // SNIP PREVIEW LAYER
 };

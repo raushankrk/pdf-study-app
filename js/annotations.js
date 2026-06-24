@@ -122,6 +122,156 @@ function handlePaste(e) {
     }
 }
 
+// ------------------------------------------
+// SNIP & LINK LOGIC
+// ------------------------------------------
+
+function captureSnip(side, x, y, w, h) {
+    const canvas = els[side + 'Canvas'];
+    
+    // Map viewport coordinates to raw canvas pixels
+    const pixelX = x * canvas.width;
+    const pixelY = y * canvas.height;
+    const pixelW = w * canvas.width;
+    const pixelH = h * canvas.height;
+
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = pixelW;
+    tmpCanvas.height = pixelH;
+    const tmpCtx = tmpCanvas.getContext('2d');
+    
+    // Draw both the PDF canvas and any annotations on top of it into our temporary canvas
+    const annoCanvas = els[side + 'AnnoCanvas'];
+    
+    tmpCtx.drawImage(canvas, pixelX, pixelY, pixelW, pixelH, 0, 0, pixelW, pixelH);
+    tmpCtx.drawImage(annoCanvas, pixelX, pixelY, pixelW, pixelH, 0, 0, pixelW, pixelH);
+
+    const base64 = tmpCanvas.toDataURL('image/png');
+
+    state.snip.phase = 'dragging';
+    state.snip.base64 = base64;
+    state.snip.width = w; 
+    state.snip.height = h;
+    state.snip.sourceData = {
+        docId: state.view[side].docId,
+        page: state.view[side].pageNum,
+        x: x,
+        y: y + (h / 2)
+    };
+
+    els.snipPreview.src = base64;
+    
+    const wrapper = els[side + 'Wrapper'];
+    const visualWidth = w * wrapper.offsetWidth;
+    const visualHeight = h * wrapper.offsetHeight;
+
+    els.snipPreview.style.width = visualWidth + 'px';
+    els.snipPreview.style.height = visualHeight + 'px';
+    els.snipPreview.classList.remove('hidden');
+
+    // Attach to mouse immediately
+    els.snipPreview.style.left = (state.globalMouse.x - (visualWidth / 2)) + 'px';
+    els.snipPreview.style.top = (state.globalMouse.y - (visualHeight / 2)) + 'px';
+}
+
+async function dropSnip(side, x, y) {
+    const snip = state.snip;
+    if (!snip.base64) return cancelSnip();
+
+    const targetDoc = state.view[side].docId;
+    const targetPage = state.view[side].pageNum;
+
+    const id = 'img_' + Date.now();
+    const linkId = 'link_' + Date.now();
+
+    const imgObj = new Image();
+    imgObj.src = snip.base64;
+
+    await new Promise((resolve) => {
+        imgObj.onload = () => resolve();
+    });
+
+    const aspect = imgObj.height / imgObj.width;
+    
+    // Use the source width roughly matching to target proportion.
+    let newW = snip.width; 
+    let newH = newW * aspect;
+
+    const newImage = {
+        id,
+        src: snip.base64,
+        x: x - (newW / 2),
+        y: y - (newH / 2),
+        w: newW,
+        h: newH,
+        linkId: linkId
+    };
+
+    if (!state.annotations[targetDoc]) state.annotations[targetDoc] = {};
+    if (!state.annotations[targetDoc][targetPage]) state.annotations[targetDoc][targetPage] = { strokes: [], images: [], textBoxes: [] };
+
+    state.annotations[targetDoc][targetPage].images.push(newImage);
+    state.imageCache[id] = imgObj;
+    await saveAnnotationsToDB(targetDoc, state.annotations[targetDoc]);
+    
+    // Create link directly to dropped image's left-middle edge
+    const targetData = {
+        docId: targetDoc,
+        page: targetPage,
+        x: newImage.x,
+        y: newImage.y + (newImage.h / 2)
+    };
+
+    const newLink = {
+        id: linkId,
+        source: snip.sourceData,
+        target: targetData,
+        path: ''
+    };
+
+    state.links.push(newLink);
+    await saveLinkToDB(newLink);
+
+    renderAnnotations(side);
+    renderMarkersForView(state.snip.startSide);
+    renderMarkersForView(side);
+
+    // Swap tool state so user can immediately adjust/move the dropped image
+    setAppMode('annotation');
+    setAnnoTool('select');
+    
+    clearSelection();
+    state.selection = {
+        active: true,
+        side: side,
+        mode: 'idle',
+        selectedImages: [newImage],
+        selectedTextBoxes: [],
+        selectedStrokes: [],
+        boundingBox: { x: newImage.x, y: newImage.y, w: newImage.w, h: newImage.h }
+    };
+    renderAnnotations(side);
+
+    cancelSnip();
+}
+
+function cancelSnip() {
+    const side = state.snip.startSide;
+    state.snip.phase = 'idle';
+    state.snip.base64 = null;
+    state.snip.startPos = null;
+    state.snip.currentPos = null;
+    state.snip.startSide = null;
+    if (els.snipPreview) {
+        els.snipPreview.classList.add('hidden');
+        els.snipPreview.src = '';
+    }
+    if (side) {
+        renderAnnotations(side);
+    }
+}
+// ------------------------------------------
+
 function renderTextLayer(side) {
     const wrapper = els[side + 'Wrapper'];
     const existingBoxes = wrapper.querySelectorAll('.text-box');
@@ -232,6 +382,24 @@ function renderAnnotations(side) {
         ctx.setLineDash([5, 5]);
         ctx.strokeRect(x, y, w, h);
         ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+        ctx.fillRect(x, y, w, h);
+        ctx.setLineDash([]);
+    }
+
+    // DRAW RED DOTTED BOX DURING SNIP
+    if (state.appMode === 'snip-link' && state.snip.phase === 'drawing' && state.snip.startSide === side && state.snip.startPos && state.snip.currentPos) {
+        const start = state.snip.startPos;
+        const curr = state.snip.currentPos;
+        const x = Math.min(start.x, curr.x) * width;
+        const y = Math.min(start.y, curr.y) * height;
+        const w = Math.abs(curr.x - start.x) * width;
+        const h = Math.abs(curr.y - start.y) * height;
+
+        ctx.strokeStyle = '#ef4444'; // Red
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]); // Dotted/Dashed visual
+        ctx.strokeRect(x, y, w, h);
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(x, y, w, h);
         ctx.setLineDash([]);
     }
@@ -475,6 +643,11 @@ function deleteSelection() {
         if(idx > -1) {
             pageData.images.splice(idx, 1);
             delete state.imageCache[imgObj.id];
+            
+            // Auto delete associated link if there is one attached
+            if (imgObj.linkId) {
+                deleteLink(imgObj.linkId);
+            }
         }
     });
 

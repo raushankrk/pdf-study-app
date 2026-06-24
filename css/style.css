@@ -22,15 +22,15 @@
 .textLayer ::selection { background: rgba(59, 130, 246, 0.3); color: transparent; }
 
 /* In Navigation mode, enable native text selection and pointer events */
-body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode) .textLayer {
+body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode):not(.snip-link-mode) .textLayer {
     user-select: text;
     pointer-events: auto; /* Crucial: Allows text to capture events */
 }
-body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode) .textLayer span {
+body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode):not(.snip-link-mode) .textLayer span {
     pointer-events: auto; /* Ensure individual spans also capture events */
 }
 
-body.linking-mode .textLayer, body.annotation-mode .textLayer, body.delete-link-mode .textLayer { user-select: none; pointer-events: none; }
+body.linking-mode .textLayer, body.annotation-mode .textLayer, body.delete-link-mode .textLayer, body.snip-link-mode .textLayer { user-select: none; pointer-events: none; }
 body.linking-mode .textLayer span { cursor: crosshair !important; }
 body.annotation-mode .textLayer { pointer-events: none; }
 body:not(.annotation-mode) .textLayer span { cursor: text; }
@@ -62,6 +62,9 @@ body.anno-stroke-eraser .annotation-canvas { cursor: grab; }
 body.anno-stroke-eraser .annotation-canvas:active { cursor: grabbing; }
 body.anno-select .annotation-canvas { cursor: default; }
 body.anno-select .annotation-canvas:active { cursor: grabbing; }
+
+/* Snip & Link specific */
+body.snip-link-mode .pdf-canvas-container { cursor: crosshair; }
 
 /* --- Text Box Styles --- */
 .text-box {

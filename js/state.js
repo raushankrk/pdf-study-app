@@ -33,6 +33,17 @@ const state = {
         pointerId: null,
         activeTextBox: null 
     },
+    snip: {
+        active: false,
+        phase: 'idle', // 'idle' | 'drawing' | 'dragging'
+        startSide: null,
+        startPos: null,
+        currentPos: null,
+        base64: null,
+        sourceData: null,
+        width: 0,
+        height: 0
+    },
     selection: {
         active: false,
         side: null,

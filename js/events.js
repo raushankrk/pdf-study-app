@@ -51,6 +51,29 @@ function handlePointerDown(e) {
         }
     }
 
+    // SNIP & LINK LOGIC
+    if (state.appMode === 'snip-link') {
+        if (state.snip.phase === 'idle' && clickedSide && state.view[clickedSide].docId) {
+            state.snip.phase = 'drawing';
+            state.snip.startSide = clickedSide;
+            const pos = getMousePosInViewport(e, clickedSide);
+            state.snip.startPos = pos;
+            state.snip.currentPos = pos;
+            state.drawing.active = true;
+            state.drawing.pointerId = e.pointerId;
+            
+            // Note: Visual rendering handled now by renderAnnotations in js/annotations.js
+        } else if (state.snip.phase === 'dragging') {
+            if (clickedSide && clickedSide !== state.snip.startSide && state.view[clickedSide].docId) {
+                const pos = getMousePosInViewport(e, clickedSide);
+                dropSnip(clickedSide, pos.x, pos.y);
+            } else {
+                cancelSnip();
+            }
+        }
+        return;
+    }
+
     if (!clickedSide) return;
     if (!state.view[clickedSide].docId) return;
 
@@ -179,6 +202,8 @@ function handlePointerDown(e) {
             els.textCreationRect.style.width = '0px';
             els.textCreationRect.style.height = '0px';
             els.textCreationRect.style.display = 'block';
+            els.textCreationRect.style.borderColor = '#3b82f6'; 
+            els.textCreationRect.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
         }
         else if (e.pointerType === 'pen' || e.button === 0) {
                 if (state.annoTool === 'eraser-stroke') {
@@ -263,6 +288,19 @@ function handlePointerMove(e) {
         cursorEl.classList.add('hidden');
     }
 
+    // SNIP & LINK LOGIC - DRAG
+    if (state.appMode === 'snip-link') {
+        if (state.snip.phase === 'drawing' && state.drawing.active && state.drawing.pointerId === e.pointerId) {
+            const side = state.snip.startSide;
+            state.snip.currentPos = getMousePosInViewport(e, side);
+            renderAnnotations(side);
+        } else if (state.snip.phase === 'dragging') {
+            els.snipPreview.style.left = (e.clientX - (els.snipPreview.offsetWidth / 2)) + 'px';
+            els.snipPreview.style.top = (e.clientY - (els.snipPreview.offsetHeight / 2)) + 'px';
+        }
+        return;
+    }
+
     if (!state.drawing.active) return;
     if (state.drawing.pointerId !== e.pointerId) return;
 
@@ -339,6 +377,18 @@ function handlePointerMove(e) {
                 state.selection.selectedImages.forEach(img => {
                     img.x += dx;
                     img.y += dy;
+                    if (img.linkId) {
+                        const link = state.links.find(l => l.id === img.linkId);
+                        if (link) {
+                            if (link.target.docId === state.view[side].docId && link.target.page === state.view[side].pageNum) {
+                                link.target.x = img.x;
+                                link.target.y = img.y + (img.h / 2);
+                            } else if (link.source.docId === state.view[side].docId && link.source.page === state.view[side].pageNum) {
+                                link.source.x = img.x;
+                                link.source.y = img.y + (img.h / 2);
+                            }
+                        }
+                    }
                 });
                 state.selection.selectedTextBoxes.forEach(tb => {
                     tb.x += dx;
@@ -357,6 +407,7 @@ function handlePointerMove(e) {
                 state.selection.dragStartMouse = pos;
                 renderAnnotations(side);
                 renderTextLayer(side);
+                renderMarkersForView(side);
             }
             else if (state.selection.mode === 'resizing') {
                 const originalState = state.selection.dragStartPositions;
@@ -372,6 +423,19 @@ function handlePointerMove(e) {
                     img.y = originY + (oldImg.y - originY) * scaleY;
                     img.w = oldImg.w * scaleX;
                     img.h = oldImg.h * scaleY;
+                    
+                    if (img.linkId) {
+                        const link = state.links.find(l => l.id === img.linkId);
+                        if (link) {
+                            if (link.target.docId === state.view[side].docId && link.target.page === state.view[side].pageNum) {
+                                link.target.x = img.x;
+                                link.target.y = img.y + (img.h / 2);
+                            } else if (link.source.docId === state.view[side].docId && link.source.page === state.view[side].pageNum) {
+                                link.source.x = img.x;
+                                link.source.y = img.y + (img.h / 2);
+                            }
+                        }
+                    }
                 });
 
                 state.selection.selectedTextBoxes.forEach((tb, idx) => {
@@ -396,6 +460,7 @@ function handlePointerMove(e) {
                 
                 renderAnnotations(side);
                 renderTextLayer(side);
+                renderMarkersForView(side);
             }
         } 
         else if (state.annoTool === 'eraser-stroke') {
@@ -410,6 +475,31 @@ async function handlePointerUp(e) {
     const cursorEl = document.getElementById('tool-cursor');
     if(cursorEl) cursorEl.classList.add('hidden');
     document.body.classList.remove('cursor-none');
+
+    // SNIP & LINK LOGIC - FINISH DRAWING
+    if (state.appMode === 'snip-link' && state.snip.phase === 'drawing' && state.drawing.pointerId === e.pointerId) {
+        state.drawing.active = false;
+        
+        const side = state.snip.startSide;
+        const startPos = state.snip.startPos;
+        const endPos = getMousePosInViewport(e, side);
+
+        // Reset currentPos to clear the red dotted rendering immediately
+        state.snip.currentPos = startPos; 
+        renderAnnotations(side);
+
+        let x = Math.min(startPos.x, endPos.x);
+        let y = Math.min(startPos.y, endPos.y);
+        let w = Math.abs(startPos.x - endPos.x);
+        let h = Math.abs(startPos.y - endPos.y);
+
+        if (w > 0.01 && h > 0.01) {
+            captureSnip(side, x, y, w, h);
+        } else {
+            cancelSnip();
+        }
+        return;
+    }
 
     if (!state.drawing.active) return;
     if (state.drawing.pointerId !== e.pointerId) return;
@@ -603,6 +693,13 @@ async function handlePointerUp(e) {
                 state.selection.mode = 'idle';
                 const docId = state.view[side].docId;
                 if (docId) saveAnnotationsToDB(docId, state.annotations[docId]);
+                
+                state.selection.selectedImages.forEach(img => {
+                    if (img.linkId) {
+                        const link = state.links.find(l => l.id === img.linkId);
+                        if (link) saveLinkToDB(link);
+                    }
+                });
             } else {
                 state.selection.mode = 'idle'; 
             }
@@ -644,6 +741,11 @@ function handleKeyDown(e) {
             e.preventDefault();
             deleteSelection();
         }
+    }
+    
+    // SNIP CANCELLATION
+    if (e.key === 'Escape' && state.appMode === 'snip-link') {
+        cancelSnip();
     }
 }
 

@@ -63,13 +63,19 @@ function setAppMode(mode, save = true) {
     state.appMode = mode;
     if (save) saveSettings();
 
-    document.body.classList.remove('linking-mode', 'annotation-mode', 'anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-image', 'delete-link-mode');
+    document.body.classList.remove('linking-mode', 'annotation-mode', 'anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-image', 'delete-link-mode', 'snip-link-mode');
 
-    [els.modeNavBtn, els.modeLinkBtn, els.modeDelLinkBtn, els.modeAnnoBtn].forEach(btn => {
-        btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
-        btn.classList.add('text-gray-500');
+    [els.modeNavBtn, els.modeLinkBtn, els.modeDelLinkBtn, els.modeAnnoBtn, els.modeSnipLinkBtn].forEach(btn => {
+        if(btn) {
+            btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
+            btn.classList.add('text-gray-500');
+        }
     });
     els.annoTools.classList.add('hidden');
+
+    if (mode !== 'snip-link' && typeof cancelSnip === 'function') {
+        cancelSnip();
+    }
 
     if (mode === 'navigation') {
         els.modeNavBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
@@ -78,6 +84,13 @@ function setAppMode(mode, save = true) {
         document.body.classList.add('linking-mode');
         els.modeLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
         els.modeLinkBtn.classList.remove('text-gray-500');
+    } else if (mode === 'snip-link') {
+        document.body.classList.add('snip-link-mode');
+        if(els.modeSnipLinkBtn) {
+            els.modeSnipLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
+            els.modeSnipLinkBtn.classList.remove('text-gray-500');
+        }
+        showModal("Snip & Link Mode", "1. Drag a box over the source document to extract an image.\n2. Click on the destination document to place the image and automatically create a two-way link.");
     } else if (mode === 'delete-link') {
         document.body.classList.add('delete-link-mode');
         els.modeDelLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
