@@ -322,9 +322,44 @@ async function handleChat() {
         return;
     }
 
-    const scoredEmbeddings = state.embeddings.map(emb => {
-        return { ...emb, score: cosineSimilarity(questionVector, emb.vector) };
-    }).sort((a, b) => b.score - a.score).slice(0, 3); 
+    // ---------------------------------------------------------
+    // BUDGET RETRIEVAL STRATEGY
+    // ---------------------------------------------------------
+    const allScoredEmbeddings = state.embeddings
+        .map(emb => ({ ...emb, score: cosineSimilarity(questionVector, emb.vector) }))
+        .sort((a, b) => b.score - a.score);
+
+    let scoredEmbeddings = [];
+    let totalContextChars = 0;
+    let highestScore = allScoredEmbeddings.length > 0 ? allScoredEmbeddings[0].score : 0;
+    let lowestSelectedScore = highestScore;
+
+    if (allScoredEmbeddings.length > 0) {
+        if (allScoredEmbeddings[0].score < 0.65) {
+            // Fallback: If no chunk meets the 0.65 threshold, use the single highest scoring chunk
+            scoredEmbeddings.push(allScoredEmbeddings[0]);
+            totalContextChars = allScoredEmbeddings[0].text.length;
+            lowestSelectedScore = allScoredEmbeddings[0].score;
+        } else {
+            // Budget Retrieval
+            for (const chunk of allScoredEmbeddings) {
+                if (chunk.score < 0.65) break; // Reached chunks below threshold
+                if (scoredEmbeddings.length >= 8) break; // Limit 1: Max 8 chunks
+                if (totalContextChars + chunk.text.length > 4000) break; // Limit 2: Max 4000 chars
+
+                scoredEmbeddings.push(chunk);
+                totalContextChars += chunk.text.length;
+                lowestSelectedScore = chunk.score;
+            }
+        }
+    }
+
+    // Output metrics to console as requested
+    console.log(`[Budget Retrieval] Selected Chunks: ${scoredEmbeddings.length}`);
+    console.log(`[Budget Retrieval] Total Characters: ${totalContextChars}`);
+    console.log(`[Budget Retrieval] Highest Score: ${highestScore.toFixed(4)}`);
+    console.log(`[Budget Retrieval] Lowest Selected Score: ${lowestSelectedScore.toFixed(4)}`);
+    // ---------------------------------------------------------
 
     state.currentContextChunks = scoredEmbeddings;
 
