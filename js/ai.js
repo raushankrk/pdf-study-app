@@ -171,15 +171,64 @@ async function getEmbedding(text) {
     }
 }
 
-async function generateLLMResponse(prompt) {
+// Rewritten to support streaming via a callback
+async function generateLLMResponse(prompt, onChunk) {
     try {
         const response = await fetch('http://localhost:11434/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: "gemma3:1b", prompt: prompt, stream: false })
+            body: JSON.stringify({ model: "gemma3:1b", prompt: prompt, stream: !!onChunk })
         });
-        const data = await response.json();
-        return data.response;
+
+        // Fallback for non-streaming requests
+        if (!onChunk) {
+            const data = await response.json();
+            return data.response;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let fullResponse = "";
+        let buffer = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            
+            // Keep the last partial line in the buffer
+            buffer = lines.pop(); 
+            
+            for (const line of lines) {
+                if (line.trim() === '') continue;
+                try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.response) {
+                        fullResponse += parsed.response;
+                        onChunk(fullResponse); // Send the accumulated text
+                    }
+                } catch (e) {
+                    console.error("Error parsing JSON line:", e, line);
+                }
+            }
+        }
+
+        // Catch anything left in the buffer at the end of the stream
+        if (buffer.trim() !== '') {
+            try {
+                const parsed = JSON.parse(buffer);
+                if (parsed.response) {
+                    fullResponse += parsed.response;
+                    onChunk(fullResponse);
+                }
+            } catch (e) {
+                console.error("Error parsing final JSON line:", e, buffer);
+            }
+        }
+
+        return fullResponse;
     } catch (error) {
         console.error("LLM Error:", error);
         return "Error connecting to LLM.";
@@ -259,6 +308,7 @@ async function handleChat() {
         renderChatList();
     }
 
+    // Process User Message
     chat.messages.push({ role: 'user', html: escapeHtml(question) });
     appendMessageToDOM('user', escapeHtml(question));
     
@@ -287,9 +337,68 @@ async function handleChat() {
 
     const fullPrompt = `${systemPrompt}\n\nContext:\n${contextText}\n\nUser Question: ${question}\n\nAnswer:`;
 
-    const answer = await generateLLMResponse(fullPrompt);
+    // 1. Pre-build the sources footer HTML before starting the stream
+    let sourcesHtml = '';
+    if (scoredEmbeddings.length > 0) {
+        sourcesHtml = `<div class="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-1">`;
+        scoredEmbeddings.forEach((emb, idx) => {
+            const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
+            const tooltipText = `Source: ${emb.docName} (Page ${emb.pageNum})\nText: ${snippet}`;
 
-    const formattedAnswer = answer.replace(/\[(\d+)\]/g, (match, num) => {
+            sourcesHtml += `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" 
+                onclick="handleCitationClick(this)"
+                data-doc="${emb.docId}" 
+                data-page="${emb.pageNum}" 
+                data-text="${encodeURIComponent(emb.text)}"
+                title="${escapeHtml(tooltipText)}">
+                [${idx+1}]
+            </span>`;
+        });
+        sourcesHtml += `</div>`;
+    }
+
+    // 2. Create a placeholder in the DOM & State for the streaming response (with sources attached early)
+    const assistantMsg = { role: 'assistant', html: '', context: scoredEmbeddings };
+    chat.messages.push(assistantMsg);
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `ai-message assistant`;
+    msgDiv.innerHTML = `
+        <div class="ai-bubble">
+            <div class="streaming-content"><span class="text-gray-400 italic">Generating response...</span></div>
+            ${sourcesHtml}
+        </div>
+    `;
+    els.chatHistory.appendChild(msgDiv);
+    els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+    
+    const contentBubble = msgDiv.querySelector('.streaming-content');
+
+    // 3. Stream the LLM response text chunk-by-chunk directly into the content container
+    const answer = await generateLLMResponse(fullPrompt, (fullText) => {
+        // Render inline citations dynamically as the text arrives
+        const formattedAnswer = fullText.replace(/\[(\d+)\]/g, (match, num) => {
+            const idx = parseInt(num) - 1;
+            const emb = scoredEmbeddings[idx];
+            if (!emb) return match; 
+
+            const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
+            const tooltipText = `Source: ${emb.docName} (Page ${emb.pageNum})\nText: ${snippet}`;
+
+            return `<span class="citation-chip" onclick="handleCitationClick(this)" 
+                        data-doc="${emb.docId}" 
+                        data-page="${emb.pageNum}" 
+                        data-text="${encodeURIComponent(emb.text)}"
+                        title="${escapeHtml(tooltipText)}">${num}</span>`;
+        });
+
+        // Replace line breaks to preserve formatting in HTML
+        contentBubble.innerHTML = formattedAnswer.replace(/\n/g, '<br>');
+        els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+    });
+
+    // 4. Upon completion, finalize the text formatting
+    const finalFormattedAnswer = answer.replace(/\[(\d+)\]/g, (match, num) => {
         const idx = parseInt(num) - 1;
         const emb = scoredEmbeddings[idx];
         if (!emb) return match; 
@@ -304,29 +413,15 @@ async function handleChat() {
                     title="${escapeHtml(tooltipText)}">${num}</span>`;
     });
 
-    let contentHtml = formattedAnswer;
-    contentHtml += `<div class="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-1">`;
-    scoredEmbeddings.forEach((emb, idx) => {
-        const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
-        const tooltipText = `Source: ${emb.docName} (Page ${emb.pageNum})\nText: ${snippet}`;
-
-        contentHtml += `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" 
-            onclick="handleCitationClick(this)"
-            data-doc="${emb.docId}" 
-            data-page="${emb.pageNum}" 
-            data-text="${encodeURIComponent(emb.text)}"
-            title="${escapeHtml(tooltipText)}">
-            [${idx+1}]
-        </span>`;
-    });
-    contentHtml += `</div>`;
-
-    appendMessageToDOM('assistant', contentHtml);
+    let finalHtml = finalFormattedAnswer.replace(/\n/g, '<br>');
     
-    const assistantMsg = chat.messages[chat.messages.length - 1];
-    assistantMsg.html = contentHtml;
-    assistantMsg.context = scoredEmbeddings; 
+    // Update the DOM one last time
+    contentBubble.innerHTML = finalHtml;
     
+    // Save to the state (wrap in streaming-content for visual parity and append sources)
+    assistantMsg.html = `<div class="streaming-content">${finalHtml}</div>${sourcesHtml}`;
+    
+    els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
     await saveChatToDB(chat);
     updateAIStatus("Ready");
 }
