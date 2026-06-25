@@ -178,6 +178,7 @@ function setAnnoTool(tool, save = true) {
     }
 }
 
+// ---- Modals ----
 function showModal(title, body, isPrompt = false) {
     els.modalTitle.innerText = title;
     els.modalBody.innerHTML = body.replace(/\n/g, '<br>');
@@ -214,6 +215,72 @@ function closeModal(result = false) {
     els.modal.classList.add('hidden');
 }
 
+// ---- AI Settings Panel ----
+function openAiSettings() {
+    const s = state.aiSettings;
+    els.aiSettingModel.value = s.model;
+    els.aiSettingPrompt.value = s.systemPrompt;
+    els.aiSettingStyle.value = s.responseStyle;
+    els.aiSettingTemp.value = s.temperature;
+    els.aiSettingTempVal.innerText = s.temperature;
+    els.aiSettingStrict.checked = s.strictRag;
+    els.aiSettingSim.value = s.similarityThreshold;
+    els.aiSettingSimVal.innerText = s.similarityThreshold;
+    els.aiSettingBudget.value = s.contextBudget;
+    els.aiSettingMaxChunks.value = s.maxChunks;
+    els.aiSettingChunkSize.value = s.chunkSize;
+    
+    els.aiSettingsModal.classList.remove('hidden');
+}
+
+function closeAiSettings() {
+    els.aiSettingsModal.classList.add('hidden');
+}
+
+async function saveAiSettings() {
+    const oldChunkSize = state.aiSettings.chunkSize;
+    
+    state.aiSettings = {
+        model: els.aiSettingModel.value.trim() || "gemma3:1b",
+        systemPrompt: els.aiSettingPrompt.value.trim() || "You are a helpful assistant answering questions based on the provided PDF context.",
+        responseStyle: els.aiSettingStyle.value,
+        temperature: parseFloat(els.aiSettingTemp.value),
+        strictRag: els.aiSettingStrict.checked,
+        similarityThreshold: parseFloat(els.aiSettingSim.value),
+        contextBudget: parseInt(els.aiSettingBudget.value),
+        maxChunks: parseInt(els.aiSettingMaxChunks.value),
+        chunkSize: parseInt(els.aiSettingChunkSize.value)
+    };
+
+    await saveSettings();
+    closeAiSettings();
+
+    // Re-index logic if chunk size changes
+    if (oldChunkSize !== state.aiSettings.chunkSize) {
+        showModal("Re-indexing Required", "Chunk size changed. Clearing and rebuilding document index...");
+        state.embeddings = []; // Clear current embeddings
+        indexDocuments(true); // Force re-index with new size
+    }
+}
+
+function resetAiSettings() {
+    if(confirm("Reset all AI settings to default?")) {
+        state.aiSettings = {
+            model: "gemma3:1b",
+            systemPrompt: "You are a helpful assistant answering questions based on the provided PDF context.",
+            responseStyle: "Detailed",
+            temperature: 0.7,
+            strictRag: true,
+            similarityThreshold: 0.65,
+            contextBudget: 4000,
+            maxChunks: 8,
+            chunkSize: 500
+        };
+        openAiSettings(); // Refresh form values
+    }
+}
+
+// ---- Layout Resizer ----
 function initResizer() {
     const resizer = els.resizer;
     const leftSide = els.leftPanel;

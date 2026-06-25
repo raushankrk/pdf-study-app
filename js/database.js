@@ -61,7 +61,8 @@ async function saveSettings() {
         annoColor: state.annoColor,
         annoThickness: state.annoThickness,
         leftSidebarCollapsed: document.body.classList.contains('left-sidebar-collapsed'),
-        aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed')
+        aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed'),
+        aiSettings: state.aiSettings // <---- Saving AI Configuration
     };
     const tx = db.transaction(['settings'], 'readwrite');
     tx.objectStore('settings').put(settings);
@@ -198,7 +199,8 @@ window.exportProject = async function() {
             annoColor: state.annoColor,
             annoThickness: state.annoThickness,
             leftSidebarCollapsed: document.body.classList.contains('left-sidebar-collapsed'),
-            aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed')
+            aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed'),
+            aiSettings: state.aiSettings
         };
         const stmtSet = db.prepare("INSERT INTO settings VALUES (?, ?)");
         stmtSet.run(['appState', JSON.stringify(settings)]);
@@ -378,6 +380,11 @@ async function handleProjectImport(e) {
             state.annoTool = s.annoTool;
             state.annoColor = s.annoColor;
             state.annoThickness = s.annoThickness;
+
+            // Load AI settings safely if present in old saves
+            if (s.aiSettings) {
+                state.aiSettings = { ...state.aiSettings, ...s.aiSettings };
+            }
             
             els.leftPanel.style.width = (state.splitRatio * 100) + '%';
             els.rightPanel.style.width = ((1 - state.splitRatio) * 100) + '%';

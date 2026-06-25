@@ -111,6 +111,10 @@ async function init() {
                 if (savedData.settings.aiSidebarCollapsed) {
                     document.body.classList.add('ai-sidebar-collapsed');
                 }
+                // Restore AI settings
+                if (savedData.settings.aiSettings) {
+                    state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
+                }
             }
             renderDocList();
             renderChatList();
@@ -174,6 +178,14 @@ async function init() {
         saveSettings();
     });
 
+    // AI Settings Range Sliders (live text update)
+    if (els.aiSettingTemp) {
+        els.aiSettingTemp.addEventListener('input', (e) => els.aiSettingTempVal.innerText = parseFloat(e.target.value).toFixed(1));
+    }
+    if (els.aiSettingSim) {
+        els.aiSettingSim.addEventListener('input', (e) => els.aiSettingSimVal.innerText = parseFloat(e.target.value).toFixed(2));
+    }
+
     els.sendChatBtn.addEventListener('click', handleChat);
     els.chatInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -188,4 +200,3 @@ async function init() {
 
 // Initialize Application
 init();
-

@@ -75,4 +75,16 @@ const state = {
         eraserPixel: { thickness: 20 },
         eraserStroke: { thickness: 5 }
     },
+    // ---- New AI Settings Control ----
+    aiSettings: {
+        model: "gemma3:1b", // Default Ollama model
+        systemPrompt: "You are a helpful assistant answering questions based on the provided PDF context.",
+        responseStyle: "Detailed", // Concise, Detailed, Expert
+        temperature: 0.7,
+        strictRag: true,
+        similarityThreshold: 0.65,
+        contextBudget: 4000,
+        maxChunks: 8,
+        chunkSize: 500
+    }
 };

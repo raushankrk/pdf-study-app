@@ -67,5 +67,19 @@ const els = {
     sendChatBtn: document.getElementById('send-chat-btn'),
     aiStatus: document.getElementById('ai-status'),
     toolHighlighter: document.getElementById('tool-highlighter'),
-    snipPreview: document.getElementById('snip-preview') // SNIP PREVIEW LAYER
+    snipPreview: document.getElementById('snip-preview'), // SNIP PREVIEW LAYER
+    
+    // AI Settings Modal Elements
+    aiSettingsModal: document.getElementById('ai-settings-modal'),
+    aiSettingModel: document.getElementById('ai-setting-model'),
+    aiSettingPrompt: document.getElementById('ai-setting-prompt'),
+    aiSettingStyle: document.getElementById('ai-setting-style'),
+    aiSettingTemp: document.getElementById('ai-setting-temp'),
+    aiSettingTempVal: document.getElementById('ai-setting-temp-val'),
+    aiSettingStrict: document.getElementById('ai-setting-strict'),
+    aiSettingSim: document.getElementById('ai-setting-sim'),
+    aiSettingSimVal: document.getElementById('ai-setting-sim-val'),
+    aiSettingBudget: document.getElementById('ai-setting-budget'),
+    aiSettingMaxChunks: document.getElementById('ai-setting-max-chunks'),
+    aiSettingChunkSize: document.getElementById('ai-setting-chunk-size')
 };
