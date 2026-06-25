@@ -82,6 +82,7 @@ const state = {
         responseStyle: "Detailed", // Concise, Detailed, Expert
         temperature: 0.7,
         strictRag: true,
+        includeChatHistory: true, // <--- Added option to include chat history
         similarityThreshold: 0.65,
         contextBudget: 4000,
         maxChunks: 8,

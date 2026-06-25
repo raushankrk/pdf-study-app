@@ -419,9 +419,15 @@
                     <label class="text-sm font-medium text-gray-700">Strict RAG Mode (Limit to Context)</label>
                 </div>
 
+                <!-- 6. Include Chat History -->
+                <div class="flex items-center gap-2 mt-2">
+                    <input type="checkbox" id="ai-setting-history" class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <label class="text-sm font-medium text-gray-700">Include Chat History in Context</label>
+                </div>
+
                 <hr class="border-gray-200 my-2">
 
-                <!-- 6. Similarity Threshold -->
+                <!-- 7. Similarity Threshold -->
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 mb-1 flex justify-between">
                         <span>Similarity Threshold</span>
@@ -431,13 +437,13 @@
                 </div>
 
                 <div class="grid grid-cols-2 gap-4">
-                    <!-- 7. Context Budget -->
+                    <!-- 8. Context Budget -->
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">Context Budget (Chars)</label>
                         <input type="number" id="ai-setting-budget" min="1000" max="32000" step="500" class="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500">
                     </div>
 
-                    <!-- 8. Max Chunks -->
+                    <!-- 9. Max Chunks -->
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">Max Retrieved Chunks</label>
                         <input type="number" id="ai-setting-max-chunks" min="1" max="30" class="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500">

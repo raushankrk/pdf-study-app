@@ -163,13 +163,14 @@ async function getEmbedding(text) {
 async function generateLLMResponse(prompt, onChunk) {
     try {
         const payload = { 
-            model: state.aiSettings.model, 
+            model: state.aiSettings.model,
             prompt: prompt, 
             stream: !!onChunk,
             options: {
                 temperature: state.aiSettings.temperature
             }
         };
+        console.log(prompt)
 
         const response = await fetch('http://localhost:11434/api/generate', {
             method: 'POST',
@@ -290,6 +291,13 @@ function updateAIStatus(msg) {
     els.aiStatus.innerText = msg;
 }
 
+// Utility function to extract clean text from HTML
+function extractTextFromHTML(html) {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    return tempDiv.innerText || tempDiv.textContent || "";
+}
+
 async function handleChat() {
     const question = els.chatInput.value.trim();
     if (!question) return;
@@ -378,7 +386,22 @@ async function handleChat() {
         systemPrompt += "\n\nResponse Style Instruction: Provide a thorough, comprehensive, and detailed explanation. Break down the information clearly, step-by-step. Use formatting like bullet points or bold text if helpful to make the detailed answer highly readable.";
     }
 
-    const fullPrompt = `${systemPrompt}\n\nContext:\n${contextText}\n\nUser Question: ${question}\n\nAnswer:`;
+    // Chat History Construction
+    let historyText = "";
+    if (state.aiSettings.includeChatHistory && chat.messages.length > 1) {
+        // Get the last 6 messages excluding the user's latest question (which is at the end)
+        const recentMessages = chat.messages.slice(0, -1).slice(-6);
+        if (recentMessages.length > 0) {
+            historyText = "--- Recent Chat History ---\n";
+            recentMessages.forEach(m => {
+                const cleanText = extractTextFromHTML(m.html).trim();
+                historyText += `${m.role === 'user' ? 'User' : 'Assistant'}: ${cleanText}\n\n`;
+            });
+            historyText += "---------------------------\n\n";
+        }
+    }
+
+    const fullPrompt = `${systemPrompt}\n\nContext:\n${contextText}\n\n${historyText}User Question: ${question}\n\nAnswer:`;
 
     // Pre-build the sources footer HTML
     let sourcesHtml = '';
