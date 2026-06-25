@@ -14,12 +14,14 @@ async function createNewChat() {
     renderChatList();
     renderChatMessages();
     els.chatInput.focus();
+    if (typeof closeChatHistory === 'function') closeChatHistory();
 }
 
 async function switchChat(chatId) {
     state.currentChatId = chatId;
     renderChatList();
     renderChatMessages();
+    if (typeof closeChatHistory === 'function') closeChatHistory();
 }
 
 async function deleteChat(chatId, event) {

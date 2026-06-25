@@ -59,6 +59,27 @@ function toggleAiSidebar() {
     saveSettings();
 }
 
+function toggleChatHistory() {
+    const drawer = document.getElementById('chat-history-drawer');
+    if (drawer) {
+        if(drawer.classList.contains('-translate-x-full')) {
+            drawer.classList.remove('-translate-x-full');
+            drawer.classList.add('translate-x-0');
+        } else {
+            drawer.classList.add('-translate-x-full');
+            drawer.classList.remove('translate-x-0');
+        }
+    }
+}
+
+function closeChatHistory() {
+    const drawer = document.getElementById('chat-history-drawer');
+    if (drawer) {
+        drawer.classList.add('-translate-x-full');
+        drawer.classList.remove('translate-x-0');
+    }
+}
+
 function setAppMode(mode, save = true) {
     state.appMode = mode;
     if (save) saveSettings();

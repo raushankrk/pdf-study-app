@@ -305,34 +305,44 @@
             <img id="snip-preview" class="hidden fixed pointer-events-none z-[9999] opacity-80 border-2 border-blue-500 border-dashed shadow-xl object-contain bg-white">
 
             <!-- AI Sidebar -->
-            <aside id="ai-sidebar" class="bg-white border-l border-gray-200 flex flex-col shrink-0 z-20">
+            <aside id="ai-sidebar" class="bg-white border-l border-gray-200 flex flex-col shrink-0 z-20 relative overflow-hidden">
                 <!-- Header -->
-                <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 bg-gray-50 shrink-0">
+                <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 bg-gray-50 shrink-0 relative z-40 shadow-sm">
                     <div class="flex items-center gap-2">
+                        <button onclick="toggleChatHistory()" class="text-gray-500 hover:text-blue-600 transition-colors w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200" title="Chat History">
+                            <i class="fa-solid fa-bars-staggered"></i>
+                        </button>
                         <i class="fa-solid fa-robot text-blue-600"></i>
                         <span class="text-sm font-bold text-gray-700">AI Assistant</span>
                     </div>
-                    <!-- AI Settings Button -->
-                    <button onclick="openAiSettings()" class="text-gray-400 hover:text-blue-600 transition-colors" title="AI Settings">
-                        <i class="fa-solid fa-gear"></i>
-                    </button>
-                </div>
-
-                <!-- Chat List (Top) -->
-                <div class="flex flex-col shrink-0 border-b border-gray-200 max-h-[35%]">
-                    <div class="p-2 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
-                        <span class="text-xs font-semibold text-gray-500 uppercase">History</span>
-                        <button onclick="createNewChat()" class="text-xs bg-white border border-gray-200 hover:border-blue-400 text-blue-600 px-2 py-1 rounded shadow-sm transition-colors" title="New Chat">
+                    <div class="flex items-center gap-3">
+                        <button onclick="createNewChat()" class="text-gray-400 hover:text-blue-600 transition-colors" title="New Chat">
                             <i class="fa-solid fa-plus"></i>
                         </button>
+                        <!-- AI Settings Button -->
+                        <button onclick="openAiSettings()" class="text-gray-400 hover:text-blue-600 transition-colors" title="AI Settings">
+                            <i class="fa-solid fa-gear"></i>
+                        </button>
                     </div>
-                    <div id="chat-list" class="flex-1 overflow-y-auto">
+                </div>
+
+                <!-- Chat History Drawer (Overlay) -->
+                <div id="chat-history-drawer" class="absolute top-12 left-0 w-full bottom-0 bg-white shadow-xl transform -translate-x-full transition-transform duration-300 z-30 flex flex-col border-r border-gray-200">
+                    <div class="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center shrink-0">
+                        <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">Chat History</span>
+                        <div class="flex gap-2">
+                            <button onclick="toggleChatHistory()" class="text-gray-400 hover:text-gray-600 px-2 py-1 transition-colors" title="Close">
+                                <i class="fa-solid fa-xmark"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="chat-list" class="flex-1 overflow-y-auto bg-gray-50/50">
                         <!-- Chat items injected here -->
                     </div>
                 </div>
 
                 <!-- Chat Area (Middle) -->
-                <div id="chat-history" class="p-4 space-y-4 bg-white overflow-y-auto flex-1">
+                <div id="chat-history" class="p-4 space-y-4 bg-white overflow-y-auto flex-1 z-10 relative">
                     <div class="text-center text-xs text-gray-400 mt-4">
                         Ask a question about the loaded PDFs.
                         <br>Uses <span class="font-mono">nomic-embed-text</span> & local LLM.
