@@ -78,6 +78,7 @@ const els = {
     aiSettingTempVal: document.getElementById('ai-setting-temp-val'),
     aiSettingStrict: document.getElementById('ai-setting-strict'),
     aiSettingHistory: document.getElementById('ai-setting-history'), // <--- NEW Reference
+    aiSettingSkipLlm: document.getElementById('ai-setting-skip-llm'),
     aiSettingSim: document.getElementById('ai-setting-sim'),
     aiSettingSimVal: document.getElementById('ai-setting-sim-val'),
     aiSettingBudget: document.getElementById('ai-setting-budget'),

@@ -225,6 +225,7 @@ function openAiSettings() {
     els.aiSettingTempVal.innerText = s.temperature;
     els.aiSettingStrict.checked = s.strictRag;
     els.aiSettingHistory.checked = s.includeChatHistory !== false; // Default to true if undefined
+    els.aiSettingSkipLlm.checked = s.skipLlm || false;
     els.aiSettingSim.value = s.similarityThreshold;
     els.aiSettingSimVal.innerText = s.similarityThreshold;
     els.aiSettingBudget.value = s.contextBudget;
@@ -248,6 +249,7 @@ async function saveAiSettings() {
         temperature: parseFloat(els.aiSettingTemp.value),
         strictRag: els.aiSettingStrict.checked,
         includeChatHistory: els.aiSettingHistory.checked,
+        skipLlm: els.aiSettingSkipLlm.checked,
         similarityThreshold: parseFloat(els.aiSettingSim.value),
         contextBudget: parseInt(els.aiSettingBudget.value),
         maxChunks: parseInt(els.aiSettingMaxChunks.value),
@@ -274,6 +276,7 @@ function resetAiSettings() {
             temperature: 0.7,
             strictRag: true,
             includeChatHistory: true,
+            skipLlm: false,
             similarityThreshold: 0.65,
             contextBudget: 4000,
             maxChunks: 8,

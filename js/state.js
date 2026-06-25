@@ -83,6 +83,7 @@ const state = {
         temperature: 0.7,
         strictRag: true,
         includeChatHistory: true, // <--- Added option to include chat history
+        skipLlm: false,
         similarityThreshold: 0.65,
         contextBudget: 4000,
         maxChunks: 8,

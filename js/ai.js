@@ -163,14 +163,13 @@ async function getEmbedding(text) {
 async function generateLLMResponse(prompt, onChunk) {
     try {
         const payload = { 
-            model: state.aiSettings.model,
+            model: state.aiSettings.model, 
             prompt: prompt, 
             stream: !!onChunk,
             options: {
                 temperature: state.aiSettings.temperature
             }
         };
-        console.log(prompt)
 
         const response = await fetch('http://localhost:11434/api/generate', {
             method: 'POST',
@@ -414,6 +413,31 @@ async function handleChat() {
             sourcesHtml += `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page="${emb.pageNum}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">[${idx+1}]</span>`;
         });
         sourcesHtml += `</div>`;
+    }
+
+    if (state.aiSettings.skipLlm) {
+        let finalHtml = "<em class='text-gray-500'>LLM generation skipped. Returning sources only.</em>";
+        if (scoredEmbeddings.length === 0) {
+            finalHtml = "<em class='text-gray-500'>LLM generation skipped. No relevant sources found for your query.</em>";
+        }
+        
+        const assistantMsg = { role: 'assistant', html: `<div class="streaming-content">${finalHtml}</div>${sourcesHtml}`, context: scoredEmbeddings };
+        chat.messages.push(assistantMsg);
+
+        const msgDiv = document.createElement('div');
+        msgDiv.className = `ai-message assistant`;
+        msgDiv.innerHTML = `
+            <div class="ai-bubble">
+                <div class="streaming-content">${finalHtml}</div>
+                ${sourcesHtml}
+            </div>
+        `;
+        els.chatHistory.appendChild(msgDiv);
+        els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+
+        await saveChatToDB(chat);
+        updateAIStatus("Ready");
+        return;
     }
 
     const assistantMsg = { role: 'assistant', html: '', context: scoredEmbeddings };
