@@ -215,7 +215,11 @@
                         <div class="w-px h-4 bg-gray-300 mx-1"></div>
 
                         <button onclick="navigatePage('left', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
-                        <span id="left-page-indicator" class="text-xs text-gray-500 w-16 text-center">-- / --</span>
+                        <div class="flex items-center justify-center w-20 text-xs text-gray-500 font-mono">
+                            <input type="number" id="left-page-input" class="w-8 text-center border border-transparent hover:border-gray-300 focus:border-blue-500 rounded bg-transparent p-0 outline-none hide-arrows transition-colors" value="" placeholder="-" onchange="jumpToPage('left')" onkeydown="if(event.key==='Enter') this.blur();" title="Jump to page">
+                            <span class="mx-1">/</span>
+                            <span id="left-page-total" class="w-8 text-left">--</span>
+                        </div>
                         <button onclick="navigatePage('left', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
                         
                         <div class="w-px h-4 bg-gray-300 mx-1"></div>
@@ -275,7 +279,11 @@
                         <div class="w-px h-4 bg-gray-300 mx-1"></div>
 
                         <button onclick="navigatePage('right', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
-                        <span id="right-page-indicator" class="text-xs text-gray-500 w-16 text-center">-- / --</span>
+                        <div class="flex items-center justify-center w-20 text-xs text-gray-500 font-mono">
+                            <input type="number" id="right-page-input" class="w-8 text-center border border-transparent hover:border-gray-300 focus:border-blue-500 rounded bg-transparent p-0 outline-none hide-arrows transition-colors" value="" placeholder="-" onchange="jumpToPage('right')" onkeydown="if(event.key==='Enter') this.blur();" title="Jump to page">
+                            <span class="mx-1">/</span>
+                            <span id="right-page-total" class="w-8 text-left">--</span>
+                        </div>
                         <button onclick="navigatePage('right', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
                         
                         <div class="w-px h-4 bg-gray-300 mx-1"></div>

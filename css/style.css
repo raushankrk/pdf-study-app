@@ -264,3 +264,14 @@ body.cursor-none .pdf-canvas-container {
     box-shadow: 0 0 0 3px #3b82f6; /* Blue ring indicating active state */
     z-index: 10; /* Brings the active panel visually forward */
 }
+
+/* --- Input Utilities --- */
+/* Hide Number input arrows */
+.hide-arrows::-webkit-outer-spin-button,
+.hide-arrows::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.hide-arrows {
+  -moz-appearance: textfield;
+}

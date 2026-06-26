@@ -137,7 +137,8 @@ async function renderPage(side) {
         annoCanvas.width = 0; annoCanvas.height = 0;
         textLayer.innerHTML = '';
         els[side + 'Title'].innerText = 'None';
-        els[side + 'PageInd'].innerText = '-- / --';
+        els[side + 'PageInput'].value = '';
+        els[side + 'PageTotal'].innerText = '--';
         document.getElementById(side + '-markers-layer').innerHTML = '';
         els[side + 'Wrapper'].querySelectorAll('.text-box').forEach(e => e.remove());
         return;
@@ -151,9 +152,11 @@ async function renderPage(side) {
         wrapper.style.transform = 'none';
         wrapper.style.zIndex = '';
     }
+    
     const doc = state.documents[docId];
     els[side + 'Title'].innerText = doc.name;
-    els[side + 'PageInd'].innerText = `${viewState.pageNum} / ${doc.pageCount}`;
+    els[side + 'PageInput'].value = viewState.pageNum;
+    els[side + 'PageTotal'].innerText = doc.pageCount;
 
     try {
         const page = await doc.pdfDoc.getPage(viewState.pageNum);
@@ -195,6 +198,35 @@ function navigatePage(side, delta) {
     const doc = state.documents[viewState.docId];
     const newPage = viewState.pageNum + delta;
     if (newPage >= 1 && newPage <= doc.pageCount) {
+        viewState.pageNum = newPage;
+        viewState.scrollTop = 0; 
+        state.lastActiveSide = side;
+        clearSelection();
+        saveSettings(); 
+        renderPage(side);
+    }
+}
+
+// NEW: Function to handle direct page jumping from the input field
+function jumpToPage(side) {
+    const viewState = state.view[side];
+    const input = els[side + 'PageInput'];
+    
+    if (!viewState.docId) {
+        input.value = '';
+        return;
+    }
+
+    const doc = state.documents[viewState.docId];
+    let newPage = parseInt(input.value);
+
+    // Validate bounds
+    if (isNaN(newPage) || newPage < 1) newPage = 1;
+    if (newPage > doc.pageCount) newPage = doc.pageCount;
+
+    input.value = newPage; // Instantly correct the UI input value
+
+    if (newPage !== viewState.pageNum) {
         viewState.pageNum = newPage;
         viewState.scrollTop = 0; 
         state.lastActiveSide = side;

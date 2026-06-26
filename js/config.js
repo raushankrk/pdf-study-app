@@ -55,8 +55,13 @@ const els = {
     modalConfirmBtn: document.getElementById('modal-confirm-btn'),
     leftTitle: document.getElementById('left-view-title'),
     rightTitle: document.getElementById('right-view-title'),
-    leftPageInd: document.getElementById('left-page-indicator'),
-    rightPageInd: document.getElementById('right-page-indicator'),
+    
+    // NEW: Interactive Input Paging Elements
+    leftPageInput: document.getElementById('left-page-input'),
+    rightPageInput: document.getElementById('right-page-input'),
+    leftPageTotal: document.getElementById('left-page-total'),
+    rightPageTotal: document.getElementById('right-page-total'),
+    
     leftZoomLevel: document.getElementById('left-zoom-level'),
     rightZoomLevel: document.getElementById('right-zoom-level'),
     globalSearchInput: document.getElementById('global-search-input'),
@@ -77,7 +82,7 @@ const els = {
     aiSettingTemp: document.getElementById('ai-setting-temp'),
     aiSettingTempVal: document.getElementById('ai-setting-temp-val'),
     aiSettingStrict: document.getElementById('ai-setting-strict'),
-    aiSettingHistory: document.getElementById('ai-setting-history'), // <--- NEW Reference
+    aiSettingHistory: document.getElementById('ai-setting-history'),
     aiSettingSkipLlm: document.getElementById('ai-setting-skip-llm'),
     aiSettingSim: document.getElementById('ai-setting-sim'),
     aiSettingSimVal: document.getElementById('ai-setting-sim-val'),
