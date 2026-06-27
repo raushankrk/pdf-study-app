@@ -141,6 +141,7 @@ async function renderPage(side) {
         els[side + 'PageTotal'].innerText = '--';
         document.getElementById(side + '-markers-layer').innerHTML = '';
         els[side + 'Wrapper'].querySelectorAll('.text-box').forEach(e => e.remove());
+        els[side + 'PageSlider'].classList.add('hidden');
         return;
     }
     if (state.zoomLive[side] !== 1.0) {
@@ -157,6 +158,11 @@ async function renderPage(side) {
     els[side + 'Title'].innerText = doc.name;
     els[side + 'PageInput'].value = viewState.pageNum;
     els[side + 'PageTotal'].innerText = doc.pageCount;
+
+    // Update Slider 
+    els[side + 'PageSlider'].classList.remove('hidden');
+    els[side + 'PageSlider'].max = doc.pageCount;
+    els[side + 'PageSlider'].value = viewState.pageNum;
 
     try {
         const page = await doc.pdfDoc.getPage(viewState.pageNum);
@@ -235,6 +241,69 @@ function jumpToPage(side) {
         renderPage(side);
     }
 }
+
+// NEW: Slider-Specific syncing functions
+window.syncPageInput = function(side) {
+    const slider = els[side + 'PageSlider'];
+    const input = els[side + 'PageInput'];
+    if (slider && input) {
+        input.value = slider.value;
+        
+        // Dynamic Tooltip that follows the slider thumb
+        let tooltip = document.getElementById(side + '-slider-tooltip');
+        if (!tooltip) {
+            tooltip = document.createElement('div');
+            tooltip.id = side + '-slider-tooltip';
+            tooltip.className = 'absolute -top-7 transform -translate-x-1/2 bg-blue-600 text-white text-xs font-bold py-1 px-2.5 rounded shadow-lg pointer-events-none transition-opacity duration-150 z-50 whitespace-nowrap';
+            slider.parentElement.style.position = 'relative';
+            slider.parentElement.appendChild(tooltip);
+        }
+
+        const val = slider.value;
+        const min = slider.min || 1;
+        const max = slider.max || 1;
+        const percent = max > min ? ((val - min) / (max - min)) * 100 : 0;
+        
+        // Perfect positioning by accounting for the width of the thumb handle (approx 14px)
+        tooltip.style.left = `calc(${percent}% + ${7 - (percent * 0.14)}px)`;
+        tooltip.innerText = `Page ${val}`;
+        tooltip.style.opacity = '1';
+
+        // Fade out tooltip after scrolling stops
+        if (tooltip.timeoutId) clearTimeout(tooltip.timeoutId);
+        tooltip.timeoutId = setTimeout(() => {
+            tooltip.style.opacity = '0';
+        }, 800);
+    }
+};
+
+window.jumpToPageFromSlider = function(side) {
+    const viewState = state.view[side];
+    const slider = els[side + 'PageSlider'];
+    
+    if (!viewState.docId) {
+        slider.value = 1;
+        return;
+    }
+
+    const doc = state.documents[viewState.docId];
+    let newPage = parseInt(slider.value);
+
+    if (isNaN(newPage) || newPage < 1) newPage = 1;
+    if (newPage > doc.pageCount) newPage = doc.pageCount;
+
+    slider.value = newPage;
+
+    if (newPage !== viewState.pageNum) {
+        viewState.pageNum = newPage;
+        viewState.scrollTop = 0; 
+        state.lastActiveSide = side;
+        clearSelection();
+        saveSettings(); 
+        renderPage(side);
+    }
+};
+
 
 async function deleteDocument(id) {
     if(!confirm("Are you sure you want to delete this PDF and all its annotations/links?")) return;

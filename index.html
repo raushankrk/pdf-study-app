@@ -229,6 +229,12 @@
                         <button onclick="deleteCurrentPage('left')" class="p-1 hover:text-red-600 hover:bg-red-50 text-gray-400 rounded transition-colors" title="Delete Current Page"><i class="fa-solid fa-trash-can text-sm"></i></button>
                     </div>
                 </div>
+                
+                <!-- Left Horizontal Page Slider -->
+                <div class="w-full shrink-0 bg-gray-200 relative z-[110] border-b border-gray-300" style="height: 4px;">
+                    <input type="range" id="left-page-slider" min="1" max="1" value="1" class="page-slider hidden" oninput="syncPageInput('left')" onchange="jumpToPageFromSlider('left')" title="Scroll through pages">
+                </div>
+
                 <div class="flex-1 overflow-auto relative flex justify-center p-4 bg-gray-500/10 pdf-canvas-container" id="left-viewport">
                     <div id="left-canvas-wrapper" class="relative shadow-lg">
                         <canvas id="left-canvas" class="pdf-canvas bg-white block"></canvas>
@@ -293,6 +299,12 @@
                         <button onclick="deleteCurrentPage('right')" class="p-1 hover:text-red-600 hover:bg-red-50 text-gray-400 rounded transition-colors" title="Delete Current Page"><i class="fa-solid fa-trash-can text-sm"></i></button>
                     </div>
                 </div>
+                
+                <!-- Right Horizontal Page Slider -->
+                <div class="w-full shrink-0 bg-gray-200 relative z-[110] border-b border-gray-300" style="height: 4px;">
+                    <input type="range" id="right-page-slider" min="1" max="1" value="1" class="page-slider hidden" oninput="syncPageInput('right')" onchange="jumpToPageFromSlider('right')" title="Scroll through pages">
+                </div>
+
                 <div class="flex-1 overflow-auto relative flex justify-center p-4 bg-gray-500/10 pdf-canvas-container" id="right-viewport">
                     <div id="right-canvas-wrapper" class="relative shadow-lg">
                         <canvas id="right-canvas" class="pdf-canvas bg-white block"></canvas>

@@ -275,3 +275,39 @@ body.cursor-none .pdf-canvas-container {
 .hide-arrows {
   -moz-appearance: textfield;
 }
+
+/* --- Page Slider Styles --- */
+.page-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 4px;
+    background: transparent;
+    outline: none;
+    margin: 0;
+    display: block;
+}
+.page-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #3b82f6; /* blue-500 */
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.page-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.3);
+}
+.page-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: none;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+.page-slider::-moz-range-thumb:hover {
+    transform: scale(1.3);
+}

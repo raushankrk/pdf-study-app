@@ -61,6 +61,8 @@ const els = {
     rightPageInput: document.getElementById('right-page-input'),
     leftPageTotal: document.getElementById('left-page-total'),
     rightPageTotal: document.getElementById('right-page-total'),
+    leftPageSlider: document.getElementById('left-page-slider'),
+    rightPageSlider: document.getElementById('right-page-slider'),
     
     leftZoomLevel: document.getElementById('left-zoom-level'),
     rightZoomLevel: document.getElementById('right-zoom-level'),
