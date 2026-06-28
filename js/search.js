@@ -128,12 +128,25 @@ async function performViewportSearch(side, targetPageNum = null) {
 }
 
 function clearSearchHighlights(side) {
-    document.getElementById(`${side}-search-layer`).innerHTML = '';
+    const container = document.getElementById(`${side}-search-layer`);
+    if (container) {
+        // Target only search highlights, leaving citation highlights intact
+        container.querySelectorAll('.search-highlight').forEach(el => el.remove());
+    }
 }
 
-function renderSearchHighlights(side) {
+window.clearCitationHighlights = function(side) {
     const container = document.getElementById(`${side}-search-layer`);
-    container.innerHTML = '';
+    if (container) {
+        // Target only citation highlights
+        container.querySelectorAll('.citation-highlight').forEach(el => el.remove());
+        container.querySelectorAll('.continuation-indicator').forEach(el => el.remove());
+    }
+};
+
+function renderSearchHighlights(side) {
+    clearSearchHighlights(side);
+    const container = document.getElementById(`${side}-search-layer`);
     
     const currentPage = state.view[side].pageNum;
     const pageMatches = state.search[side].results.filter(m => m.page === currentPage);
@@ -257,11 +270,64 @@ async function performGlobalSearch() {
     });
 }
 
-async function highlightChunk(text, side) {
+function renderContinuationIndicator(side, layer, direction, targetPage, x, y) {
+    const div = document.createElement('div');
+    // Using Tailwind classes for the transparent, minimalistic indicator UI
+    div.className = 'continuation-indicator absolute z-[30] pointer-events-auto flex items-center bg-transparent';
+    
+    const isNext = direction === 'next';
+    
+    div.innerHTML = `
+        <div class="flex items-center gap-1 bg-white/70 backdrop-blur-sm px-2 py-1 rounded shadow-sm border border-gray-200/50 hover:bg-white/90 transition-colors cursor-pointer group btn-continue">
+            <span class="text-[10px] text-blue-600 font-semibold opacity-70 group-hover:opacity-100 transition-opacity">
+                 ${isNext ? 'Pg ' + targetPage + ' <i class="fa-solid fa-arrow-right ml-0.5"></i>' : '<i class="fa-solid fa-arrow-left mr-0.5"></i> Pg ' + targetPage}
+            </span>
+        </div>
+        <button class="btn-cancel w-5 h-5 flex items-center justify-center rounded-full bg-red-50/50 hover:bg-red-100 text-red-500 hover:text-red-600 transition-colors ml-1" title="Cancel Highlight">
+            <i class="fa-solid fa-times text-[10px]"></i>
+        </button>
+    `;
+    
+    // Position near the bounds of the last/first matched highlight
+    div.style.left = `${Math.max(10, x - 20)}px`;
+    div.style.top = `${isNext ? y + 10 : Math.max(10, y - 30)}px`; 
+    
+    const btnContinue = div.querySelector('.btn-continue');
+    btnContinue.onclick = (e) => {
+        e.stopPropagation();
+        // Trigger jump to target page natively keeping the highlight active
+        if (state.activeCitation) {
+            state.activeCitation.pageNum = targetPage;
+            state.activeCitation.scrolled = false;
+        }
+        state.view[side].pageNum = targetPage;
+        renderPage(side);
+    };
+
+    const btnCancel = div.querySelector('.btn-cancel');
+    btnCancel.onclick = (e) => {
+        e.stopPropagation();
+        // Clear the state and remove highlights on demand
+        state.activeCitation = null;
+        window.clearCitationHighlights(side);
+    };
+    
+    layer.appendChild(div);
+}
+
+async function highlightChunk(text, side, shouldScroll = true) {
+    clearCitationHighlights(side); // Remove previous iterations
     const layer = document.getElementById(`${side}-search-layer`);
-    layer.innerHTML = ''; 
     const viewState = state.view[side];
     const docId = viewState.docId;
+    
+    // --- AUTO CANCEL LOGIC ---
+    // Auto-cancel if the user navigates away natively (e.g., changing page using standard controls)
+    if (state.activeCitation && (state.activeCitation.docId !== docId || state.activeCitation.pageNum !== viewState.pageNum)) {
+        state.activeCitation = null;
+        return; 
+    }
+
     if (!docId || !state.documents[docId]) return;
 
     try {
@@ -269,32 +335,53 @@ async function highlightChunk(text, side) {
         const textContent = await page.getTextContent();
         const viewport = page.getViewport({ scale: viewState.scale });
         
-        const searchTerm = text.substring(0, 80).trim().toLowerCase().replace(/\s+/g, ' ');
-        const searchWords = searchTerm.split(' ').filter(w => w.length > 2);
-        
+        // Use the full chunk text, strip punctuation, and split into valid keywords
+        const searchWords = text.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+        if (searchWords.length === 0) return;
+
         const itemsWithPos = textContent.items.map(item => ({
             item,
-            text: item.str,
-            lower: item.str.toLowerCase()
+            lower: item.str.toLowerCase().replace(/[^a-z0-9\s]/g, '')
         }));
 
         let bestMatchItems = [];
         let bestScore = 0;
+        let bestMatchIndices = { start: -1, end: -1 };
 
+        // Dynamic block matching: Search for the highest density of matched text
         for (let start = 0; start < itemsWithPos.length; start++) {
-            for (let len = 1; len <= Math.min(8, itemsWithPos.length - start); len++) {
+            const maxLen = Math.min(80, itemsWithPos.length - start);
+            for (let len = 1; len <= maxLen; len++) {
                 const group = itemsWithPos.slice(start, start + len);
                 const groupText = group.map(g => g.lower).join(' ');
                 
-                const matchCount = searchWords.filter(w => groupText.includes(w)).length;
+                let matchCount = 0;
+                searchWords.forEach(w => {
+                    if (groupText.includes(w)) matchCount++;
+                });
+                
                 const score = matchCount / searchWords.length;
 
-                if (score > bestScore && score > 0.5) {
+                if (score > bestScore) {
                     bestScore = score;
                     bestMatchItems = group.map(g => g.item);
+                    bestMatchIndices = { start, end: start + len - 1 };
+                } else if (score === bestScore && score > 0) {
+                    // Prefer shorter groups if the score is tied (tightens the highlight area)
+                    if (len < bestMatchItems.length) {
+                        bestMatchItems = group.map(g => g.item);
+                        bestMatchIndices = { start, end: start + len - 1 };
+                    }
                 }
             }
         }
+
+        if (bestMatchItems.length === 0) return;
+
+        let maxY = -Infinity;
+        let minY = Infinity;
+        let lastItemLeft = 0;
+        let lastItemBottom = 0;
 
         bestMatchItems.forEach(item => {
             const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
@@ -315,18 +402,33 @@ async function highlightChunk(text, side) {
             div.style.width = `${textWidth}px`;
             div.style.height = `${fontSize + 2}px`;
             layer.appendChild(div);
+
+            if (top > maxY) {
+                maxY = top;
+                lastItemLeft = left;
+                lastItemBottom = bottom;
+            }
+            if (top < minY) minY = top;
         });
 
-        if (bestMatchItems.length > 0) {
-            const firstItem = bestMatchItems[0];
-            const tx = pdfjsLib.Util.transform(
-                page.getViewport({ scale: viewState.scale }).transform, 
-                firstItem.transform
-            );
+        // --- Continuation Logic ---
+        // If we didn't perfectly match all words (score < 0.95) and the match hits a page boundary
+        if (bestScore < 0.95) {
+            const isNearEndOfPage = bestMatchIndices.end >= itemsWithPos.length - 25;
+            const isNearStartOfPage = bestMatchIndices.start <= 25;
+            
+            if (isNearEndOfPage && viewState.pageNum < state.documents[docId].pageCount) {
+                renderContinuationIndicator(side, layer, 'next', viewState.pageNum + 1, lastItemLeft, lastItemBottom);
+            }
+            else if (isNearStartOfPage && viewState.pageNum > 1) {
+                renderContinuationIndicator(side, layer, 'prev', viewState.pageNum - 1, lastItemLeft, minY);
+            }
+        }
+
+        if (shouldScroll) {
             const viewport_el = els[side + 'Viewport'];
-            const elementTop = tx[5];
             viewport_el.scrollTo({ 
-                top: elementTop - viewport_el.clientHeight / 2, 
+                top: minY - viewport_el.clientHeight / 2, 
                 behavior: 'smooth' 
             });
         }

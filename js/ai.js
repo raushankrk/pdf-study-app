@@ -255,6 +255,10 @@ async function indexDocuments(force = false) {
 
         const doc = state.documents[docId];
         const totalPages = Math.min(doc.pageCount, 50); 
+        
+        // 1. Build a complete string of the entire document text and map it to pages
+        let fullDocText = "";
+        let pageMappings = [];
 
         for (let i = 1; i <= totalPages; i++) {
             try {
@@ -262,25 +266,44 @@ async function indexDocuments(force = false) {
                 const textContent = await page.getTextContent();
                 const pageText = textContent.items.map(item => item.str).join(' ').trim();
                 
-                if(pageText.length < 10) continue;
-
-                for (let start = 0; start < pageText.length; start += (chunkSize - overlap)) {
-                    const chunk = pageText.substring(start, start + chunkSize);
-                    if (chunk.trim().length > 10) {
-                        const vector = await getEmbedding(chunk);
-                        if (vector) {
-                            state.embeddings.push({
-                                id: `chunk_${docId}_${i}_${start}`,
-                                text: chunk,
-                                vector: vector,
-                                docId: docId,
-                                docName: doc.name,
-                                pageNum: i
-                            });
-                        }
+                if (pageText.length > 0) {
+                    const startIdx = fullDocText.length;
+                    fullDocText += pageText + " "; // Add space gap to represent page boundary
+                    pageMappings.push({
+                        page: i,
+                        start: startIdx,
+                        end: fullDocText.length
+                    });
+                }
+            } catch (e) { console.error("Error extracting page", i, e); }
+        }
+        
+        // 2. Chunk the compiled cross-page text
+        for (let start = 0; start < fullDocText.length; start += (chunkSize - overlap)) {
+            const chunk = fullDocText.substring(start, start + chunkSize);
+            if (chunk.trim().length > 10) {
+                
+                // Determine the starting page for UI jump reference
+                let startPage = 1;
+                for (const map of pageMappings) {
+                    if (start >= map.start && start < map.end) {
+                        startPage = map.page;
+                        break;
                     }
                 }
-            } catch (e) { console.error("Error indexing page", i, e); }
+
+                const vector = await getEmbedding(chunk);
+                if (vector) {
+                    state.embeddings.push({
+                        id: `chunk_${docId}_${start}`,
+                        text: chunk,
+                        vector: vector,
+                        docId: docId,
+                        docName: doc.name,
+                        pageNum: startPage // Identifies where the chunk initiates
+                    });
+                }
+            }
         }
     }
     
@@ -357,12 +380,6 @@ async function handleChat() {
             }
         }
     }
-
-    console.log(`[Retrieval] Selected Chunks: ${scoredEmbeddings.length}`);
-    console.log(`[Retrieval] Total Characters: ${totalContextChars}`);
-    console.log(`[Retrieval] Highest Score: ${highestScore.toFixed(4)}`);
-    console.log(`[Retrieval] Lowest Selected Score: ${lowestSelectedScore.toFixed(4)}`);
-    // ---------------------------------------------------------
 
     state.currentContextChunks = scoredEmbeddings;
 
@@ -506,26 +523,35 @@ window.handleCitationClick = function(el) {
 
     if (!docId || !state.documents[docId]) return;
 
+    // Track active citation state (rendered directly inside the upcoming renderPage cycle)
+    state.activeCitation = {
+        docId: docId,
+        pageNum: pageNum,
+        text: text,
+        side: 'right',
+        scrolled: false // Freshly clicked, ensure it scrolls to view
+    };
+
     state.view.right.docId = docId;
     state.view.right.pageNum = pageNum;
     
     renderPage('right');
-
-    setTimeout(() => {
-        highlightChunk(text, 'right');
-    }, 100);
 };
 
 window.jumpToCitation = function(index) {
     const chunk = state.currentContextChunks[index];
     if (!chunk) return;
 
+    state.activeCitation = {
+        docId: chunk.docId,
+        pageNum: chunk.pageNum,
+        text: chunk.text,
+        side: 'right',
+        scrolled: false
+    };
+
     state.view.right.docId = chunk.docId;
     state.view.right.pageNum = chunk.pageNum;
     
     renderPage('right');
-
-    setTimeout(() => {
-        highlightChunk(chunk.text, 'right');
-    }, 100);
 };

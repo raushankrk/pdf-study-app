@@ -58,6 +58,7 @@ const state = {
         dragStartPositions: null,
     },
     highlightRequest: null,
+    activeCitation: null, // Tracks the currently active citation highlight
     projectFileHandle: null,
     globalMouse: { x: 0, y: 0 },
     pendingImagePos: null,

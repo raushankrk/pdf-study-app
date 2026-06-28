@@ -187,6 +187,24 @@ async function renderPage(side) {
             renderSearchHighlights(side);
         }
 
+        // ---- CITATION HIGHLIGHT LOGIC ----
+        if (state.activeCitation && state.activeCitation.side === side) {
+            // Check if we are physically on the target doc/page
+            if (state.activeCitation.docId === docId && state.activeCitation.pageNum === viewState.pageNum) {
+                const shouldScroll = !state.activeCitation.scrolled; 
+                state.activeCitation.scrolled = true; // Ensure scrolling only happens once immediately after click
+                highlightChunk(state.activeCitation.text, side, shouldScroll);
+            } else {
+                // If user navigates away, clear the state securely.
+                state.activeCitation = null;
+                if (typeof clearCitationHighlights === 'function') clearCitationHighlights(side);
+            }
+        } else {
+            // Keep clean layer for unrelated views/side
+            if (typeof clearCitationHighlights === 'function') clearCitationHighlights(side);
+        }
+        // ----------------------------------
+
         const viewportEl = els[side + 'Viewport'];
         if (viewState.scrollTop) viewportEl.scrollTop = viewState.scrollTop;
 
