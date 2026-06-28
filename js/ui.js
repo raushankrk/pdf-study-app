@@ -98,6 +98,19 @@ function setAppMode(mode, save = true) {
         cancelSnip();
     }
 
+    if (state.linkCreation && state.linkCreation.active) {
+        state.linkCreation.active = false;
+        state.linkCreation.sourceData = null;
+        if(els.currentPath) {
+            els.currentPath.style.display = 'none';
+            els.currentPath.setAttribute('d', '');
+        }
+        if (typeof renderMarkersForView === 'function') {
+            renderMarkersForView('left');
+            renderMarkersForView('right');
+        }
+    }
+
     if (mode === 'navigation') {
         els.modeNavBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
         els.modeNavBtn.classList.remove('text-gray-500');
@@ -105,6 +118,7 @@ function setAppMode(mode, save = true) {
         document.body.classList.add('linking-mode');
         els.modeLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
         els.modeLinkBtn.classList.remove('text-gray-500');
+        showModal("Link Mode", "1. Click once to set the START point.\n2. Navigate to any page or document.\n3. Click again to set the END point.");
     } else if (mode === 'snip-link') {
         document.body.classList.add('snip-link-mode');
         if(els.modeSnipLinkBtn) {

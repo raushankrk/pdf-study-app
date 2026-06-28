@@ -70,6 +70,7 @@ const state = {
     embeddings: [],
     isIndexing: false,
     currentContextChunks: [],
+    linkCreation: { active: false, sourceData: null, sourceSide: null },
     toolSettings: {
         pen: { color: '#ef4444', thickness: 5 },
         highlighter: { color: '#facc15', thickness: 20 }, 
@@ -83,7 +84,7 @@ const state = {
         responseStyle: "Detailed", // Concise, Detailed, Expert
         temperature: 0.7,
         strictRag: true,
-        includeChatHistory: true, // <--- Added option to include chat history
+        includeChatHistory: true, 
         skipLlm: false,
         similarityThreshold: 0.65,
         contextBudget: 4000,

@@ -78,19 +78,45 @@ function handlePointerDown(e) {
     if (!state.view[clickedSide].docId) return;
 
     if (state.appMode === 'linking') {
-        state.drawing.active = true;
-        state.drawing.pointerId = e.pointerId;
-        state.drawing.startSide = clickedSide;
         const pos = getMousePosInViewport(e, clickedSide);
-        state.drawing.startPoint = { x: e.clientX, y: e.clientY }; 
-        state.drawing.startPointData = { 
-            docId: state.view[clickedSide].docId,
-            page: state.view[clickedSide].pageNum,
-            x: pos.x, y: pos.y
-        };
-        state.drawing.currentPoint = { x: e.clientX, y: e.clientY };
-        els.currentPath.style.display = 'block';
-        updatePathVisual();
+        if (!state.linkCreation.active) {
+            // First click: Set Start
+            state.linkCreation.active = true;
+            state.linkCreation.sourceData = { 
+                docId: state.view[clickedSide].docId,
+                page: state.view[clickedSide].pageNum,
+                x: pos.x, y: pos.y
+            };
+            state.linkCreation.sourceSide = clickedSide;
+            renderMarkersForView(clickedSide);
+            els.currentPath.style.display = 'block';
+        } else {
+            // Second click: Set Target
+            const targetData = {
+                docId: state.view[clickedSide].docId,
+                page: state.view[clickedSide].pageNum,
+                x: pos.x, y: pos.y
+            };
+            
+            const newLink = {
+                id: 'link_' + Date.now(),
+                source: state.linkCreation.sourceData,
+                target: targetData,
+                path: '' 
+            };
+            
+            state.links.push(newLink);
+            saveLinkToDB(newLink);
+            
+            state.linkCreation.active = false;
+            state.linkCreation.sourceData = null;
+            els.currentPath.style.display = 'none';
+            els.currentPath.setAttribute('d', '');
+            
+            renderMarkersForView('left');
+            renderMarkersForView('right');
+        }
+        return; // Prevent passing to drawing/annotation logic
     } 
     else if (state.appMode === 'annotation') {
         state.drawing.active = true;
@@ -358,9 +384,28 @@ function handlePointerMove(e) {
         els.textCreationRect.style.left = (e.clientX - Math.max(0, dx)) + 'px';
         els.textCreationRect.style.top = (e.clientY - Math.max(0, dy)) + 'px';
     }
-    else if (state.appMode === 'linking') {
-        state.drawing.currentPoint = { x: e.clientX, y: e.clientY };
-        updatePathVisual();
+    else if (state.appMode === 'linking' && state.linkCreation && state.linkCreation.active) {
+        const source = state.linkCreation.sourceData;
+        const sourceSide = state.linkCreation.sourceSide;
+        
+        // Only draw line if the source page is currently visible in its original side
+        if (state.view[sourceSide].docId === source.docId && state.view[sourceSide].pageNum === source.page) {
+            els.currentPath.style.display = 'block';
+            const rect = els[sourceSide + 'Wrapper'].getBoundingClientRect();
+            const startX = rect.left + (source.x * rect.width);
+            const startY = rect.top + (source.y * rect.height);
+            
+            const svgRect = els.drawingLayer.getBoundingClientRect();
+            const x1 = startX - svgRect.left;
+            const y1 = startY - svgRect.top;
+            const x2 = e.clientX - svgRect.left;
+            const y2 = e.clientY - svgRect.top;
+            
+            els.currentPath.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
+        } else {
+            els.currentPath.style.display = 'none';
+        }
+        return;
     } 
     else if (state.appMode === 'annotation') {
         const pos = getMousePosInViewport(e, side);
@@ -556,50 +601,8 @@ async function handlePointerUp(e) {
         }
     }
 
-    // Handle Link Connecting Finishing
-    if (state.appMode === 'linking') {
-        const leftRect = els.leftWrapper.getBoundingClientRect();
-        const rightRect = els.rightWrapper.getBoundingClientRect();
-        let endSide = null;
-
-        if (e.clientX >= leftRect.left && e.clientX <= leftRect.right && 
-            e.clientY >= leftRect.top && e.clientY <= leftRect.bottom) {
-            endSide = 'left';
-        } else if (e.clientX >= rightRect.left && e.clientX <= rightRect.right && 
-                    e.clientY >= rightRect.top && e.clientY <= rightRect.bottom) {
-            endSide = 'right';
-        }
-
-        let validLink = false;
-        if (endSide && state.view[endSide].docId) {
-            const targetDoc = state.view[endSide].docId;
-            const targetPage = state.view[endSide].pageNum;
-            const sourceDoc = state.drawing.startPointData.docId;
-
-            if (endSide !== side || targetPage !== state.drawing.startPointData.page) {
-                const pos = getMousePosInViewport(e, endSide);
-                const newLink = {
-                    id: 'link_' + Date.now(),
-                    source: state.drawing.startPointData,
-                    target: { docId: targetDoc, page: targetPage, x: pos.x, y: pos.y },
-                    path: `M ${state.drawing.startPointData.x} ${state.drawing.startPointData.y} L ${pos.x} ${pos.y}`
-                };
-                state.links.push(newLink);
-                await saveLinkToDB(newLink);
-                validLink = true;
-                renderMarkersForView(side);
-                renderMarkersForView(endSide);
-            }
-        }
-        
-        state.drawing.active = false;
-        els.currentPath.style.display = 'none';
-        els.currentPath.setAttribute('d', '');
-
-        if (!validLink && endSide) showModal("Invalid Link", "Links must start and end on different pages.");
-    } 
     // Handle All Other Annotations Finishing
-    else if (state.appMode === 'annotation') {
+    if (state.appMode === 'annotation') {
         if (state.annoTool === 'select') {
             if (state.selection.mode === 'marquee') {
                 const start = state.selection.marqueeStart;
@@ -688,7 +691,6 @@ async function handlePointerUp(e) {
                     clearSelection();
                 }
             } 
-            // FIX applied here: Retain selected elements after modifying them.
             else if (state.selection.mode === 'dragging' || state.selection.mode === 'resizing') {
                 state.selection.mode = 'idle';
                 const docId = state.view[side].docId;
@@ -743,9 +745,17 @@ function handleKeyDown(e) {
         }
     }
     
-    // SNIP CANCELLATION
-    if (e.key === 'Escape' && state.appMode === 'snip-link') {
-        cancelSnip();
+    if (e.key === 'Escape') {
+        if (state.appMode === 'snip-link') cancelSnip();
+        if (state.appMode === 'linking' && state.linkCreation.active) {
+            state.linkCreation.active = false;
+            state.linkCreation.sourceData = null;
+            els.currentPath.style.display = 'none';
+            if (typeof renderMarkersForView === 'function') {
+                renderMarkersForView('left');
+                renderMarkersForView('right');
+            }
+        }
     }
 }
 
