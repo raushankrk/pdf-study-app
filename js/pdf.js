@@ -483,6 +483,9 @@ async function deleteCurrentPage(side) {
         }
 
         renderPage(side);
+        renderPage(side === 'left' ? 'right' : 'left');
+        renderMarkersForView('left');
+        renderMarkersForView('right');
         renderDocList();
         showModal("Success", "Page deleted successfully.");
 
@@ -575,8 +578,11 @@ async function insertPage(side, type) {
         });
 
         state.view[side].pageNum = insertIndex + 1;
-        
+
         renderPage(side);
+        renderPage(side === 'left' ? 'right' : 'left');
+        renderMarkersForView('left');
+        renderMarkersForView('right');
         renderDocList();
         showModal("Success", `${type === 'blank' ? 'Blank' : 'Duplicated'} page added.`);
 
