@@ -86,22 +86,17 @@ function setAppMode(mode, save = true) {
 
     document.body.classList.remove('linking-mode', 'annotation-mode', 'anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-image', 'delete-link-mode', 'snip-link-mode');
 
-    [els.modeNavBtn, els.modeLinkBtn, els.modeDelLinkBtn, els.modeAnnoBtn, els.modeSnipLinkBtn].forEach(btn => {
-        if(btn) {
-            btn.classList.remove('bg-white', 'shadow-sm', 'text-gray-800');
-            btn.classList.add('text-gray-500');
-        }
+    // Reset all mode buttons
+    ['mode-nav-btn','mode-link-btn','mode-snip-link-btn','mode-del-link-btn'].forEach(id => {
+        document.getElementById(id)?.classList.remove('active-mode');
     });
-    els.annoTools.classList.add('hidden');
 
-    if (mode !== 'snip-link' && typeof cancelSnip === 'function') {
-        cancelSnip();
-    }
+    if (mode !== 'snip-link' && typeof cancelSnip === 'function') cancelSnip();
 
     if (state.linkCreation && state.linkCreation.active) {
         state.linkCreation.active = false;
         state.linkCreation.sourceData = null;
-        if(els.currentPath) {
+        if (els.currentPath) {
             els.currentPath.style.display = 'none';
             els.currentPath.setAttribute('d', '');
         }
@@ -111,32 +106,26 @@ function setAppMode(mode, save = true) {
         }
     }
 
-    if (mode === 'navigation') {
-        els.modeNavBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-        els.modeNavBtn.classList.remove('text-gray-500');
-    } else if (mode === 'linking') {
+    const modeMap = {
+        'navigation': 'mode-nav-btn',
+        'linking': 'mode-link-btn',
+        'snip-link': 'mode-snip-link-btn',
+        'delete-link': 'mode-del-link-btn'
+    };
+    document.getElementById(modeMap[mode])?.classList.add('active-mode');
+
+    if (mode === 'linking') {
         document.body.classList.add('linking-mode');
-        els.modeLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-        els.modeLinkBtn.classList.remove('text-gray-500');
         showModal("Link Mode", "1. Click once to set the START point.\n2. Navigate to any page or document.\n3. Click again to set the END point.");
     } else if (mode === 'snip-link') {
         document.body.classList.add('snip-link-mode');
-        if(els.modeSnipLinkBtn) {
-            els.modeSnipLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-            els.modeSnipLinkBtn.classList.remove('text-gray-500');
-        }
         showModal("Snip & Link Mode", "1. Drag a box over the source document to extract an image.\n2. Click on the destination document to place the image and automatically create a two-way link.");
     } else if (mode === 'delete-link') {
         document.body.classList.add('delete-link-mode');
-        els.modeDelLinkBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-        els.modeDelLinkBtn.classList.remove('text-gray-500');
         showModal("Delete Link Mode", "Click on any red link marker to delete it.");
     } else if (mode === 'annotation') {
         document.body.classList.add('annotation-mode');
-        els.modeAnnoBtn.classList.add('bg-white', 'shadow-sm', 'text-gray-800');
-        els.modeAnnoBtn.classList.remove('text-gray-500');
-        els.annoTools.classList.remove('hidden');
-        setAnnoTool(state.annoTool, false); 
+        setAnnoTool(state.annoTool, false);
     }
 }
 
@@ -144,25 +133,31 @@ function setAnnoTool(tool, save = true) {
     state.annoTool = tool;
     if (save) saveSettings();
 
-    const allTools = [els.toolSelect, els.toolPen, els.toolText, els.toolEraserPixel, els.toolEraserStroke, els.toolHighlighter, els.toolImage];
-    allTools.forEach(btn => {
-        if (!btn) return;
-        btn.classList.remove('bg-blue-50', 'text-blue-600', 'bg-purple-50', 'text-purple-600', 'bg-yellow-100', 'text-yellow-700');
-        btn.classList.add('text-gray-500');
+    // Switch to annotation mode if not already
+    if (state.appMode !== 'annotation') {
+        state.appMode = 'annotation';
+        document.body.classList.add('annotation-mode');
+        document.getElementById('mode-nav-btn')?.classList.remove('active-mode');
+    }
+
+    // Reset all tool buttons
+    ['tool-select','tool-pen','tool-highlighter','tool-text',
+     'tool-eraser-pixel','tool-eraser-stroke','tool-image'].forEach(id => {
+        document.getElementById(id)?.classList.remove('active-tool', 'active-highlight');
     });
 
-    document.body.classList.remove('anno-pen', 'anno-pixel-eraser', 'anno-stroke-eraser', 'anno-select', 'anno-text', 'anno-highlighter', 'anno-image');
+    // Remove all anno body classes
+    document.body.classList.remove('anno-pen','anno-pixel-eraser','anno-stroke-eraser','anno-select','anno-text','anno-highlighter','anno-image');
 
+    // Apply tool settings (color/thickness)
     if (!state.toolSettings) {
         state.toolSettings = {
             pen: { color: '#ef4444', thickness: 5 },
             highlighter: { color: '#facc15', thickness: 20 }
         };
     }
-
     if (state.toolSettings[tool]) {
         const settings = state.toolSettings[tool];
-        
         if (settings.color !== undefined) {
             state.annoColor = settings.color;
             els.colorPicker.value = settings.color;
@@ -170,47 +165,47 @@ function setAnnoTool(tool, save = true) {
         if (settings.thickness !== undefined) {
             state.annoThickness = settings.thickness;
             els.thicknessPicker.value = settings.thickness;
-            
             const thicknessDisplay = document.getElementById('thickness-val');
-            if(thicknessDisplay) thicknessDisplay.innerText = settings.thickness;
+            if (thicknessDisplay) thicknessDisplay.innerText = settings.thickness;
         }
     }
 
-    if (tool === 'select') {
-        els.toolSelect.classList.add('bg-purple-50', 'text-purple-600');
-        els.toolSelect.classList.remove('text-gray-500');
-        document.body.classList.add('anno-select');
-    } 
-    else if (tool === 'pen') {
-        els.toolPen.classList.add('bg-blue-50', 'text-blue-600');
-        els.toolPen.classList.remove('text-gray-500');
-        document.body.classList.add('anno-pen');
-    } 
-    else if (tool === 'text') {
-        els.toolText.classList.add('bg-blue-50', 'text-blue-600');
-        els.toolText.classList.remove('text-gray-500');
-        document.body.classList.add('anno-text');
-    } 
-    else if (tool === 'eraser-pixel') {
-        els.toolEraserPixel.classList.add('bg-blue-50', 'text-blue-600');
-        els.toolEraserPixel.classList.remove('text-gray-500');
-        document.body.classList.add('anno-pixel-eraser');
-    } 
-    else if (tool === 'eraser-stroke') {
-        els.toolEraserStroke.classList.add('bg-blue-50', 'text-blue-600');
-        els.toolEraserStroke.classList.remove('text-gray-500');
-        document.body.classList.add('anno-stroke-eraser');
-    }
-    else if (tool === 'highlighter') {
-        els.toolHighlighter.classList.add('bg-yellow-100', 'text-yellow-700');
-        els.toolHighlighter.classList.remove('text-gray-500');
+    // Activate correct button and body class
+    if (tool === 'highlighter') {
+        document.getElementById('tool-highlighter')?.classList.add('active-highlight');
         document.body.classList.add('anno-highlighter');
+    } else {
+        const toolMap = {
+            'select':        { btn: 'tool-select',        cls: 'anno-select' },
+            'pen':           { btn: 'tool-pen',           cls: 'anno-pen' },
+            'text':          { btn: 'tool-text',          cls: 'anno-text' },
+            'eraser-pixel':  { btn: 'tool-eraser-pixel',  cls: 'anno-pixel-eraser' },
+            'eraser-stroke': { btn: 'tool-eraser-stroke', cls: 'anno-stroke-eraser' },
+            'image':         { btn: 'tool-image',         cls: 'anno-image' },
+        };
+        if (toolMap[tool]) {
+            document.getElementById(toolMap[tool].btn)?.classList.add('active-tool');
+            document.body.classList.add(toolMap[tool].cls);
+        }
     }
-    else if (tool === 'image') {
-        els.toolImage.classList.add('bg-blue-50', 'text-blue-600');
-        els.toolImage.classList.remove('text-gray-500');
-        document.body.classList.add('anno-image');
+
+    // Show/hide pen customization panel
+    const isLineTool = (tool === 'pen' || tool === 'highlighter');
+    const penCustomization = document.getElementById('pen-customization');
+    const penSep = document.getElementById('pen-customization-sep');
+    if (penCustomization) {
+        penCustomization.classList.toggle('hidden', !isLineTool);
+        penCustomization.classList.toggle('flex', isLineTool);
     }
+    if (penSep) {
+        penSep.classList.toggle('hidden', !isLineTool);
+    }
+
+    // Show/hide line mode button
+    const lineModeBtn = document.getElementById('tool-line-mode');
+    if (lineModeBtn) lineModeBtn.style.display = isLineTool ? '' : 'none';
+
+    updateThicknessPreview();
 }
 
 // ---- Modals ----
@@ -394,4 +389,61 @@ async function clearAllData() {
         els.emptyMsg.style.display = 'block';
         showModal("Success", "All data cleared.");
     }
+}
+
+function toggleLineMode() {
+    state.lineMode = state.lineMode === 'freehand' ? 'straight' : 'freehand';
+    const btn = document.getElementById('tool-line-mode');
+    if (state.lineMode === 'straight') {
+        btn.classList.add('bg-blue-50', 'text-blue-600');
+        btn.classList.remove('text-gray-500');
+        btn.title = 'Straight Line (click to switch to Freehand)';
+    } else {
+        btn.classList.remove('bg-blue-50', 'text-blue-600');
+        btn.classList.add('text-gray-500');
+        btn.title = 'Freehand (click to switch to Straight Line)';
+    }
+    saveSettings();
+}
+
+function updateThicknessPreview() {
+    const canvas = document.getElementById('thickness-preview-canvas');
+    if (!canvas) return;
+    canvas.style.cursor = 'pointer';
+    canvas.title = 'Click to change color';
+    canvas.onclick = () => document.getElementById('color-picker').click();
+
+    const ctx = canvas.getContext('2d');
+    const size = canvas.width;
+    ctx.clearRect(0, 0, size, size);
+
+    const isHighlighter = state.annoTool === 'highlighter';
+    const thickness = state.annoThickness;
+
+    // Scale dot radius: thickness 1→2px radius, thickness 20→16px radius
+    const radius = 2 + (thickness / 20) * 14;
+
+    const color = state.annoColor || '#ef4444';
+
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, radius, 0, Math.PI * 2);
+
+    if (isHighlighter) {
+        // Highlighter: flat semi-transparent rectangle feel
+        ctx.clearRect(0, 0, size, size);
+        const hw = radius * 2.5;
+        const hh = radius * 0.9;
+        ctx.fillStyle = hexToRgba(color, 0.45);
+        ctx.fillRect(size / 2 - hw / 2, size / 2 - hh / 2, hw, hh);
+    } else {
+        ctx.fillStyle = color;
+        ctx.fill();
+    }
+}
+
+function hexToRgba(hex, alpha) {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
 }

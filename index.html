@@ -26,113 +26,154 @@
 <body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
 
     <!-- Header -->
-    <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
+    <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
+        
+        <!-- Left: Brand -->
         <div class="flex items-center gap-3">
-            <!-- Left Sidebar Toggle -->
-            <button onclick="toggleLeftSidebar()" class="toggle-left-btn w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-transform" title="Toggle Documents Sidebar">
+            <button onclick="toggleLeftSidebar()" class="toggle-left-btn w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-all" title="Toggle Sidebar (Ctrl+B)">
                 <i class="fa-solid fa-bars"></i>
             </button>
-
-            <i class="fa-solid fa-file-pdf text-red-500 text-2xl"></i>
-            <div>
-                <h1 class="text-xl font-bold text-gray-800 leading-tight">PDF Linker Studio</h1>
-                <p class="text-[10px] text-green-600 font-medium"><i class="fa-solid fa-check-circle"></i> Ready</p>
-            </div>
+            <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
+            <h1 class="text-base font-bold text-gray-800">PDF Linker Studio</h1>
         </div>
-        
-        <div class="flex items-center gap-2">
-            <!-- Mode Switcher -->
-            <div class="flex bg-gray-100 rounded-lg p-1">
-                <button id="mode-nav-btn" class="px-3 py-1.5 rounded-md text-sm font-medium bg-white shadow-sm text-gray-800 transition-all" onclick="setAppMode('navigation')" title="Navigate Mode">
+
+        <!-- Center: All Tools -->
+        <div class="flex items-center gap-1">
+
+            <!-- Group 1: App Modes -->
+            <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                <button id="mode-nav-btn" onclick="setAppMode('navigation')"
+                    class="tool-btn active-mode"
+                    title="Navigate (V)">
                     <i class="fa-solid fa-arrow-pointer"></i>
                 </button>
-                <button id="mode-link-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all" onclick="setAppMode('linking')" title="Draw Link Mode">
+                <button id="mode-link-btn" onclick="setAppMode('linking')"
+                    class="tool-btn"
+                    title="Draw Link (L)">
                     <i class="fa-solid fa-link"></i>
                 </button>
-                <!-- NEW SNIP & LINK BUTTON -->
-                <button id="mode-snip-link-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all" onclick="setAppMode('snip-link')" title="Snip Image & Link">
+                <button id="mode-snip-link-btn" onclick="setAppMode('snip-link')"
+                    class="tool-btn"
+                    title="Snip & Link (S)">
                     <i class="fa-solid fa-scissors"></i>
                 </button>
-                <button id="mode-del-link-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all relative" onclick="setAppMode('delete-link')" title="Delete Link Mode (Click links to delete)">
-                    <i class="fa-solid fa-eraser"></i>
-                    <i class="fa-solid fa-link absolute -bottom-0.5 -right-0.5 text-[8px] text-red-500 bg-white rounded-full"></i>
-                </button>
-                <button id="mode-anno-btn" class="px-3 py-1.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-700 transition-all" onclick="setAppMode('annotation')" title="Annotation Mode">
-                    <i class="fa-solid fa-pen"></i>
+                <button id="mode-del-link-btn" onclick="setAppMode('delete-link')"
+                    class="tool-btn"
+                    title="Delete Link (X)">
+                    <i class="fa-solid fa-link-slash"></i>
                 </button>
             </div>
 
-            <!-- Annotation Sub-Tools -->
-            <div id="anno-tools" class="hidden flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-1 shadow-sm">
-                <button id="tool-select" class="w-8 h-8 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors" onclick="setAnnoTool('select')" title="Select / Group / Move / Resize">
+            <div class="w-px h-6 bg-gray-300 mx-1"></div>
+
+            <!-- Group 2: Annotation Draw Tools -->
+            <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                <button id="tool-select" onclick="setAnnoTool('select')"
+                    class="tool-btn"
+                    title="Select (Ctrl+S)">
                     <i class="fa-solid fa-object-group"></i>
                 </button>
-                <button id="tool-pen" class="w-8 h-8 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors" onclick="setAnnoTool('pen')" title="Pen">
+                <button id="tool-pen" onclick="setAnnoTool('pen')"
+                    class="tool-btn"
+                    title="Pen (P)">
                     <i class="fa-solid fa-pen-nib"></i>
                 </button>
-                <button id="tool-text" class="w-8 h-8 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors" onclick="setAnnoTool('text')" title="Add Text Box">
-                    <i class="fa-solid fa-font"></i>
-                </button>
-                <button id="tool-eraser-pixel" class="w-8 h-8 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors" onclick="setAnnoTool('eraser-pixel')" title="Pixel Eraser">
-                    <i class="fa-solid fa-eraser"></i>
-                </button>
-                <button id="tool-eraser-stroke" class="w-8 h-8 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors" onclick="setAnnoTool('eraser-stroke')" title="Stroke Eraser (Swipe to Delete)">
-                    <i class="fa-solid fa-ban"></i>
-                </button>
-                <button id="tool-highlighter" class="w-8 h-8 rounded flex items-center justify-center text-yellow-600 hover:bg-yellow-50 transition-colors" onclick="setAnnoTool('highlighter')" title="Highlighter">
+                <button id="tool-highlighter" onclick="setAnnoTool('highlighter')"
+                    class="tool-btn"
+                    title="Highlighter (H)">
                     <i class="fa-solid fa-highlighter"></i>
                 </button>
-                
-                <div class="w-px h-5 bg-gray-300 mx-1"></div>
-
-                <button id="tool-image" onclick="setAnnoTool('image')" class="w-8 h-8 rounded flex items-center justify-center text-gray-500 hover:bg-gray-100 transition-colors" title="Add Image (Click anywhere to place)">
+                <button id="tool-text" onclick="setAnnoTool('text')"
+                    class="tool-btn"
+                    title="Text Box (T)">
+                    <i class="fa-solid fa-font"></i>
+                </button>
+                <button id="tool-eraser-pixel" onclick="setAnnoTool('eraser-pixel')"
+                    class="tool-btn"
+                    title="Pixel Eraser (E)">
+                    <i class="fa-solid fa-eraser"></i>
+                </button>
+                <button id="tool-eraser-stroke" onclick="setAnnoTool('eraser-stroke')"
+                    class="tool-btn"
+                    title="Stroke Eraser (D)">
+                    <i class="fa-solid fa-ban"></i>
+                </button>
+                <button id="tool-image" onclick="setAnnoTool('image')"
+                    class="tool-btn"
+                    title="Add Image (I)">
                     <i class="fa-regular fa-image"></i>
                 </button>
                 <input type="file" id="image-upload" class="hidden" accept="image/*">
-                
-                <div class="w-px h-5 bg-gray-300 mx-1"></div>
+            </div>
 
-                <div class="relative w-8 h-8 overflow-hidden rounded-full border border-gray-300 shadow-sm cursor-pointer" title="Pen Color">
-                    <input type="color" id="color-picker" class="absolute -top-2 -left-2 w-12 h-12 p-0 border-0 cursor-pointer" value="#ef4444">
-                </div>
+            <div class="w-px h-6 bg-gray-300 mx-1"></div>
 
-                <div class="flex items-center gap-1 mx-1 w-auto" title="Pen Thickness">
-                    <i class="fa-solid fa-circle text-[8px] text-gray-400"></i>
-                    <input type="range" id="thickness-picker" min="1" max="20" value="5" class="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
-                    <i class="fa-solid fa-circle text-sm text-gray-400"></i>
-                    <span id="thickness-val" class="text-xs font-mono text-gray-600 w-6 text-center">5</span>
-                </div>
-
-                <div class="w-px h-5 bg-gray-300 mx-1"></div>
-
-                <button onclick="deleteSelection()" class="w-8 h-8 rounded flex items-center justify-center text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors" title="Delete Selection">
-                    <i class="fa-solid fa-trash-can"></i>
+            <!-- Group 3: Pen/Highlighter Options (shown only when pen/highlighter active) -->
+            <div id="pen-customization" class="hidden items-center bg-gray-100 rounded-lg p-1 gap-1">
+                <!-- Straight/Freehand toggle -->
+                <button id="tool-line-mode" onclick="toggleLineMode()"
+                    class="tool-btn"
+                    title="Freehand / Straight Line (F)">
+                    <i class="fa-solid fa-minus"></i>
                 </button>
-                <button onclick="undoLastStroke()" class="w-8 h-8 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors" title="Undo Last Line">
+                <div class="w-px h-5 bg-gray-300 mx-0.5"></div>
+                <!-- Thickness slider -->
+                <input type="range" id="thickness-picker" min="1" max="20" value="5"
+                    class="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mx-1">
+                <!-- Color + size preview canvas (click to pick color) -->
+                <canvas id="thickness-preview-canvas" width="32" height="32"
+                    class="rounded cursor-pointer"
+                    title="Click to change color"></canvas>
+                <input type="color" id="color-picker" class="hidden" value="#ef4444">
+            </div>
+
+            <!-- Group 3 separator: only visible when pen-customization is showing -->
+            <div id="pen-customization-sep" class="hidden w-px h-6 bg-gray-300 mx-1"></div>
+
+            <!-- Group 4: Actions -->
+            <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                <button onclick="undoLastStroke()"
+                    class="tool-btn"
+                    title="Undo (Ctrl+Z)">
                     <i class="fa-solid fa-rotate-left"></i>
                 </button>
-                <button onclick="clearCurrentPageAnnotations()" class="w-8 h-8 rounded flex items-center justify-center text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors" title="Clear Page">
+                <button onclick="deleteSelection()"
+                    class="tool-btn text-red-400 hover:text-red-600 hover:bg-red-50"
+                    title="Delete Selection (Del)">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+                <button onclick="clearCurrentPageAnnotations()"
+                    class="tool-btn text-red-400 hover:text-red-600 hover:bg-red-50"
+                    title="Clear Page Annotations">
                     <i class="fa-solid fa-file-circle-xmark"></i>
                 </button>
             </div>
 
-            <div class="h-8 w-px bg-gray-300 mx-2"></div>
-            
-            <button onclick="exportProject()" class="bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-3 py-1.5 rounded shadow-sm flex items-center gap-2 transition-colors">
-                <i class="fa-solid fa-floppy-disk"></i> Save
+        </div>
+
+        <!-- Right: Save / Open / AI -->
+        <div class="flex items-center gap-2">
+            <button onclick="exportProject()"
+                class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm transition-colors"
+                title="Save Project (Ctrl+Shift+S)">
+                <i class="fa-solid fa-floppy-disk"></i>
+                <span>Save</span>
             </button>
-            <label class="text-gray-600 hover:text-blue-600 font-medium text-sm flex items-center gap-2 cursor-pointer border border-gray-200 hover:border-blue-300 px-3 py-1.5 rounded bg-white transition-colors">
-                <i class="fa-solid fa-folder-open"></i> Open
+            <label class="flex items-center gap-1.5 text-gray-600 hover:text-blue-600 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 bg-white cursor-pointer transition-colors"
+                title="Open Project">
+                <i class="fa-solid fa-folder-open"></i>
+                <span>Open</span>
                 <input type="file" id="import-project-input" class="hidden" accept=".sqlite">
             </label>
-
-            <div class="h-8 w-px bg-gray-300 mx-2"></div>
-
-            <!-- AI Toggle in Header -->
-            <button onclick="toggleAiSidebar()" class="toggle-ai-btn bg-indigo-50 text-indigo-600 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded shadow-sm flex items-center gap-2 transition-transform font-medium text-sm" title="Toggle AI Sidebar">
-                <i class="fa-solid fa-robot"></i> <span>AI</span>
+            <div class="w-px h-6 bg-gray-300"></div>
+            <button onclick="toggleAiSidebar()"
+                class="toggle-ai-btn flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
+                title="Toggle AI Panel (Ctrl+/)">
+                <i class="fa-solid fa-robot"></i>
+                <span>AI</span>
             </button>
         </div>
+
     </header>
 
     <!-- Main Content -->

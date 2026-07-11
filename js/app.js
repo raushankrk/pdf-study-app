@@ -97,6 +97,11 @@ async function init() {
                 }
                 if (savedData.settings.appMode) setAppMode(savedData.settings.appMode, false);
                 if (savedData.settings.annoTool) setAnnoTool(savedData.settings.annoTool, false);
+                const lineModeBtn = document.getElementById('tool-line-mode');
+                if (lineModeBtn && state.lineMode === 'straight') {
+                    lineModeBtn.classList.add('bg-blue-50', 'text-blue-600');
+                    lineModeBtn.classList.remove('text-gray-500');
+                }
                 if (savedData.settings.annoColor) {
                     state.annoColor = savedData.settings.annoColor;
                     els.colorPicker.value = savedData.settings.annoColor;
@@ -115,6 +120,10 @@ async function init() {
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
                 }
+                if (savedData.settings.lineMode) {
+                    state.lineMode = savedData.settings.lineMode;
+                }
+
             }
             renderDocList();
             renderChatList();
@@ -166,6 +175,7 @@ async function init() {
         }
         if (state.annoTool === 'pen') setAnnoTool('pen', false); 
         saveSettings();
+        updateThicknessPreview();
     });
 
     els.thicknessPicker.addEventListener('input', (e) => {
@@ -176,6 +186,7 @@ async function init() {
             state.toolSettings[state.annoTool].thickness = state.annoThickness;
         }
         saveSettings();
+        updateThicknessPreview();
     });
 
     // AI Settings Range Sliders (live text update)

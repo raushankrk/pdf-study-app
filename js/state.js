@@ -17,6 +17,7 @@ const state = {
     links: [], 
     appMode: 'navigation', 
     annoTool: 'pen', 
+    lineMode: 'freehand',
     annoColor: '#ef4444',
     annoThickness: 5, 
     annotations: {}, 

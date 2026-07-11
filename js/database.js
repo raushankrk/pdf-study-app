@@ -57,6 +57,7 @@ async function saveSettings() {
         view: state.view,
         splitRatio: state.splitRatio,
         appMode: state.appMode,
+        lineMode: state.lineMode,
         annoTool: state.annoTool,
         annoColor: state.annoColor,
         annoThickness: state.annoThickness,

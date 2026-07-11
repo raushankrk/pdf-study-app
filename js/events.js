@@ -236,6 +236,7 @@ function handlePointerDown(e) {
                 state.drawing.startSide = clickedSide;
             } else {
                 const pos = getMousePosInViewport(e, clickedSide);
+                state.drawing.straightLineStart = { x: pos.x, y: pos.y };
                 startAnnotationStroke(clickedSide, pos.x, pos.y);
             }
         }
@@ -511,7 +512,19 @@ function handlePointerMove(e) {
         else if (state.annoTool === 'eraser-stroke') {
             deleteStrokeAt(side, pos.x, pos.y);
         } else {
-            continueAnnotationStroke(side, pos.x, pos.y);
+            if (state.lineMode === 'straight' && (state.annoTool === 'pen' || state.annoTool === 'highlighter')) {
+                // Redraw from scratch each move to show live preview
+                const start = state.drawing.straightLineStart;
+                const docId = state.view[side].docId;
+                const pageNum = state.view[side].pageNum;
+                const strokes = state.annotations[docId][pageNum].strokes;
+                const currentStroke = strokes[strokes.length - 1];
+                // Reset points to just start + current, simulating a straight line preview
+                currentStroke.points = [start, { x: pos.x, y: pos.y }];
+                renderAnnotations(side);
+            } else {
+                continueAnnotationStroke(side, pos.x, pos.y);
+            }
         }
     }
 }
@@ -708,10 +721,21 @@ async function handlePointerUp(e) {
         } 
         else {
             clearSelection();
-            state.selection.mode = 'idle';
             if (state.annoTool !== 'text' && state.annoTool !== 'eraser-stroke' && state.annoTool !== 'image') {
+                // For straight line, lock in the two-point stroke before saving
+                if (state.lineMode === 'straight' && (state.annoTool === 'pen' || state.annoTool === 'highlighter')) {
+                    const docId = state.view[side].docId;
+                    const pageNum = state.view[side].pageNum;
+                    const strokes = state.annotations[docId]?.[pageNum]?.strokes;
+                    if (strokes && strokes.length > 0) {
+                        const lastStroke = strokes[strokes.length - 1];
+                        const endPos = getMousePosInViewport(e, side);
+                        lastStroke.points = [state.drawing.straightLineStart, { x: endPos.x, y: endPos.y }];
+                    }
+                }
                 finishAnnotationStroke(side);
-            } else if (state.annoTool !== 'image') {
+            }
+            else if (state.annoTool !== 'image') {
                 const docId = state.view[side].docId;
                 if(docId) saveAnnotationsToDB(docId, state.annotations[docId]);
             }
@@ -757,6 +781,40 @@ function handleKeyDown(e) {
             }
         }
     }
+
+    // Ignore shortcuts when typing
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+
+    // Ctrl shortcuts
+    if (e.ctrlKey) {
+        if (e.key === 'z') { e.preventDefault(); undoLastStroke(); }
+        if (e.key === '/') { e.preventDefault(); toggleAiSidebar(); }
+        if (e.key === 'b') { e.preventDefault(); toggleLeftSidebar(); }
+        if (e.shiftKey && e.key === 'S') { e.preventDefault(); exportProject(); }
+        if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomAtMouse(0.25); }
+        if (e.key === '-') { e.preventDefault(); zoomAtMouse(-0.25); }
+        if (e.key === '0') { e.preventDefault(); resetZoomAtMouse(); }
+        return;
+    }
+
+    // Single key shortcuts
+    const shortcuts = {
+        'v': () => setAppMode('navigation'),
+        'l': () => setAppMode('linking'),
+        's': () => setAppMode('snip-link'),
+        'x': () => setAppMode('delete-link'),
+        'p': () => setAnnoTool('pen'),
+        'h': () => setAnnoTool('highlighter'),
+        't': () => setAnnoTool('text'),
+        'e': () => setAnnoTool('eraser-pixel'),
+        'd': () => setAnnoTool('eraser-stroke'),
+        'i': () => setAnnoTool('image'),
+        'f': () => toggleLineMode(),
+    };
+
+    if (shortcuts[e.key.toLowerCase()]) {
+        shortcuts[e.key.toLowerCase()]();
+    }
 }
 
 const handleScroll = debounce((side) => {
@@ -793,4 +851,91 @@ function handleViewportZoom(e, side) {
         
         els[side + 'ZoomLevel'].innerText = Math.round(effectiveScale * 100) + '%';
     }
+}
+
+function getActiveSideUnderMouse() {
+    const mx = state.globalMouse.x;
+    const my = state.globalMouse.y;
+    const leftRect = els.leftPanel.getBoundingClientRect();
+    const rightRect = els.rightPanel.getBoundingClientRect();
+
+    if (mx >= leftRect.left && mx <= leftRect.right &&
+        my >= leftRect.top && my <= leftRect.bottom) return 'left';
+    if (mx >= rightRect.left && mx <= rightRect.right &&
+        my >= rightRect.top && my <= rightRect.bottom) return 'right';
+
+    // Fallback to last active side
+    return state.lastActiveSide;
+}
+
+function zoomAtMouse(delta) {
+    const side = getActiveSideUnderMouse();
+    if (!state.view[side].docId) return;
+
+    const viewport = els[side + 'Viewport'];
+    const wrapper = els[side + 'Wrapper'];
+
+    // Mouse position relative to viewport
+    const viewportRect = viewport.getBoundingClientRect();
+    const mouseX = state.globalMouse.x - viewportRect.left;
+    const mouseY = state.globalMouse.y - viewportRect.top;
+
+    // Mouse position as fraction of current canvas
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const fracX = (state.globalMouse.x - wrapperRect.left) / wrapperRect.width;
+    const fracY = (state.globalMouse.y - wrapperRect.top) / wrapperRect.height;
+
+    // Apply zoom
+    const oldScale = state.view[side].scale;
+    let newScale = oldScale + delta;
+    if (newScale < 0.25) newScale = 0.25;
+    if (newScale > 5.0) newScale = 5.0;
+    state.view[side].scale = newScale;
+
+    updateZoomIndicator(side);
+
+    // Re-render then scroll so the point under mouse stays fixed
+    renderPage(side).then ? renderPage(side).then(() => {
+        scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY);
+    }) : (() => {
+        // renderPage is async but may not return promise in all cases
+        setTimeout(() => scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY), 50);
+    })();
+
+    saveSettings();
+}
+
+function scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY) {
+    const viewport = els[side + 'Viewport'];
+    const wrapper = els[side + 'Wrapper'];
+
+    // New canvas size after render
+    const newCanvasWidth = wrapper.offsetWidth;
+    const newCanvasHeight = wrapper.offsetHeight;
+
+    // Where that fraction point is now in canvas pixels
+    const newPointX = fracX * newCanvasWidth;
+    const newPointY = fracY * newCanvasHeight;
+
+    // Scroll so that point aligns back under the mouse
+    viewport.scrollLeft = newPointX - mouseX;
+    viewport.scrollTop = newPointY - mouseY;
+}
+
+function resetZoomAtMouse() {
+    const side = getActiveSideUnderMouse();
+    if (!state.view[side].docId) return;
+
+    const viewport = els[side + 'Viewport'];
+    const wrapperRect = els[side + 'Wrapper'].getBoundingClientRect();
+    const fracX = (state.globalMouse.x - wrapperRect.left) / wrapperRect.width;
+    const fracY = (state.globalMouse.y - wrapperRect.top) / wrapperRect.height;
+    const viewportRect = viewport.getBoundingClientRect();
+    const mouseX = state.globalMouse.x - viewportRect.left;
+    const mouseY = state.globalMouse.y - viewportRect.top;
+
+    state.view[side].scale = 1.5; // default scale
+    updateZoomIndicator(side);
+    setTimeout(() => scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY), 50);
+    saveSettings();
 }
