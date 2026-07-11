@@ -116,13 +116,10 @@ function setAppMode(mode, save = true) {
 
     if (mode === 'linking') {
         document.body.classList.add('linking-mode');
-        showModal("Link Mode", "1. Click once to set the START point.\n2. Navigate to any page or document.\n3. Click again to set the END point.");
     } else if (mode === 'snip-link') {
         document.body.classList.add('snip-link-mode');
-        showModal("Snip & Link Mode", "1. Drag a box over the source document to extract an image.\n2. Click on the destination document to place the image and automatically create a two-way link.");
     } else if (mode === 'delete-link') {
         document.body.classList.add('delete-link-mode');
-        showModal("Delete Link Mode", "Click on any red link marker to delete it.");
     } else if (mode === 'annotation') {
         document.body.classList.add('annotation-mode');
         setAnnoTool(state.annoTool, false);
