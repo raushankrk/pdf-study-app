@@ -1,6 +1,47 @@
 // ==========================================
 // 📁 9. annotations.js
 // ==========================================
+
+function configureMarked() {
+    // Custom renderer for code blocks with highlight.js
+    const renderer = new marked.Renderer();
+
+    renderer.code = function(code, lang) {
+        const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext';
+        let highlighted;
+        try {
+            highlighted = hljs.highlight(code, { language }).value;
+        } catch (e) {
+            highlighted = hljs.highlightAuto(code).value;
+        }
+        const label = lang
+            ? `<span class="code-lang-label">${lang}</span>`
+            : '';
+        return `<pre>${label}<code class="hljs language-${language}">${highlighted}</code></pre>`;
+    };
+
+    marked.setOptions({
+        renderer,
+        breaks: true,    // single newline = <br>
+        gfm: true,       // github flavoured markdown
+    });
+}
+
+function renderMath(el) {
+    if (typeof renderMathInElement === 'undefined') return;
+    renderMathInElement(el, {
+        delimiters: [
+            { left: '$$', right: '$$', display: true  },  // block math
+            { left: '$',  right: '$',  display: false },  // inline math
+            { left: '\\[', right: '\\]', display: true  },
+            { left: '\\(', right: '\\)', display: false },
+        ],
+        throwOnError: false,
+        errorColor: '#ef4444',
+        output: 'html',
+    });
+}
+
 async function handleImageUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -274,8 +315,12 @@ function cancelSnip() {
 
 function renderTextLayer(side) {
     const wrapper = els[side + 'Wrapper'];
-    const existingBoxes = wrapper.querySelectorAll('.text-box');
-    existingBoxes.forEach(el => el.remove());
+
+    Array.from(wrapper.querySelectorAll('.text-box-wrapper')).forEach(el => {
+        try {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        } catch(err) {}
+    });
 
     const viewState = state.view[side];
     const docId = viewState.docId;
@@ -283,67 +328,256 @@ function renderTextLayer(side) {
     const scale = viewState.scale;
 
     if (!state.annotations[docId] || !state.annotations[docId][pageNum]) return;
-
     const boxes = state.annotations[docId][pageNum].textBoxes || [];
 
     boxes.forEach(box => {
-        const div = document.createElement('div');
-        div.className = 'text-box';
-        if (state.selection.selectedTextBoxes.includes(box)) {
-            div.classList.add('selected');
+        if (box._editing) {
+            renderTextBoxEditor(box, side, wrapper, scale);
+        } else {
+            renderTextBoxMarkdown(box, side, wrapper, scale);
         }
-        
-        div.contentEditable = true;
-        div.innerText = box.content;
-        div.dataset.id = box.id;
-        
-        div.style.left = (box.x * 100) + '%';
-        div.style.top = (box.y * 100) + '%';
-        div.style.width = (box.w * 100) + '%';
-        div.style.height = (box.h * 100) + '%'; 
-        
-        div.style.color = box.color;
-        div.style.fontSize = (box.fontSize * scale) + 'px';
-
-        div.addEventListener('input', (e) => {
-            box.content = div.innerText;
-            if (div.scrollHeight > div.clientHeight) {
-                const wrapperHeight = els[side + 'Wrapper'].offsetHeight;
-                const newPixelHeight = div.scrollHeight;
-                box.h = newPixelHeight / wrapperHeight;
-                div.style.height = newPixelHeight + 'px';
-                debouncedSaveToDB(side); 
-            } else {
-                debouncedSaveToDB(side);
-            }
-        });
-
-        div.addEventListener('blur', () => {
-            if (!box.content.trim()) {
-                const pageData = state.annotations[docId][pageNum];
-                const idx = pageData.textBoxes.indexOf(box);
-                if (idx > -1) {
-                    pageData.textBoxes.splice(idx, 1);
-                    saveAnnotationsToDB(docId, state.annotations[docId]);
-                    div.remove();
-                    if (state.selection.selectedTextBoxes.includes(box)) {
-                        state.selection.selectedTextBoxes = state.selection.selectedTextBoxes.filter(b => b.id !== box.id);
-                    }
-                }
-            } else {
-                debouncedSaveToDB(side);
-            }
-        });
-
-        wrapper.appendChild(div);
     });
+}
+
+function createWrapperEl(box) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'text-box-wrapper';
+    wrapper.dataset.id = box.id;
+    wrapper.style.left     = (box.x * 100) + '%';
+    wrapper.style.top      = (box.y * 100) + '%';
+    wrapper.style.width    = (box.w * 100) + '%';
+    wrapper.style.height   = (box.h * 100) + '%';
+    return wrapper;
+}
+
+function attachResizeHandles(wrapperEl, box, side) {
+    const pageWrapper = els[side + 'Wrapper'];
+
+    const handleE  = document.createElement('div');
+    const handleS  = document.createElement('div');
+    const handleSE = document.createElement('div');
+    handleE.className  = 'resize-handle-e';
+    handleS.className  = 'resize-handle-s';
+    handleSE.className = 'resize-handle-se';
+    wrapperEl.appendChild(handleE);
+    wrapperEl.appendChild(handleS);
+    wrapperEl.appendChild(handleSE);
+
+    function startResize(e, mode) {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX   = e.clientX;
+        const startY   = e.clientY;
+        const startW   = box.w;
+        const startH   = box.h;
+        const pwRect   = pageWrapper.getBoundingClientRect();
+
+        function onMove(e) {
+            const dx = (e.clientX - startX) / pwRect.width;
+            const dy = (e.clientY - startY) / pwRect.height;
+            if (mode === 'e' || mode === 'se') {
+                box.w = Math.max(0.08, startW + dx);
+                if (box.x + box.w > 1) box.w = 1 - box.x;
+                wrapperEl.style.width = (box.w * 100) + '%';
+            }
+            if (mode === 's' || mode === 'se') {
+                box.h = Math.max(0.04, startH + dy);
+                if (box.y + box.h > 1) box.h = 1 - box.y;
+                wrapperEl.style.height = (box.h * 100) + '%';
+            }
+        }
+        function onUp() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            debouncedSaveToDB(side);
+        }
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+    }
+
+    handleE.addEventListener('pointerdown',  e => startResize(e, 'e'));
+    handleS.addEventListener('pointerdown',  e => startResize(e, 's'));
+    handleSE.addEventListener('pointerdown', e => startResize(e, 'se'));
+}
+
+function renderTextBoxEditor(box, side, pageWrapper, scale) {
+    const wrapperEl = createWrapperEl(box);
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'text-box-textarea';
+    textarea.value = box.content;
+    textarea.placeholder = 'Type markdown here...\n**bold**, *italic*, # heading\n$math$, ```code```';
+    textarea.style.fontSize = (box.fontSize * scale) + 'px';
+    textarea.style.color    = box.color;
+
+    textarea.addEventListener('input', () => {
+        box.content = textarea.value;
+        debouncedSaveToDB(side);
+    });
+
+    textarea.addEventListener('keydown', (e) => {
+        // Tab inserts spaces instead of changing focus
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = textarea.selectionStart;
+            const end   = textarea.selectionEnd;
+            textarea.value = textarea.value.substring(0, start) + '    ' + textarea.value.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = start + 4;
+            box.content = textarea.value;
+        }
+        // Escape or Ctrl+Enter to finish editing
+        if (e.key === 'Escape' || (e.ctrlKey && e.key === 'Enter')) {
+            e.preventDefault();
+            finishEditing(box, side);
+        }
+    });
+
+    textarea.addEventListener('blur', (e) => {
+        // Only finish if focus went outside the wrapper
+        setTimeout(() => {
+            if (!wrapperEl.contains(document.activeElement)) {
+                finishEditing(box, side);
+            }
+        }, 100);
+    });
+
+    // Prevent global pointer handlers from intercepting clicks inside editor
+    wrapperEl.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+    });
+    wrapperEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+
+    wrapperEl.appendChild(textarea);
+    attachResizeHandles(wrapperEl, box, side);
+    pageWrapper.appendChild(wrapperEl);
+
+    // Focus and place cursor at end
+    requestAnimationFrame(() => {
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    });
+}
+
+function finishEditing(box, side) {
+    if (!box._editing) return;
+    box._editing = false;
+    box.content = box.content || '';
+
+    const docId  = state.view[side].docId;
+    const pageNum = state.view[side].pageNum;
+
+    if (!box.content.trim()) {
+        const pageData = state.annotations[docId]?.[pageNum];
+        if (pageData) {
+            const idx = pageData.textBoxes.indexOf(box);
+            if (idx > -1) pageData.textBoxes.splice(idx, 1);
+            saveAnnotationsToDB(docId, state.annotations[docId]);
+        }
+    } else {
+        debouncedSaveToDB(side);
+    }
+    setTimeout(() => renderTextLayer(side), 0);
+}
+
+function renderMathInElement_safe(el) {
+    if (typeof renderMathInElement !== 'undefined') {
+        try {
+            renderMathInElement(el, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true  },
+                    { left: '$',  right: '$',  display: false },
+                    { left: '\\[', right: '\\]', display: true  },
+                    { left: '\\(', right: '\\)', display: false },
+                ],
+                throwOnError: false,
+            });
+        } catch(e) {}
+    }
+}
+
+function renderTextBoxMarkdown(box, side, pageWrapper, scale) {
+    const wrapperEl = createWrapperEl(box);
+
+    const inner = document.createElement('div');
+    inner.className = 'text-box-rendered-inner';
+    inner.style.fontSize = (box.fontSize * scale) + 'px';
+    inner.style.color    = box.color;
+
+    if (box.content && box.content.trim()) {
+        // Protect math from marked
+        let raw = box.content;
+        const mathSegments = [];
+        let mi = 0;
+
+        raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+            const key = `MATHBLOCK${mi++}END`;
+            mathSegments.push({ key, expr, display: true });
+            return key;
+        });
+        raw = raw.replace(/\$([^\n$]+?)\$/g, (_, expr) => {
+            const key = `MATHINLINE${mi++}END`;
+            mathSegments.push({ key, expr, display: false });
+            return key;
+        });
+
+        let html = marked.parse(raw);
+
+        mathSegments.forEach(({ key, expr, display }) => {
+            let rendered;
+            try {
+                rendered = katex.renderToString(expr.trim(), {
+                    displayMode: display,
+                    throwOnError: false,
+                    output: 'html',
+                });
+            } catch(err) {
+                rendered = `<span class="math-error">${expr}</span>`;
+            }
+            html = html.replaceAll(key, rendered);
+        });
+
+        inner.innerHTML = html;
+    } else {
+        inner.innerHTML = '<span style="color:#9ca3af;font-style:italic;font-size:0.85em;">Empty — double-click to edit</span>';
+    }
+
+    // Edit hint
+    const hint = document.createElement('div');
+    hint.className = 'edit-hint';
+    hint.textContent = 'Double-click to edit';
+
+    // Single click opens edit mode
+    inner.addEventListener('click', (e) => {
+        e.stopPropagation();
+        box._editing = true;
+        setTimeout(() => renderTextLayer(side), 0);
+    });
+
+    wrapperEl.appendChild(inner);
+    wrapperEl.appendChild(hint);
+    attachResizeHandles(wrapperEl, box, side);
+    pageWrapper.appendChild(wrapperEl);
 }
 
 function debouncedSaveToDB(side) {
     if (dbSaveDebounceMap[side]) clearTimeout(dbSaveDebounceMap[side]);
     dbSaveDebounceMap[side] = setTimeout(() => {
         const docId = state.view[side].docId;
-        if(docId) saveAnnotationsToDB(docId, state.annotations[docId]);
+        if (!docId) return;
+        const docAnno = state.annotations[docId];
+        const clean = {};
+        for (const page in docAnno) {
+            clean[page] = {
+                ...docAnno[page],
+                textBoxes: (docAnno[page].textBoxes || []).map(tb => {
+                    const { _editing, ...rest } = tb;
+                    return rest;
+                })
+            };
+        }
+        saveAnnotationsToDB(docId, clean);
     }, 500);
 }
 
@@ -657,6 +891,9 @@ function deleteSelection() {
             pageData.textBoxes.splice(idx, 1);
         }
     });
+    saveAnnotationsToDB(state.view[side].docId, state.annotations[state.view[side].docId]);
+    setTimeout(() => renderTextLayer(side), 0);
+
 
     state.selection.selectedStrokes.forEach(strokeObj => {
         const idx = pageData.strokes.indexOf(strokeObj);
@@ -728,4 +965,62 @@ function clearCurrentPageAnnotations() {
     };
     clearView('left', state.view.left.docId, state.view.left.pageNum);
     clearView('right', state.view.right.docId, state.view.right.pageNum);
+}
+
+function attachResizeHandles(el, box, side) {
+    const wrapper = els[side + 'Wrapper'];
+
+    const handleE  = document.createElement('div');
+    const handleS  = document.createElement('div');
+    const handleSE = document.createElement('div');
+    handleE.className  = 'resize-handle-e';
+    handleS.className  = 'resize-handle-s';
+    handleSE.className = 'resize-handle-se';
+    el.appendChild(handleE);
+    el.appendChild(handleS);
+    el.appendChild(handleSE);
+
+    function startResize(e, mode) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startW = box.w;
+        const startH = box.h;
+        const wrapperRect = wrapper.getBoundingClientRect();
+
+        function onMove(e) {
+            const dx = (e.clientX - startX) / wrapperRect.width;
+            const dy = (e.clientY - startY) / wrapperRect.height;
+
+            if (mode === 'e' || mode === 'se') {
+                box.w = Math.max(0.05, startW + dx);
+                if (box.x + box.w > 1) box.w = 1 - box.x;
+                el.style.width = (box.w * 100) + '%';
+            }
+            if (mode === 's' || mode === 'se') {
+                box.h = Math.max(0.02, startH + dy);
+                if (box.y + box.h > 1) box.h = 1 - box.y;
+                el.style.minHeight = (box.h * 100) + '%';
+                el.style.height    = (box.h * 100) + '%';
+            }
+        }
+
+        function onUp() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            debouncedSaveToDB(side);
+            // Use setTimeout to avoid conflict with any blur/focus events
+            // that may have already triggered a renderTextLayer call
+            setTimeout(() => renderTextLayer(side), 0);
+        }
+
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+    }
+
+    handleE.addEventListener('pointerdown',  (e) => startResize(e, 'e'));
+    handleS.addEventListener('pointerdown',  (e) => startResize(e, 's'));
+    handleSE.addEventListener('pointerdown', (e) => startResize(e, 'se'));
 }

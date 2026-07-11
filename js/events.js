@@ -189,6 +189,12 @@ function handlePointerDown(e) {
                         const tb = pageData.textBoxes[i];
                         if (pos.x >= tb.x && pos.x <= tb.x + tb.w &&
                             pos.y >= tb.y && pos.y <= tb.y + tb.h) {
+
+                            // If clicking an already-editing box, let textarea handle it natively
+                            if (tb._editing) {
+                                actionTaken = true;
+                                break;
+                            }
                             clearSelection();
                             state.selection = {
                                 active: true, side: clickedSide, mode: 'dragging',
@@ -200,7 +206,7 @@ function handlePointerDown(e) {
                             };
                             actionTaken = true;
                             renderAnnotations(clickedSide);
-                            renderTextLayer(clickedSide);
+                            setTimeout(() => renderTextLayer(clickedSide), 0);
                             break;
                         }
                     }
@@ -437,8 +443,16 @@ function handlePointerMove(e) {
                     }
                 });
                 state.selection.selectedTextBoxes.forEach(tb => {
+                    if (tb._editing) return;
                     tb.x += dx;
                     tb.y += dy;
+                    // side is the correct variable in handlePointerMove scope
+                    const pageWrapper = els[side + 'Wrapper'];
+                    const wrapperEl = pageWrapper?.querySelector(`.text-box-wrapper[data-id="${tb.id}"]`);
+                    if (wrapperEl) {
+                        wrapperEl.style.left = (tb.x * 100) + '%';
+                        wrapperEl.style.top  = (tb.y * 100) + '%';
+                    }
                 });
                 state.selection.selectedStrokes.forEach(stk => {
                     stk.points.forEach(p => {
@@ -600,17 +614,14 @@ async function handlePointerUp(e) {
                 x: x, y: y, w: w, h: h,
                 content: '',
                 color: state.annoColor,
-                fontSize: 14 
+                fontSize: 14,
+                _editing: true
             };
 
             state.annotations[docId][pageNum].textBoxes.push(newBox);
             await saveAnnotationsToDB(docId, state.annotations[docId]);
-            renderTextLayer(side);
+            setTimeout(() => renderTextLayer(side), 0);
 
-            setTimeout(() => {
-                const boxEl = els[side+'Wrapper'].querySelector(`.text-box[data-id="${newBox.id}"]`);
-                if(boxEl) boxEl.focus();
-            }, 0);
         }
     }
 
@@ -742,7 +753,7 @@ async function handlePointerUp(e) {
         }
         
         renderAnnotations(side);
-        renderTextLayer(side);
+        setTimeout(() => renderTextLayer(side), 0);
     }
     
     state.drawing.active = false;

@@ -2,6 +2,7 @@
 // 📁 12. app.js
 // ==========================================
 async function init() {
+    configureMarked();
     try {
         if (!window.SQL) {
             const SQL = await initSqlJs({
