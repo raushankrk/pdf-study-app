@@ -327,6 +327,71 @@ function extractTextFromHTML(html) {
     return tempDiv.innerText || tempDiv.textContent || "";
 }
 
+// Renders raw LLM markdown text into safe HTML: markdown -> math (KaTeX) -> citation chips.
+// Mirrors the text-box rendering pipeline in annotations.js (marked + katex) so AI answers
+// look consistent with the rest of the app (headings, lists, tables, code blocks, bold/italic, math).
+function renderMarkdownToHtml(rawText) {
+    if (!rawText) return '';
+
+    // 1. Protect math segments from marked (marked would otherwise mangle $...$ / $$...$$)
+    let raw = rawText;
+    const mathSegments = [];
+    let mi = 0;
+
+    raw = raw.replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+        const key = `MATHBLOCK${mi++}END`;
+        mathSegments.push({ key, expr, display: true });
+        return key;
+    });
+    raw = raw.replace(/\$([^\n$]+?)\$/g, (_, expr) => {
+        const key = `MATHINLINE${mi++}END`;
+        mathSegments.push({ key, expr, display: false });
+        return key;
+    });
+
+    // 2. Markdown -> HTML (headings, lists, tables, bold/italic, fenced code w/ hljs, etc.)
+    let html = marked.parse(raw);
+
+    // 3. Re-insert math as rendered KaTeX
+    mathSegments.forEach(({ key, expr, display }) => {
+        let rendered;
+        try {
+            rendered = katex.renderToString(expr.trim(), {
+                displayMode: display,
+                throwOnError: false,
+                output: 'html',
+            });
+        } catch (err) {
+            rendered = `<span class="math-error">${escapeHtml(expr)}</span>`;
+        }
+        html = html.replaceAll(key, rendered);
+    });
+
+    return html;
+}
+
+// Inserts citation chips for [n] markers, but only in plain text — never inside <code> blocks,
+// so code samples containing things like array[1] are left untouched.
+function insertCitationChips(html, scoredEmbeddings) {
+    const buildChip = (num) => {
+        const idx = parseInt(num) - 1;
+        const emb = scoredEmbeddings[idx];
+        if (!emb) return null;
+
+        const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
+        const tooltipText = `Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})&#10;Text: ${snippet}`;
+
+        return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page-id="${emb.pageId}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
+    };
+
+    // Split on <pre>...</pre> and <code>...</code> blocks so we skip citation replacement inside them
+    const parts = html.split(/(<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>)/g);
+    return parts.map(part => {
+        if (part.startsWith('<pre') || part.startsWith('<code')) return part; // leave code untouched
+        return part.replace(/\[(\d+)\]/g, (match, num) => buildChip(num) || match);
+    }).join('');
+}
+
 async function handleChat() {
     const question = els.chatInput.value.trim();
     if (!question) return;
@@ -444,6 +509,7 @@ async function handleChat() {
         if (scoredEmbeddings.length === 0) {
             finalHtml = "<em class='text-gray-500'>LLM generation skipped. No relevant sources found for your query.</em>";
         }
+        // (Static notice text, not LLM markdown — left as plain HTML intentionally.)
         
         const assistantMsg = { role: 'assistant', html: `<div class="streaming-content">${finalHtml}</div>${sourcesHtml}`, context: scoredEmbeddings };
         chat.messages.push(assistantMsg);
@@ -482,37 +548,19 @@ async function handleChat() {
 
     // Stream the LLM response
     const answer = await generateLLMResponse(fullPrompt, (fullText) => {
-        let htmlText = fullText.replace(/\n/g, '<br>');
-        
-        htmlText = htmlText.replace(/\[(\d+)\]/g, (match, num) => {
-            const idx = parseInt(num) - 1;
-            const emb = scoredEmbeddings[idx];
-            if (!emb) return match; 
+        let htmlText = renderMarkdownToHtml(fullText);
+        htmlText = insertCitationChips(htmlText, scoredEmbeddings);
 
-            const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
-            const tooltipText = `Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})&#10;Text: ${snippet}`;
-
-            return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page-id="${emb.pageId}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
-        });
-        
         contentBubble.innerHTML = htmlText;
+        renderMath(contentBubble); // catches any $..$ KaTeX auto-render fallback / consistency with text boxes
         els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
     });
 
-    let finalHtml = answer.replace(/\n/g, '<br>');
-    
-    finalHtml = finalHtml.replace(/\[(\d+)\]/g, (match, num) => {
-        const idx = parseInt(num) - 1;
-        const emb = scoredEmbeddings[idx];
-        if (!emb) return match; 
-
-        const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
-        const tooltipText = `Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})&#10;Text: ${snippet}`;
-
-        return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page-id="${emb.pageId}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
-    });
+    let finalHtml = renderMarkdownToHtml(answer);
+    finalHtml = insertCitationChips(finalHtml, scoredEmbeddings);
 
     contentBubble.innerHTML = finalHtml;
+    renderMath(contentBubble);
     
     assistantMsg.html = `<div class="streaming-content">${finalHtml}</div>${sourcesHtml}`;
     

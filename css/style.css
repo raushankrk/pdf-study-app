@@ -741,3 +741,25 @@ body.cursor-none .pdf-canvas-container {
     background: #fef2f2; padding: 2px 4px;
     border-radius: 3px; border: 1px solid #fecaca;
 }
+/* Markdown rendering inside AI chat bubbles (mirrors text-box markdown rendering) */
+.ai-bubble p { margin: 0 0 8px 0; }
+.ai-bubble p:last-child { margin-bottom: 0; }
+.ai-bubble ul, .ai-bubble ol { margin: 0 0 8px 20px; padding: 0; }
+.ai-bubble li { margin-bottom: 2px; }
+.ai-bubble h1, .ai-bubble h2, .ai-bubble h3, .ai-bubble h4 { margin: 10px 0 6px 0; font-weight: 600; line-height: 1.25; }
+.ai-bubble h1 { font-size: 1.15rem; }
+.ai-bubble h2 { font-size: 1.08rem; }
+.ai-bubble h3 { font-size: 1rem; }
+.ai-bubble h4 { font-size: 0.95rem; }
+.ai-bubble blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid #d1d5db; color: #4b5563; }
+.ai-bubble table { border-collapse: collapse; margin: 8px 0; font-size: 0.8rem; }
+.ai-bubble th, .ai-bubble td { border: 1px solid #e5e7eb; padding: 4px 8px; }
+.ai-bubble th { background-color: #e5e7eb; font-weight: 600; }
+.ai-bubble code { background-color: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 4px; font-size: 0.82em; }
+.ai-bubble pre { background-color: #1f2937; color: #e5e7eb; padding: 10px; border-radius: 6px; overflow-x: auto; margin: 8px 0; position: relative; }
+.ai-bubble pre code { background: none; padding: 0; color: inherit; font-size: 0.8rem; }
+.ai-bubble .code-lang-label { position: absolute; top: 4px; right: 8px; font-size: 0.65rem; color: #9ca3af; text-transform: uppercase; }
+.ai-bubble hr { border: none; border-top: 1px solid #e5e7eb; margin: 10px 0; }
+.ai-bubble a { color: #2563eb; text-decoration: underline; }
+.ai-bubble .citation-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; margin: 0 1px; background-color: #dbeafe; color: #2563eb; border: 1px solid #93c5fd; border-radius: 4px; font-size: 0.65rem; font-weight: 700; cursor: pointer; vertical-align: super; line-height: 16px; }
+.ai-bubble .citation-chip:hover { background-color: #bfdbfe; }
