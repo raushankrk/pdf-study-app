@@ -65,3 +65,13 @@ function getStrokeBounds(stroke) {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
+function pageIdFromNum(doc, pageNum) {
+    if (!doc || !doc.pageIds) return null;
+    return doc.pageIds[pageNum - 1] || null;
+}
+
+function pageNumFromId(doc, pageId) {
+    if (!doc || !doc.pageIds || !pageId) return 1;
+    const idx = doc.pageIds.indexOf(pageId);
+    return idx === -1 ? 1 : idx + 1;
+}

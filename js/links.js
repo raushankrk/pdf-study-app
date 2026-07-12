@@ -8,8 +8,8 @@ function renderMarkersForView(side) {
     if (!viewState.docId) return;
 
     const relevantLinks = state.links.filter(link => 
-        (link.source.docId === viewState.docId && link.source.page === viewState.pageNum) ||
-        (link.target.docId === viewState.docId && link.target.page === viewState.pageNum)
+        (link.source.docId === viewState.docId && link.source.pageId === viewState.pageId) ||
+        (link.target.docId === viewState.docId && link.target.pageId === viewState.pageId)
     );
 
     let targetMarkerElement = null;
@@ -22,8 +22,10 @@ function renderMarkersForView(side) {
         btn.className = 'link-marker';
         btn.dataset.linkId = link.id; 
         
-        const targetDocName = state.documents[isSource ? link.target.docId : link.source.docId]?.name || 'Unknown';
-        const targetPage = isSource ? link.target.page : link.source.page;
+        const targetDocObj = state.documents[isSource ? link.target.docId : link.source.docId];
+        const targetDocName = targetDocObj?.name || 'Unknown';
+        const targetPageId = isSource ? link.target.pageId : link.source.pageId;
+        const targetPage = targetDocObj ? pageNumFromId(targetDocObj, targetPageId) : '?';
         btn.title = `Jump to: ${targetDocName} (Page ${targetPage})`;
         
         const wrapper = els[side + 'Wrapper'];
@@ -72,10 +74,10 @@ function renderMarkersForView(side) {
 
     // Render source and/or target markers independently (handles same-page links)
     relevantLinks.forEach(link => {
-        if (link.source.docId === viewState.docId && link.source.page === viewState.pageNum) {
+        if (link.source.docId === viewState.docId && link.source.pageId === viewState.pageId) {
             renderMarker(link, true);
         }
-        if (link.target.docId === viewState.docId && link.target.page === viewState.pageNum) {
+        if (link.target.docId === viewState.docId && link.target.pageId === viewState.pageId) {
             renderMarker(link, false);
         }
     });
@@ -83,7 +85,7 @@ function renderMarkersForView(side) {
     // Render pending link marker if one is currently being created
     if (state.linkCreation && state.linkCreation.active && 
         state.linkCreation.sourceData.docId === viewState.docId && 
-        state.linkCreation.sourceData.page === viewState.pageNum) {
+        state.linkCreation.sourceData.pageId === viewState.pageId) {
         
         const btn = document.createElement('div');
         btn.className = 'link-marker marker-active'; 
@@ -139,8 +141,12 @@ function followLink(link, fromSide, isSourceMarker) {
         isSourceMarkerRequest: !isSourceMarker // Highlight the opposite marker we clicked
     };
     
+    const targetDoc = state.documents[targetData.docId];
     state.view[targetSide].docId = targetData.docId;
-    state.view[targetSide].pageNum = targetData.page;
+    state.view[targetSide].pageId = targetData.pageId;
+    // Resolve the *current* page number from the stable pageId — this is what makes the
+    // link jump to the correct page even after pages were inserted/deleted since the link was made.
+    state.view[targetSide].pageNum = targetDoc ? pageNumFromId(targetDoc, targetData.pageId) : 1;
     state.view[targetSide].scrollTop = 0; 
     
     clearSelection();

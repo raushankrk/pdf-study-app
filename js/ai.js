@@ -94,7 +94,7 @@ function renderChatMessages() {
         if (msg.role === 'assistant' && msg.context && htmlContent.includes('jumpToCitation')) {
             const getTooltip = (chunk) => {
                 const snippet = chunk.text.length > 150 ? chunk.text.substring(0, 150) + "..." : chunk.text;
-                return `Source: ${chunk.docName} (Page ${chunk.pageNum})&#10;Text: ${snippet}`;
+                return `Source: ${chunk.docName} (Page ${getCurrentPageNumForChunk(chunk)})&#10;Text: ${snippet}`;
             };
 
             htmlContent = htmlContent.replace(
@@ -103,7 +103,7 @@ function renderChatMessages() {
                     const idx = parseInt(idxStr);
                     const chunk = msg.context[idx];
                     if (chunk) {
-                        return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${chunk.docId}" data-page="${chunk.pageNum}" data-text="${encodeURIComponent(chunk.text)}" title="${escapeHtml(getTooltip(chunk))}">${text}</span>`;
+                        return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${chunk.docId}" data-page-id="${chunk.pageId}" data-text="${encodeURIComponent(chunk.text)}" title="${escapeHtml(getTooltip(chunk))}">${text}</span>`;
                     }
                     return match;
                 }
@@ -115,7 +115,7 @@ function renderChatMessages() {
                     const idx = parseInt(idxStr);
                     const chunk = msg.context[idx];
                     if (chunk) {
-                        return `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" onclick="handleCitationClick(this)" data-doc="${chunk.docId}" data-page="${chunk.pageNum}" data-text="${encodeURIComponent(chunk.text)}" title="${escapeHtml(getTooltip(chunk))}">[${idx+1}]</span>`;
+                        return `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" onclick="handleCitationClick(this)" data-doc="${chunk.docId}" data-page-id="${chunk.pageId}" data-text="${encodeURIComponent(chunk.text)}" title="${escapeHtml(getTooltip(chunk))}">[${idx+1}]</span>`;
                     }
                     return match;
                 }
@@ -145,6 +145,11 @@ function cosineSimilarity(vecA, vecB) {
     }
     if (normA === 0 || normB === 0) return 0;
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function getCurrentPageNumForChunk(chunk) {
+    const doc = state.documents[chunk.docId];
+    return doc ? pageNumFromId(doc, chunk.pageId) : '?';
 }
 
 async function getEmbedding(text) {
@@ -270,7 +275,7 @@ async function indexDocuments(force = false) {
                     const startIdx = fullDocText.length;
                     fullDocText += pageText + " "; // Add space gap to represent page boundary
                     pageMappings.push({
-                        page: i,
+                        pageId: pageIdFromNum(doc, i), // stable id, not the page number itself
                         start: startIdx,
                         end: fullDocText.length
                     });
@@ -283,11 +288,11 @@ async function indexDocuments(force = false) {
             const chunk = fullDocText.substring(start, start + chunkSize);
             if (chunk.trim().length > 10) {
                 
-                // Determine the starting page for UI jump reference
-                let startPage = 1;
+                // Determine the starting page (by stable id) for UI jump reference
+                let startPageId = pageIdFromNum(doc, 1);
                 for (const map of pageMappings) {
                     if (start >= map.start && start < map.end) {
-                        startPage = map.page;
+                        startPageId = map.pageId;
                         break;
                     }
                 }
@@ -300,7 +305,7 @@ async function indexDocuments(force = false) {
                         vector: vector,
                         docId: docId,
                         docName: doc.name,
-                        pageNum: startPage // Identifies where the chunk initiates
+                        pageId: startPageId // Identifies where the chunk initiates, survives page insert/delete
                     });
                 }
             }
@@ -384,7 +389,7 @@ async function handleChat() {
     state.currentContextChunks = scoredEmbeddings;
 
     const contextText = scoredEmbeddings.map((emb, idx) => 
-        `[${idx + 1}] Source: ${emb.docName} (Page ${emb.pageNum})\nText: ${emb.text}`
+        `[${idx + 1}] Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})\nText: ${emb.text}`
     ).join("\n---\n");
 
     // Construct Prompt via AI Settings 
@@ -427,9 +432,9 @@ async function handleChat() {
         sourcesHtml = `<div class="mt-2 pt-2 border-t border-gray-200 flex flex-wrap gap-1">`;
         scoredEmbeddings.forEach((emb, idx) => {
             const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
-            const tooltipText = `Source: ${emb.docName} (Page ${emb.pageNum})&#10;Text: ${snippet}`;
+            const tooltipText = `Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})&#10;Text: ${snippet}`;
 
-            sourcesHtml += `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page="${emb.pageNum}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">[${idx+1}]</span>`;
+            sourcesHtml += `<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-200 px-2 py-1 rounded cursor-pointer hover:bg-blue-100" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page-id="${emb.pageId}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">[${idx+1}]</span>`;
         });
         sourcesHtml += `</div>`;
     }
@@ -485,9 +490,9 @@ async function handleChat() {
             if (!emb) return match; 
 
             const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
-            const tooltipText = `Source: ${emb.docName} (Page ${emb.pageNum})&#10;Text: ${snippet}`;
+            const tooltipText = `Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})&#10;Text: ${snippet}`;
 
-            return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page="${emb.pageNum}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
+            return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page-id="${emb.pageId}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
         });
         
         contentBubble.innerHTML = htmlText;
@@ -502,9 +507,9 @@ async function handleChat() {
         if (!emb) return match; 
 
         const snippet = emb.text.length > 150 ? emb.text.substring(0, 150) + "..." : emb.text;
-        const tooltipText = `Source: ${emb.docName} (Page ${emb.pageNum})&#10;Text: ${snippet}`;
+        const tooltipText = `Source: ${emb.docName} (Page ${getCurrentPageNumForChunk(emb)})&#10;Text: ${snippet}`;
 
-        return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page="${emb.pageNum}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
+        return `<span class="citation-chip" onclick="handleCitationClick(this)" data-doc="${emb.docId}" data-page-id="${emb.pageId}" data-text="${encodeURIComponent(emb.text)}" title="${escapeHtml(tooltipText)}">${num}</span>`;
     });
 
     contentBubble.innerHTML = finalHtml;
@@ -518,14 +523,20 @@ async function handleChat() {
 
 window.handleCitationClick = function(el) {
     const docId = el.dataset.doc;
-    const pageNum = parseInt(el.dataset.page);
+    const pageId = el.dataset.pageId;
     const text = decodeURIComponent(el.dataset.text);
 
     if (!docId || !state.documents[docId]) return;
 
+    const doc = state.documents[docId];
+    // Resolve the CURRENT page number for this stable pageId — correct even if pages
+    // were inserted or deleted in this doc since the citation was created.
+    const pageNum = pageNumFromId(doc, pageId);
+
     // Track active citation state (rendered directly inside the upcoming renderPage cycle)
     state.activeCitation = {
         docId: docId,
+        pageId: pageId,
         pageNum: pageNum,
         text: text,
         side: 'right',
@@ -533,6 +544,7 @@ window.handleCitationClick = function(el) {
     };
 
     state.view.right.docId = docId;
+    state.view.right.pageId = pageId;
     state.view.right.pageNum = pageNum;
     
     renderPage('right');
@@ -542,16 +554,21 @@ window.jumpToCitation = function(index) {
     const chunk = state.currentContextChunks[index];
     if (!chunk) return;
 
+    const doc = state.documents[chunk.docId];
+    const pageNum = doc ? pageNumFromId(doc, chunk.pageId) : 1;
+
     state.activeCitation = {
         docId: chunk.docId,
-        pageNum: chunk.pageNum,
+        pageId: chunk.pageId,
+        pageNum: pageNum,
         text: chunk.text,
         side: 'right',
         scrolled: false
     };
 
     state.view.right.docId = chunk.docId;
-    state.view.right.pageNum = chunk.pageNum;
+    state.view.right.pageId = chunk.pageId;
+    state.view.right.pageNum = pageNum;
     
     renderPage('right');
 };

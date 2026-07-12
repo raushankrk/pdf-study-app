@@ -84,7 +84,7 @@ function handlePointerDown(e) {
             state.linkCreation.active = true;
             state.linkCreation.sourceData = { 
                 docId: state.view[clickedSide].docId,
-                page: state.view[clickedSide].pageNum,
+                pageId: state.view[clickedSide].pageId,
                 x: pos.x, y: pos.y
             };
             state.linkCreation.sourceSide = clickedSide;
@@ -94,7 +94,7 @@ function handlePointerDown(e) {
             // Second click: Set Target
             const targetData = {
                 docId: state.view[clickedSide].docId,
-                page: state.view[clickedSide].pageNum,
+                pageId: state.view[clickedSide].pageId,
                 x: pos.x, y: pos.y
             };
             
@@ -133,7 +133,7 @@ function handlePointerDown(e) {
 
         if (state.annoTool === 'select') {
             const pos = getMousePosInViewport(e, clickedSide);
-            const pageData = state.annotations[state.view[clickedSide].docId]?.[state.view[clickedSide].pageNum];
+            const pageData = state.annotations[state.view[clickedSide].docId]?.[state.view[clickedSide].pageId];
             let actionTaken = false;
 
             if (state.selection.active && state.selection.side === clickedSide) {
@@ -253,10 +253,10 @@ function startDirectTextManipulation(e, domElement, type) {
     const side = state.lastActiveSide;
     const wrapper = els[side + 'Wrapper'];
     const docId = state.view[side].docId;
-    const pageNum = state.view[side].pageNum;
+    const pageId = state.view[side].pageId;
     
-    if (!state.annotations[docId] || !state.annotations[docId][pageNum]) return;
-    const pageData = state.annotations[docId][pageNum];
+    if (!state.annotations[docId] || !state.annotations[docId][pageId]) return;
+    const pageData = state.annotations[docId][pageId];
     const box = pageData.textBoxes.find(b => b.id === domElement.dataset.id);
     if (!box) return;
 
@@ -396,7 +396,7 @@ function handlePointerMove(e) {
         const sourceSide = state.linkCreation.sourceSide;
         
         // Only draw line if the source page is currently visible in its original side
-        if (state.view[sourceSide].docId === source.docId && state.view[sourceSide].pageNum === source.page) {
+        if (state.view[sourceSide].docId === source.docId && state.view[sourceSide].pageId === source.pageId) {
             els.currentPath.style.display = 'block';
             const rect = els[sourceSide + 'Wrapper'].getBoundingClientRect();
             const startX = rect.left + (source.x * rect.width);
@@ -432,10 +432,10 @@ function handlePointerMove(e) {
                     if (img.linkId) {
                         const link = state.links.find(l => l.id === img.linkId);
                         if (link) {
-                            if (link.target.docId === state.view[side].docId && link.target.page === state.view[side].pageNum) {
+                            if (link.target.docId === state.view[side].docId && link.target.pageId === state.view[side].pageId) {
                                 link.target.x = img.x;
                                 link.target.y = img.y + (img.h / 2);
-                            } else if (link.source.docId === state.view[side].docId && link.source.page === state.view[side].pageNum) {
+                            } else if (link.source.docId === state.view[side].docId && link.source.pageId === state.view[side].pageId) {
                                 link.source.x = img.x;
                                 link.source.y = img.y + (img.h / 2);
                             }
@@ -487,10 +487,10 @@ function handlePointerMove(e) {
                     if (img.linkId) {
                         const link = state.links.find(l => l.id === img.linkId);
                         if (link) {
-                            if (link.target.docId === state.view[side].docId && link.target.page === state.view[side].pageNum) {
+                            if (link.target.docId === state.view[side].docId && link.target.pageId === state.view[side].pageId) {
                                 link.target.x = img.x;
                                 link.target.y = img.y + (img.h / 2);
-                            } else if (link.source.docId === state.view[side].docId && link.source.page === state.view[side].pageNum) {
+                            } else if (link.source.docId === state.view[side].docId && link.source.pageId === state.view[side].pageId) {
                                 link.source.x = img.x;
                                 link.source.y = img.y + (img.h / 2);
                             }
@@ -530,8 +530,8 @@ function handlePointerMove(e) {
                 // Redraw from scratch each move to show live preview
                 const start = state.drawing.straightLineStart;
                 const docId = state.view[side].docId;
-                const pageNum = state.view[side].pageNum;
-                const strokes = state.annotations[docId][pageNum].strokes;
+                const pageId = state.view[side].pageId;
+                const strokes = state.annotations[docId][pageId].strokes;
                 const currentStroke = strokes[strokes.length - 1];
                 // Reset points to just start + current, simulating a straight line preview
                 currentStroke.points = [start, { x: pos.x, y: pos.y }];
@@ -604,10 +604,10 @@ async function handlePointerUp(e) {
 
         if (w > 0.01 && h > 0.01) {
             const docId = state.view[side].docId;
-            const pageNum = state.view[side].pageNum;
+            const pageId = state.view[side].pageId;
             
             if (!state.annotations[docId]) state.annotations[docId] = {};
-            if (!state.annotations[docId][pageNum]) state.annotations[docId][pageNum] = { strokes: [], images: [], textBoxes: [] };
+            if (!state.annotations[docId][pageId]) state.annotations[docId][pageId] = { strokes: [], images: [], textBoxes: [] };
 
             const newBox = {
                 id: 'tb_' + Date.now(),
@@ -618,7 +618,7 @@ async function handlePointerUp(e) {
                 _editing: true
             };
 
-            state.annotations[docId][pageNum].textBoxes.push(newBox);
+            state.annotations[docId][pageId].textBoxes.push(newBox);
             await saveAnnotationsToDB(docId, state.annotations[docId]);
             setTimeout(() => renderTextLayer(side), 0);
 
@@ -641,8 +641,8 @@ async function handlePointerUp(e) {
 
                 if (selRect.w > 0.001 && selRect.h > 0.001) {
                     const docId = state.view[side].docId;
-                    const pageNum = state.view[side].pageNum;
-                    const pageData = state.annotations[docId]?.[pageNum];
+                    const pageId = state.view[side].pageId;
+                    const pageData = state.annotations[docId]?.[pageId];
 
                     if (pageData) {
                         const selectedImgs = [];
@@ -736,8 +736,8 @@ async function handlePointerUp(e) {
                 // For straight line, lock in the two-point stroke before saving
                 if (state.lineMode === 'straight' && (state.annoTool === 'pen' || state.annoTool === 'highlighter')) {
                     const docId = state.view[side].docId;
-                    const pageNum = state.view[side].pageNum;
-                    const strokes = state.annotations[docId]?.[pageNum]?.strokes;
+                    const pageId = state.view[side].pageId;
+                    const strokes = state.annotations[docId]?.[pageId]?.strokes;
                     if (strokes && strokes.length > 0) {
                         const lastStroke = strokes[strokes.length - 1];
                         const endPos = getMousePosInViewport(e, side);

@@ -96,11 +96,11 @@ async function addImageToSide(fileOrBlob, side, startX = 0.35, startY = 0.35) {
             };
 
             const docId = state.view[side].docId;
-            const pageNum = state.view[side].pageNum;
+            const pageId = state.view[side].pageId;
             if (!state.annotations[docId]) state.annotations[docId] = {};
-            if (!state.annotations[docId][pageNum]) state.annotations[docId][pageNum] = { strokes: [], images: [], textBoxes: [] };
+            if (!state.annotations[docId][pageId]) state.annotations[docId][pageId] = { strokes: [], images: [], textBoxes: [] };
             
-            state.annotations[docId][pageNum].images.push(newImage);
+            state.annotations[docId][pageId].images.push(newImage);
             state.imageCache[id] = imgObj;
             
             clearSelection();
@@ -195,7 +195,7 @@ function captureSnip(side, x, y, w, h) {
     state.snip.height = h;
     state.snip.sourceData = {
         docId: state.view[side].docId,
-        page: state.view[side].pageNum,
+        pageId: state.view[side].pageId,
         x: x,
         y: y + (h / 2)
     };
@@ -220,7 +220,7 @@ async function dropSnip(side, x, y) {
     if (!snip.base64) return cancelSnip();
 
     const targetDoc = state.view[side].docId;
-    const targetPage = state.view[side].pageNum;
+    const targetPageId = state.view[side].pageId;
 
     const id = 'img_' + Date.now();
     const linkId = 'link_' + Date.now();
@@ -249,16 +249,16 @@ async function dropSnip(side, x, y) {
     };
 
     if (!state.annotations[targetDoc]) state.annotations[targetDoc] = {};
-    if (!state.annotations[targetDoc][targetPage]) state.annotations[targetDoc][targetPage] = { strokes: [], images: [], textBoxes: [] };
+    if (!state.annotations[targetDoc][targetPageId]) state.annotations[targetDoc][targetPageId] = { strokes: [], images: [], textBoxes: [] };
 
-    state.annotations[targetDoc][targetPage].images.push(newImage);
+    state.annotations[targetDoc][targetPageId].images.push(newImage);
     state.imageCache[id] = imgObj;
     await saveAnnotationsToDB(targetDoc, state.annotations[targetDoc]);
     
     // Create link directly to dropped image's left-middle edge
     const targetData = {
         docId: targetDoc,
-        page: targetPage,
+        pageId: targetPageId,
         x: newImage.x,
         y: newImage.y + (newImage.h / 2)
     };
@@ -324,11 +324,11 @@ function renderTextLayer(side) {
 
     const viewState = state.view[side];
     const docId = viewState.docId;
-    const pageNum = viewState.pageNum;
+    const pageId = viewState.pageId;
     const scale = viewState.scale;
 
-    if (!state.annotations[docId] || !state.annotations[docId][pageNum]) return;
-    const boxes = state.annotations[docId][pageNum].textBoxes || [];
+    if (!state.annotations[docId] || !state.annotations[docId][pageId]) return;
+    const boxes = state.annotations[docId][pageId].textBoxes || [];
 
     boxes.forEach(box => {
         if (box._editing) {
@@ -466,10 +466,10 @@ function finishEditing(box, side) {
     box.content = box.content || '';
 
     const docId  = state.view[side].docId;
-    const pageNum = state.view[side].pageNum;
+    const pageId = state.view[side].pageId;
 
     if (!box.content.trim()) {
-        const pageData = state.annotations[docId]?.[pageNum];
+        const pageData = state.annotations[docId]?.[pageId];
         if (pageData) {
             const idx = pageData.textBoxes.indexOf(box);
             if (idx > -1) pageData.textBoxes.splice(idx, 1);
@@ -590,7 +590,7 @@ function renderAnnotations(side) {
 
     ctx.clearRect(0, 0, width, height);
 
-    const pageData = (state.annotations[viewState.docId] && state.annotations[viewState.docId][viewState.pageNum]) || { strokes: [], images: [], textBoxes: [] };
+    const pageData = (state.annotations[viewState.docId] && state.annotations[viewState.docId][viewState.pageId]) || { strokes: [], images: [], textBoxes: [] };
     
     pageData.images.forEach(img => {
         const imgObj = state.imageCache[img.id];
@@ -708,10 +708,10 @@ function drawSmoothPath(ctx, stroke, width, height) {
 
 function startAnnotationStroke(side, x, y) {
     const docId = state.view[side].docId;
-    const pageNum = state.view[side].pageNum;
+    const pageId = state.view[side].pageId;
     
     if (!state.annotations[docId]) state.annotations[docId] = {};
-    if (!state.annotations[docId][pageNum]) state.annotations[docId][pageNum] = { strokes: [], images: [], textBoxes: [] };
+    if (!state.annotations[docId][pageId]) state.annotations[docId][pageId] = { strokes: [], images: [], textBoxes: [] };
 
     const normalizedSize = state.annoThickness / 1000; 
     
@@ -734,7 +734,7 @@ function startAnnotationStroke(side, x, y) {
         points: [{ x, y }]
     };
 
-    state.annotations[docId][pageNum].strokes.push(newStroke);
+    state.annotations[docId][pageId].strokes.push(newStroke);
     
     const canvas = els[side + 'AnnoCanvas'];
     const ctx = canvas.getContext('2d');
@@ -762,8 +762,8 @@ function startAnnotationStroke(side, x, y) {
 
 function continueAnnotationStroke(side, x, y) {
     const docId = state.view[side].docId;
-    const pageNum = state.view[side].pageNum;
-    const strokes = state.annotations[docId][pageNum].strokes;
+    const pageId = state.view[side].pageId;
+    const strokes = state.annotations[docId][pageId].strokes;
     const currentStroke = strokes[strokes.length - 1];
     
     currentStroke.points.push({ x, y });
@@ -831,11 +831,11 @@ function finishAnnotationStroke(side) {
 
 function deleteStrokeAt(side, x, y) {
     const docId = state.view[side].docId;
-    const pageNum = state.view[side].pageNum;
+    const pageId = state.view[side].pageId;
     
-    if (!state.annotations[docId] || !state.annotations[docId][pageNum]) return;
+    if (!state.annotations[docId] || !state.annotations[docId][pageId]) return;
 
-    const strokes = state.annotations[docId][pageNum].strokes;
+    const strokes = state.annotations[docId][pageId].strokes;
     const threshold = 0.0002; 
 
     let foundIndex = -1;
@@ -867,10 +867,10 @@ function deleteSelection() {
     if (!state.selection.active) return;
     const side = state.selection.side;
     const docId = state.view[side].docId;
-    const pageNum = state.view[side].pageNum;
+    const pageId = state.view[side].pageId;
     
-    if (!state.annotations[docId] || !state.annotations[docId][pageNum]) return;
-    const pageData = state.annotations[docId][pageNum];
+    if (!state.annotations[docId] || !state.annotations[docId][pageId]) return;
+    const pageData = state.annotations[docId][pageId];
 
     state.selection.selectedImages.forEach(imgObj => {
         const idx = pageData.images.indexOf(imgObj);
@@ -928,13 +928,13 @@ function undoLastStroke() {
     const docId = state.view.left.docId || state.view.right.docId;
     if (!docId) return;
 
-    const leftPage = state.view.left.pageNum;
-    const rightPage = state.view.right.pageNum;
+    const leftPageId = state.view.left.pageId;
+    const rightPageId = state.view.right.pageId;
     
     let changed = false;
 
-    const undoOnView = (side, dId, pNum) => {
-        const pageData = state.annotations[dId] && state.annotations[dId][pNum];
+    const undoOnView = (side, dId, pId) => {
+        const pageData = state.annotations[dId] && state.annotations[dId][pId];
         if (pageData && pageData.strokes && pageData.strokes.length > 0) {
             pageData.strokes.pop();
             saveAnnotationsToDB(dId, state.annotations[dId]);
@@ -943,28 +943,28 @@ function undoLastStroke() {
         }
     };
 
-    if (state.view.left.docId === docId) undoOnView('left', docId, leftPage);
-    if (state.view.right.docId === docId) undoOnView('right', docId, rightPage);
+    if (state.view.left.docId === docId) undoOnView('left', docId, leftPageId);
+    if (state.view.right.docId === docId) undoOnView('right', docId, rightPageId);
 
     if (!changed) {
-            if(state.view.left.docId) undoOnView('left', state.view.left.docId, state.view.left.pageNum);
-            if(state.view.right.docId) undoOnView('right', state.view.right.docId, state.view.right.pageNum);
+            if(state.view.left.docId) undoOnView('left', state.view.left.docId, state.view.left.pageId);
+            if(state.view.right.docId) undoOnView('right', state.view.right.docId, state.view.right.pageId);
     }
 }
 
 function clearCurrentPageAnnotations() {
     if(!confirm("Clear all annotations and images on current page(s)?")) return;
 
-    const clearView = (side, dId, pNum) => {
+    const clearView = (side, dId, pId) => {
         if (dId && state.annotations[dId]) {
-            state.annotations[dId][pNum] = { strokes: [], images: [], textBoxes: [] };
+            state.annotations[dId][pId] = { strokes: [], images: [], textBoxes: [] };
             saveAnnotationsToDB(dId, state.annotations[dId]);
             renderAnnotations(side);
             renderTextLayer(side);
         }
     };
-    clearView('left', state.view.left.docId, state.view.left.pageNum);
-    clearView('right', state.view.right.docId, state.view.right.pageNum);
+    clearView('left', state.view.left.docId, state.view.left.pageId);
+    clearView('right', state.view.right.docId, state.view.right.pageId);
 }
 
 function attachResizeHandles(el, box, side) {

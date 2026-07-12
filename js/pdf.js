@@ -19,9 +19,10 @@ async function handleFileUpload(e) {
             await page.render({ canvasContext: context, viewport: viewport }).promise;
             const thumbData = canvas.toDataURL();
 
-            const docObj = { id, file, pdfDoc, name: file.name, pageCount: pdfDoc.numPages, thumbnail: thumbData };
+            const pageIds = Array.from({ length: pdfDoc.numPages }, () => generateId());
+            const docObj = { id, file, pdfDoc, name: file.name, pageCount: pdfDoc.numPages, thumbnail: thumbData, pageIds };
             state.documents[id] = docObj;
-            await saveDocumentToDB({ id: docObj.id, name: docObj.name, pageCount: docObj.pageCount, thumbnail: docObj.thumbnail, fileBlob: file });
+            await saveDocumentToDB({ id: docObj.id, name: docObj.name, pageCount: docObj.pageCount, thumbnail: docObj.thumbnail, fileBlob: file, pageIds });
 
             if (!state.view.left.docId) setActiveDocument('left', id);
             else if (!state.view.right.docId) setActiveDocument('right', id);
@@ -110,8 +111,10 @@ function renderDocList() {
 }
 
 function setActiveDocument(side, docId, render = true) {
+    const doc = state.documents[docId];
     state.view[side].docId = docId;
     state.view[side].pageNum = 1;
+    state.view[side].pageId = pageIdFromNum(doc, 1);
     state.view[side].scrollTop = 0; 
     state.lastActiveSide = side;
     clearSelection();
@@ -126,6 +129,13 @@ function setActiveDocument(side, docId, render = true) {
 async function renderPage(side) {
     const viewState = state.view[side];
     const docId = viewState.docId;
+
+    // pageId is the source of truth; keep pageNum in sync for display/back-compat
+    if (docId && state.documents[docId] && viewState.pageId) {
+        const resolvedNum = pageNumFromId(state.documents[docId], viewState.pageId);
+        if (resolvedNum) viewState.pageNum = resolvedNum;
+    }
+
     const canvas = els[side + 'Canvas'];
     const ctx = canvas.getContext('2d');
     const annoCanvas = els[side + 'AnnoCanvas'];
@@ -189,8 +199,8 @@ async function renderPage(side) {
 
         // ---- CITATION HIGHLIGHT LOGIC ----
         if (state.activeCitation && state.activeCitation.side === side) {
-            // Check if we are physically on the target doc/page
-            if (state.activeCitation.docId === docId && state.activeCitation.pageNum === viewState.pageNum) {
+            // Check if we are physically on the target doc/page (by stable pageId)
+            if (state.activeCitation.docId === docId && state.activeCitation.pageId === viewState.pageId) {
                 const shouldScroll = !state.activeCitation.scrolled; 
                 state.activeCitation.scrolled = true; // Ensure scrolling only happens once immediately after click
                 highlightChunk(state.activeCitation.text, side, shouldScroll);
@@ -223,6 +233,7 @@ function navigatePage(side, delta) {
     const newPage = viewState.pageNum + delta;
     if (newPage >= 1 && newPage <= doc.pageCount) {
         viewState.pageNum = newPage;
+        viewState.pageId = pageIdFromNum(doc, newPage);
         viewState.scrollTop = 0; 
         state.lastActiveSide = side;
         clearSelection();
@@ -252,6 +263,7 @@ function jumpToPage(side) {
 
     if (newPage !== viewState.pageNum) {
         viewState.pageNum = newPage;
+        viewState.pageId = pageIdFromNum(doc, newPage);
         viewState.scrollTop = 0; 
         state.lastActiveSide = side;
         clearSelection();
@@ -314,6 +326,7 @@ window.jumpToPageFromSlider = function(side) {
 
     if (newPage !== viewState.pageNum) {
         viewState.pageNum = newPage;
+        viewState.pageId = pageIdFromNum(doc, newPage);
         viewState.scrollTop = 0; 
         state.lastActiveSide = side;
         clearSelection();
@@ -391,6 +404,7 @@ async function deleteCurrentPage(side) {
     const viewState = state.view[side];
     const docId = viewState.docId;
     const pageNum = viewState.pageNum;
+    const deletedPageId = viewState.pageId;
 
     if (!docId) return;
 
@@ -414,46 +428,31 @@ async function deleteCurrentPage(side) {
         const newPdfBytes = await pdfLibDoc.save();
         const newBlob = new Blob([newPdfBytes], { type: 'application/pdf' });
 
-        if (state.annotations[docId]) {
-            const newAnnoMap = {};
-            for(let i=1; i<pageNum; i++) {
-                if(state.annotations[docId][i]) newAnnoMap[i] = state.annotations[docId][i];
-            }
-            for(let i=pageNum+1; i<=originalDoc.pageCount; i++) {
-                if(state.annotations[docId][i]) newAnnoMap[i-1] = state.annotations[docId][i];
-            }
-            state.annotations[docId] = newAnnoMap;
+        // --- STABLE ID UPDATE: only the pageIds array shrinks. No page-number math anywhere else. ---
+        const newPageIds = originalDoc.pageIds.filter(pid => pid !== deletedPageId);
+        originalDoc.pageIds = newPageIds;
+
+        // Drop annotations/textboxes/images that lived on the deleted page. Everything else is untouched.
+        if (state.annotations[docId] && state.annotations[docId][deletedPageId]) {
+            delete state.annotations[docId][deletedPageId];
             await saveAnnotationsToDB(docId, state.annotations[docId]);
         }
 
-        state.embeddings.forEach(e => {
-            if (e.docId === docId && e.pageNum > pageNum) {
-                e.pageNum -= 1;
-            }
-        });
+        // Embeddings tied to the deleted page are removed; all others keep their pageId unchanged.
+        state.embeddings = state.embeddings.filter(e => !(e.docId === docId && e.pageId === deletedPageId));
 
+        // Links: drop any link whose endpoint was on the deleted page; all surviving links are untouched
+        // since they reference pageId, not a page number.
         const updatedLinks = [];
         for (const link of state.links) {
-            let keepLink = true;
-            const updatePoint = (pt) => {
-                if (pt.docId === docId) {
-                    if (pt.page === pageNum) keepLink = false; 
-                    else if (pt.page > pageNum) return { ...pt, page: pt.page - 1 };
-                }
-                return pt;
-            };
-            const newSource = updatePoint(link.source);
-            const newTarget = updatePoint(link.target);
-            if(keepLink) {
-                updatedLinks.push({ ...link, source: newSource, target: newTarget });
-                await saveLinkToDB(updatedLinks[updatedLinks.length-1]);
+            const sourceDead = link.source.docId === docId && link.source.pageId === deletedPageId;
+            const targetDead = link.target.docId === docId && link.target.pageId === deletedPageId;
+            if (sourceDead || targetDead) {
+                await deleteLinkFromDB(link.id);
+                continue;
             }
+            updatedLinks.push(link);
         }
-        
-        const tx = db.transaction(['links'], 'readwrite');
-        const linkStore = tx.objectStore('links');
-        linkStore.clear();
-        updatedLinks.forEach(l => linkStore.put(l));
         state.links = updatedLinks;
 
         const newPdfJsDoc = await pdfjsLib.getDocument(newPdfBytes).promise;
@@ -467,22 +466,29 @@ async function deleteCurrentPage(side) {
             name: originalDoc.name,
             pageCount: newPdfJsDoc.numPages,
             thumbnail: originalDoc.thumbnail,
-            fileBlob: newBlob
+            fileBlob: newBlob,
+            pageIds: newPageIds
         });
 
-        if (state.view[side].pageNum > state.documents[docId].pageCount) {
-            state.view[side].pageNum = state.documents[docId].pageCount;
-        }
-        
-        const otherSide = side === 'left' ? 'right' : 'left';
-        if(state.view[otherSide].docId === docId && state.view[otherSide].pageNum >= pageNum) {
-            if (state.view[otherSide].pageNum > state.documents[docId].pageCount) {
-                state.view[otherSide].pageNum = state.documents[docId].pageCount;
+        // Re-resolve pageNum for any view pointing at this doc, since page numbers after the
+        // deletion point shifted by 1 automatically (pageId lookup handles this for free).
+        const clampView = (vSide) => {
+            const v = state.view[vSide];
+            if (v.docId !== docId) return;
+            if (v.pageId && newPageIds.includes(v.pageId)) {
+                v.pageNum = pageNumFromId(state.documents[docId], v.pageId);
+            } else {
+                // The page this view was on just got deleted — fall back to the same index, clamped.
+                const fallbackNum = Math.min(pageNum, state.documents[docId].pageCount);
+                v.pageNum = fallbackNum;
+                v.pageId = pageIdFromNum(state.documents[docId], fallbackNum);
             }
-            renderPage(otherSide);
-        }
+        };
+        clampView('left');
+        clampView('right');
 
-        renderPage(side);
+        renderPage('left');
+        renderPage('right');
         renderDocList();
         showModal("Success", "Page deleted successfully.");
 
@@ -498,7 +504,7 @@ async function insertPage(side, type) {
     const docId = state.view[side].docId;
     if (!docId) { showModal("Error", "No document loaded."); return; }
 
-    const insertIndex = state.view[side].pageNum;
+    const insertIndex = state.view[side].pageNum; // new page is inserted right after this page number
     els.loadingSpinner.classList.remove('hidden');
     els.loadingSpinner.querySelector('span').innerText = "Processing PDF...";
 
@@ -522,43 +528,13 @@ async function insertPage(side, type) {
         const newPdfBytes = await pdfLibDoc.save();
         const newBlob = new Blob([newPdfBytes], { type: 'application/pdf' });
 
-        if (state.annotations[docId]) {
-            const newAnnoMap = {};
-            Object.keys(state.annotations[docId]).forEach(key => {
-                const pageNum = parseInt(key);
-                if (pageNum > insertIndex) {
-                    newAnnoMap[pageNum + 1] = state.annotations[docId][pageNum];
-                } else {
-                    newAnnoMap[pageNum] = state.annotations[docId][pageNum];
-                }
-            });
-            state.annotations[docId] = newAnnoMap;
-            await saveAnnotationsToDB(docId, state.annotations[docId]);
-        }
-
-        state.embeddings.forEach(e => {
-            if (e.docId === docId && e.pageNum > insertIndex) {
-                e.pageNum += 1;
-            }
-        });
-
-        const updatedLinks = [];
-        for (const link of state.links) {
-            const updatePoint = (pt) => {
-                if (pt.docId === docId && pt.page > insertIndex) {
-                    return { ...pt, page: pt.page + 1 };
-                }
-                return pt;
-            };
-            const newLink = {
-                ...link,
-                source: updatePoint(link.source),
-                target: updatePoint(link.target)
-            };
-            updatedLinks.push(newLink);
-            await saveLinkToDB(newLink);
-        }
-        state.links = updatedLinks;
+        // --- STABLE ID UPDATE: just splice a new UUID into pageIds. ---
+        // All existing annotations/links/embeddings keep the same pageId they already had,
+        // so nothing else needs to shift.
+        const newPageId = generateId();
+        const newPageIds = [...originalDoc.pageIds];
+        newPageIds.splice(insertIndex, 0, newPageId); // insertIndex is 0-based slot right after the ref page
+        originalDoc.pageIds = newPageIds;
 
         const newPdfJsDoc = await pdfjsLib.getDocument(newPdfBytes).promise;
 
@@ -571,12 +547,19 @@ async function insertPage(side, type) {
             name: originalDoc.name,
             pageCount: newPdfJsDoc.numPages,
             thumbnail: originalDoc.thumbnail,
-            fileBlob: newBlob
+            fileBlob: newBlob,
+            pageIds: newPageIds
         });
 
         state.view[side].pageNum = insertIndex + 1;
-        
+        state.view[side].pageId = newPageId;
+
+        // The other side, if pointing at the same doc, keeps its pageId — its pageNum
+        // is simply re-resolved on next renderPage (it may shift by one, correctly).
         renderPage(side);
+        const otherSide = side === 'left' ? 'right' : 'left';
+        if (state.view[otherSide].docId === docId) renderPage(otherSide);
+
         renderDocList();
         showModal("Success", `${type === 'blank' ? 'Blank' : 'Duplicated'} page added.`);
 

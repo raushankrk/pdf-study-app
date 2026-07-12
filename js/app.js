@@ -45,13 +45,26 @@ async function init() {
                 try {
                     const arrayBuffer = await dbDoc.fileBlob.arrayBuffer();
                     const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+
+                    // Migration-free safeguard: if this doc predates stable page IDs (or the
+                    // stored array's length no longer matches the PDF), generate fresh IDs.
+                    let pageIds = dbDoc.pageIds;
+                    if (!Array.isArray(pageIds) || pageIds.length !== pdfDoc.numPages) {
+                        pageIds = Array.from({ length: pdfDoc.numPages }, () => generateId());
+                        await saveDocumentToDB({
+                            id: dbDoc.id, name: dbDoc.name, pageCount: pdfDoc.numPages,
+                            thumbnail: dbDoc.thumbnail, fileBlob: dbDoc.fileBlob, pageIds
+                        });
+                    }
+
                     state.documents[dbDoc.id] = {
                         id: dbDoc.id,
                         file: dbDoc.fileBlob, 
                         pdfDoc: pdfDoc,
                         name: dbDoc.name,
                         pageCount: pdfDoc.numPages,
-                        thumbnail: dbDoc.thumbnail
+                        thumbnail: dbDoc.thumbnail,
+                        pageIds
                     };
                 } catch (err) { console.error("Failed to restore doc:", dbDoc.name, err); }
             }
@@ -64,6 +77,17 @@ async function init() {
 
                 if (sView.left.docId && state.documents[sView.left.docId]) {
                     state.view.left = { ...sView.left, scrollTop: sView.left.scrollTop || 0 };
+                    // Re-resolve pageId/pageNum against the current pageIds array: if pages were
+                    // inserted/deleted in a prior session (or this is data from before stable IDs
+                    // existed), this keeps the view valid instead of pointing at a stale page.
+                    const leftDoc = state.documents[state.view.left.docId];
+                    if (state.view.left.pageId && leftDoc.pageIds.includes(state.view.left.pageId)) {
+                        state.view.left.pageNum = pageNumFromId(leftDoc, state.view.left.pageId);
+                    } else {
+                        const fallbackNum = Math.min(state.view.left.pageNum || 1, leftDoc.pageCount);
+                        state.view.left.pageNum = fallbackNum;
+                        state.view.left.pageId = pageIdFromNum(leftDoc, fallbackNum);
+                    }
                     if (state.view.left.docId) state.lastActiveSide = 'left';
                 }
                 
@@ -79,6 +103,14 @@ async function init() {
 
                 if (sView.right.docId && state.documents[sView.right.docId]) {
                     state.view.right = { ...sView.right, scrollTop: sView.right.scrollTop || 0 };
+                    const rightDoc = state.documents[state.view.right.docId];
+                    if (state.view.right.pageId && rightDoc.pageIds.includes(state.view.right.pageId)) {
+                        state.view.right.pageNum = pageNumFromId(rightDoc, state.view.right.pageId);
+                    } else {
+                        const fallbackNum = Math.min(state.view.right.pageNum || 1, rightDoc.pageCount);
+                        state.view.right.pageNum = fallbackNum;
+                        state.view.right.pageId = pageIdFromNum(rightDoc, fallbackNum);
+                    }
                 }
 
                 const rightBtn = document.getElementById('lock-right-btn');

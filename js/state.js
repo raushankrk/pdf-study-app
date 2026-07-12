@@ -8,8 +8,8 @@ let modalResolve = null;
 const state = {
     documents: {}, 
     view: {
-        left: { docId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false }, 
-        right: { docId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false } 
+        left: { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false }, 
+        right: { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false } 
     },
     zoomLive: { left: 1.0, right: 1.0 }, 
     zoomTimer: { left: null, right: null }, 

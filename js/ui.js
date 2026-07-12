@@ -374,8 +374,8 @@ async function clearAllData() {
         state.imageCache = {};
         state.embeddings = [];
         state.chats = [];
-        state.view.left = { docId: null, pageNum: 1, scale: 1.5, scrollTop: 0 };
-        state.view.right = { docId: null, pageNum: 1, scale: 1.5, scrollTop: 0 };
+        state.view.left = { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false };
+        state.view.right = { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false };
         state.lastActiveSide = 'left';
         
         await createNewChat();

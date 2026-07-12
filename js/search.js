@@ -119,6 +119,7 @@ async function performViewportSearch(side, targetPageNum = null) {
     const targetMatch = allMatches[startIndex];
     if (targetPageNum && targetMatch && targetMatch.page !== state.view[side].pageNum) {
         state.view[side].pageNum = targetMatch.page;
+        state.view[side].pageId = pageIdFromNum(doc, targetMatch.page);
         renderPage(side); 
     } else {
         renderSearchHighlights(side);
@@ -182,7 +183,9 @@ function navigateSearchResult(side, dir) {
     const match = results[newIndex];
     
     if (match.page !== state.view[side].pageNum) {
+        const doc = state.documents[state.view[side].docId];
         state.view[side].pageNum = match.page;
+        state.view[side].pageId = pageIdFromNum(doc, match.page);
         renderPage(side);
     } else {
         renderSearchHighlights(side);
@@ -252,8 +255,10 @@ async function performGlobalSearch() {
                 }
             }
 
+            const targetDoc = state.documents[match.docId];
             state.view[side].docId = match.docId;
             state.view[side].pageNum = match.page;
+            state.view[side].pageId = pageIdFromNum(targetDoc, match.page);
             state.view[side].scrollTop = 0;
             
             const input = document.getElementById(`${side}-search-input`);
@@ -295,12 +300,16 @@ function renderContinuationIndicator(side, layer, direction, targetPage, x, y) {
     const btnContinue = div.querySelector('.btn-continue');
     btnContinue.onclick = (e) => {
         e.stopPropagation();
+        const targetDoc = state.documents[state.view[side].docId];
+        const targetPageId = pageIdFromNum(targetDoc, targetPage);
         // Trigger jump to target page natively keeping the highlight active
         if (state.activeCitation) {
+            state.activeCitation.pageId = targetPageId;
             state.activeCitation.pageNum = targetPage;
             state.activeCitation.scrolled = false;
         }
         state.view[side].pageNum = targetPage;
+        state.view[side].pageId = targetPageId;
         renderPage(side);
     };
 
@@ -323,7 +332,7 @@ async function highlightChunk(text, side, shouldScroll = true) {
     
     // --- AUTO CANCEL LOGIC ---
     // Auto-cancel if the user navigates away natively (e.g., changing page using standard controls)
-    if (state.activeCitation && (state.activeCitation.docId !== docId || state.activeCitation.pageNum !== viewState.pageNum)) {
+    if (state.activeCitation && (state.activeCitation.docId !== docId || state.activeCitation.pageId !== viewState.pageId)) {
         state.activeCitation = null;
         return; 
     }

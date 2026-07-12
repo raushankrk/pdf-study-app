@@ -111,7 +111,8 @@ window.exportProject = async function() {
                 id TEXT PRIMARY KEY,
                 name TEXT,
                 pdf_blob BLOB,
-                thumbnail TEXT
+                thumbnail TEXT,
+                page_ids_json TEXT
             );
         `);
 
@@ -126,9 +127,9 @@ window.exportProject = async function() {
         db.run(`
             CREATE TABLE annotations (
                 doc_id TEXT,
-                page_num INTEGER,
+                page_id TEXT,
                 data_json TEXT,
-                PRIMARY KEY (doc_id, page_num)
+                PRIMARY KEY (doc_id, page_id)
             );
         `);
 
@@ -138,7 +139,7 @@ window.exportProject = async function() {
                 text TEXT,
                 vector_json TEXT,
                 doc_id TEXT,
-                page_num INTEGER
+                page_id TEXT
             );
         `);
 
@@ -157,11 +158,11 @@ window.exportProject = async function() {
             );
         `);
 
-        const stmtDoc = db.prepare("INSERT INTO documents VALUES (?, ?, ?, ?)");
+        const stmtDoc = db.prepare("INSERT INTO documents VALUES (?, ?, ?, ?, ?)");
         for (const id of docKeys) {
             const doc = state.documents[id];
             const pdfArray = await blobToUint8Array(doc.file);
-            stmtDoc.run([id, doc.name, pdfArray, doc.thumbnail]);
+            stmtDoc.run([id, doc.name, pdfArray, doc.thumbnail, JSON.stringify(doc.pageIds || [])]);
         }
         stmtDoc.free();
 
@@ -173,15 +174,15 @@ window.exportProject = async function() {
 
         const stmtAnno = db.prepare("INSERT INTO annotations VALUES (?, ?, ?)");
         for (const docId in state.annotations) {
-            for (const pageNum in state.annotations[docId]) {
-                stmtAnno.run([docId, pageNum, JSON.stringify(state.annotations[docId][pageNum])]);
+            for (const pageId in state.annotations[docId]) {
+                stmtAnno.run([docId, pageId, JSON.stringify(state.annotations[docId][pageId])]);
             }
         }
         stmtAnno.free();
 
         const stmtEmb = db.prepare("INSERT INTO embeddings VALUES (?, ?, ?, ?, ?)");
         for (const emb of state.embeddings) {
-            stmtEmb.run([emb.id, emb.text, JSON.stringify(emb.vector), emb.docId, emb.pageNum]);
+            stmtEmb.run([emb.id, emb.text, JSON.stringify(emb.vector), emb.docId, emb.pageId]);
         }
         stmtEmb.free();
 
@@ -274,17 +275,27 @@ async function handleProjectImport(e) {
         if (docRows.length > 0) {
             const rows = docRows[0].values;
             for (let i = 0; i < rows.length; i++) {
-                const [id, name, blobData, thumb] = rows[i];
+                const [id, name, blobData, thumb, pageIdsJson] = rows[i];
                 
                 const blob = uint8ArrayToBlob(blobData, 'application/pdf');
                 const pdfArrayBuffer = await blob.arrayBuffer();
                 const pdfDoc = await pdfjsLib.getDocument(pdfArrayBuffer).promise;
 
+                // Fall back to generating fresh pageIds if importing an older project file
+                // that predates stable page IDs.
+                let pageIds;
+                try {
+                    pageIds = pageIdsJson ? JSON.parse(pageIdsJson) : null;
+                } catch (e) { pageIds = null; }
+                if (!Array.isArray(pageIds) || pageIds.length !== pdfDoc.numPages) {
+                    pageIds = Array.from({ length: pdfDoc.numPages }, () => generateId());
+                }
+
                 state.documents[id] = {
                     id, name, file: blob, pdfDoc, 
-                    pageCount: pdfDoc.numPages, thumbnail: thumb
+                    pageCount: pdfDoc.numPages, thumbnail: thumb, pageIds
                 };
-                await saveDocumentToDB({ id, name, pageCount: pdfDoc.numPages, thumbnail: thumb, fileBlob: blob });
+                await saveDocumentToDB({ id, name, pageCount: pdfDoc.numPages, thumbnail: thumb, fileBlob: blob, pageIds });
             }
         }
 
@@ -293,11 +304,11 @@ async function handleProjectImport(e) {
         if (annoRows.length > 0) {
             const rows = annoRows[0].values;
             for (let i = 0; i < rows.length; i++) {
-                const [docId, pageNum, json] = rows[i];
+                const [docId, pageId, json] = rows[i];
                 
                 if (!state.annotations[docId]) state.annotations[docId] = {};
                 const data = JSON.parse(json);
-                state.annotations[docId][pageNum] = data;
+                state.annotations[docId][pageId] = data;
                 
                 if (data.images) {
                     data.images.forEach(img => {
@@ -332,7 +343,7 @@ async function handleProjectImport(e) {
         if (embRows.length > 0) {
             const rows = embRows[0].values;
             for (let i = 0; i < rows.length; i++) {
-                const [id, text, vecJson, dId, pNum] = rows[i];
+                const [id, text, vecJson, dId, pId] = rows[i];
                 if (state.documents[dId]) {
                     try {
                         const vector = JSON.parse(vecJson);
@@ -341,7 +352,7 @@ async function handleProjectImport(e) {
                             text,
                             vector: vector,
                             docId: dId,
-                            pageNum: pNum,
+                            pageId: pId,
                             docName: state.documents[dId].name
                         });
                     } catch (err) {
