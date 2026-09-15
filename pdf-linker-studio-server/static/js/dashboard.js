@@ -1,14 +1,15 @@
 // ==========================================
 // 📁 dashboard.js — Project manager UI
 // Shown at the root URL. Lists all projects on the server, lets the user
-// create/open/export/import/delete projects.
+// create/open/rename/export/import/delete projects — including bulk operations.
 // ==========================================
 
 const Dashboard = (() => {
     let projects = [];
-    let selectedProjectId = null;
+    let selectedProjectIds = new Set();  // Multi-select (bulk ops)
     let pendingImportFile = null;       // File object awaiting conflict resolution
-    let pendingDeleteProjectId = null; // Project ID awaiting delete confirmation
+    let pendingDeleteProjectIds = null; // Project IDs awaiting delete confirmation (single or bulk)
+    let pendingRenameProjectId = null;  // Project ID awaiting rename confirmation
     let selectedColor = '#3b82f6';
 
     // ---- Helpers ----
@@ -60,12 +61,31 @@ const Dashboard = (() => {
         document.getElementById('alert-modal').classList.add('hidden');
     }
 
+    function getSelectedProjects() {
+        return projects.filter(p => selectedProjectIds.has(p.id));
+    }
+
+    function updateBulkActionBar() {
+        const bar = document.getElementById('bulk-action-bar');
+        const countLabel = document.getElementById('bulk-selection-count');
+        if (!bar || !countLabel) return;
+        const count = selectedProjectIds.size;
+        if (count === 0) {
+            bar.classList.add('hidden');
+        } else {
+            bar.classList.remove('hidden');
+            countLabel.innerText = `${count} project${count === 1 ? '' : 's'} selected`;
+        }
+    }
+
     // ---- Loading / rendering ----
     async function refresh() {
         document.getElementById('dashboard-loading').classList.remove('hidden');
         document.getElementById('dashboard-error').classList.add('hidden');
         document.getElementById('dashboard-empty').classList.add('hidden');
         document.getElementById('project-grid').innerHTML = '';
+        selectedProjectIds.clear();
+        updateBulkActionBar();
 
         try {
             projects = await Api.listProjects();
@@ -95,24 +115,34 @@ const Dashboard = (() => {
             const card = document.createElement('div');
             card.className = 'project-card';
             card.dataset.projectId = p.id;
-            if (selectedProjectId === p.id) card.classList.add('selected');
+            if (selectedProjectIds.has(p.id)) card.classList.add('selected');
 
             const color = p.color || '#3b82f6';
             const docCount = p.docCount || 0;
             const folderCount = p.folderCount || 0;
             const sizeStr = formatSize(p.size);
+            const isDefault = p.id === 'default';
 
             card.innerHTML = `
                 <div class="color-bar" style="background:${color}"></div>
+                <div class="card-checkbox">
+                    <input type="checkbox" ${selectedProjectIds.has(p.id) ? 'checked' : ''} title="Select for bulk action">
+                </div>
                 <div class="actions">
+                    <button class="action-btn open-btn" title="Open project">
+                        <i class="fa-solid fa-folder-open"></i>
+                    </button>
+                    <button class="action-btn rename-btn" title="Rename project">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
                     <button class="action-btn export-btn" title="Export as .plsx backup">
                         <i class="fa-solid fa-download"></i>
                     </button>
-                    <button class="action-btn delete-btn" title="Delete project">
+                    <button class="action-btn delete-btn ${isDefault ? 'disabled' : ''}" title="${isDefault ? 'Default project cannot be deleted' : 'Delete project'}" ${isDefault ? 'disabled' : ''}>
                         <i class="fa-solid fa-trash"></i>
                     </button>
                 </div>
-                <div class="flex items-start gap-3 pr-12 mt-2">
+                <div class="flex items-start gap-3 pr-16 mt-2">
                     <div class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background:${color}22; color:${color}">
                         <i class="fa-solid fa-folder-open"></i>
                     </div>
@@ -132,23 +162,52 @@ const Dashboard = (() => {
                 </div>
             `;
 
-            // Click anywhere on the card (except the action buttons) → open the project
+            // Checkbox click → toggle selection (don't open the project)
+            const checkbox = card.querySelector('.card-checkbox input');
+            checkbox.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (selectedProjectIds.has(p.id)) {
+                    selectedProjectIds.delete(p.id);
+                } else {
+                    selectedProjectIds.add(p.id);
+                }
+                render();  // Re-render to update the visual state
+                updateBulkActionBar();
+            });
+
+            // Card click (not on checkbox or action buttons) → open the project
             card.addEventListener('click', (e) => {
-                if (e.target.closest('.actions')) return;
+                if (e.target.closest('.actions') || e.target.closest('.card-checkbox')) return;
                 openProject(p.id);
             });
-            card.addEventListener('dblclick', () => openProject(p.id));
+            card.addEventListener('dblclick', (e) => {
+                if (e.target.closest('.actions') || e.target.closest('.card-checkbox')) return;
+                openProject(p.id);
+            });
 
+            // Open button
+            card.querySelector('.open-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                openProject(p.id);
+            });
+            // Rename button
+            card.querySelector('.rename-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                showRenameModal(p.id);
+            });
             // Export button
             card.querySelector('.export-btn').addEventListener('click', (e) => {
                 e.stopPropagation();
                 exportProject(p.id);
             });
-            // Delete button
-            card.querySelector('.delete-btn').addEventListener('click', (e) => {
-                e.stopPropagation();
-                confirmDelete(p.id);
-            });
+            // Delete button (disabled for default)
+            const delBtn = card.querySelector('.delete-btn');
+            if (!isDefault) {
+                delBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    confirmDelete([p.id]);
+                });
+            }
 
             grid.appendChild(card);
         });
@@ -156,13 +215,10 @@ const Dashboard = (() => {
 
     // ---- Actions ----
     function openProject(projectId) {
-        // Navigate to /editor/<project_id>. The editor's app.js reads the
-        // project ID from the URL and sets the X-Project-Id header.
         window.location.href = `/editor/${encodeURIComponent(projectId)}`;
     }
 
     async function createNewProject() {
-        // Reset the form
         document.getElementById('new-project-name').value = '';
         document.getElementById('new-project-description').value = '';
         selectedColor = '#3b82f6';
@@ -181,7 +237,6 @@ const Dashboard = (() => {
         const description = document.getElementById('new-project-description').value.trim();
         if (!name) return;
 
-        // Check for duplicate name (case-insensitive)
         const exists = projects.some(p => p.name.toLowerCase() === name.toLowerCase());
         if (exists) {
             showAlert('Duplicate Name',
@@ -192,7 +247,6 @@ const Dashboard = (() => {
         try {
             const created = await Api.createProject(name, description, selectedColor);
             showToast(`Project "${created.name}" created`);
-            // Open the new project immediately
             setTimeout(() => openProject(created.id), 500);
         } catch (err) {
             showAlert('Error', `Could not create project: ${escapeHtml(String(err))}`);
@@ -201,6 +255,59 @@ const Dashboard = (() => {
         }
     }
 
+    // ---- Rename ----
+    function showRenameModal(projectId) {
+        const project = projects.find(p => p.id === projectId);
+        if (!project) return;
+        pendingRenameProjectId = projectId;
+        document.getElementById('rename-project-name').value = project.name;
+        document.getElementById('rename-modal-title').innerText = `Rename "${project.name}"`;
+        document.getElementById('rename-modal').classList.remove('hidden');
+        setTimeout(() => {
+            const input = document.getElementById('rename-project-name');
+            input.focus();
+            input.select();
+        }, 100);
+    }
+
+    function cancelRename() {
+        pendingRenameProjectId = null;
+        document.getElementById('rename-modal').classList.add('hidden');
+    }
+
+    async function confirmRename() {
+        if (!pendingRenameProjectId) return;
+        const newName = document.getElementById('rename-project-name').value.trim();
+        if (!newName) {
+            alert('Project name cannot be empty.');
+            return;
+        }
+        const projectId = pendingRenameProjectId;
+        const oldProject = projects.find(p => p.id === projectId);
+        if (!oldProject) { cancelRename(); return; }
+        if (newName === oldProject.name) {
+            cancelRename();
+            return;
+        }
+        // Check for duplicate name (excluding self)
+        const dup = projects.some(p => p.id !== projectId && p.name.toLowerCase() === newName.toLowerCase());
+        if (dup) {
+            alert(`A project named "${newName}" already exists. Please choose another name.`);
+            return;
+        }
+        document.getElementById('rename-modal').classList.add('hidden');
+        pendingRenameProjectId = null;
+        showToast(`Renaming "${oldProject.name}" → "${newName}"...`);
+        try {
+            await Api.updateProject(projectId, { name: newName });
+            showToast(`Project renamed to "${newName}"`);
+            await refresh();
+        } catch (err) {
+            showAlert('Rename Failed', escapeHtml(String(err)));
+        }
+    }
+
+    // ---- Export ----
     async function exportProject(projectId) {
         const project = projects.find(p => p.id === projectId);
         if (!project) return;
@@ -213,42 +320,54 @@ const Dashboard = (() => {
         }
     }
 
+    async function bulkExport() {
+        const selected = getSelectedProjects();
+        if (selected.length === 0) return;
+        showToast(`Exporting ${selected.length} project${selected.length === 1 ? '' : 's'}...`, 10000);
+        let ok = 0, fail = 0;
+        for (const p of selected) {
+            try {
+                await Api.exportProject(p.id);
+                ok++;
+            } catch (err) {
+                console.error(`Export failed for ${p.name}:`, err);
+                fail++;
+            }
+        }
+        if (fail === 0) {
+            showToast(`Exported ${ok} project${ok === 1 ? '' : 's'}. Check downloads.`);
+        } else {
+            showAlert('Bulk Export Partial',
+                `Exported: ${ok}<br>Failed: ${fail}<br>Check the browser console for details.`);
+        }
+    }
+
+    // ---- Import ----
     function importProject() {
-        // Trigger the hidden file input
         const input = document.getElementById('import-file-input-real');
         input.value = '';
         input.click();
         input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            await handleImportFile(file);
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+            // Multiple files → import all sequentially
+            if (files.length === 1) {
+                await handleImportFile(files[0]);
+            } else {
+                await bulkImportFiles(files);
+            }
         };
     }
 
     async function handleImportFile(file) {
-        // First, parse the manifest to find out the project's name.
-        // We use a quick client-side unzip of just manifest.json (no library needed —
-        // we ask the server to do the heavy lifting via a "peek" endpoint).
-        // For simplicity, we just trigger the import with on_conflict='copy'
-        // (which the server handles gracefully) — but we want to give the user
-        // a chance to rename BEFORE the import runs.
-
-        // Best approach: do a quick HEAD/peek to get the project name from the
-        // backup. Since we don't have a peek endpoint, we read the manifest
-        // directly using a small unzip-in-browser approach.
-
         try {
             const manifest = await peekManifest(file);
             const originalName = manifest.project_name || 'Imported Project';
-
-            // Check if a project with this name exists
             const exists = projects.some(p => p.name.toLowerCase() === originalName.toLowerCase());
 
             if (exists) {
-                // Show conflict modal
                 pendingImportFile = file;
                 document.getElementById('conflict-name').innerText = originalName;
-                // Suggest a name like "Original Name (Copy 1)"
                 let candidate = `${originalName} (Copy 1)`;
                 let i = 1;
                 while (projects.some(p => p.name.toLowerCase() === candidate.toLowerCase())) {
@@ -260,7 +379,6 @@ const Dashboard = (() => {
                 return;
             }
 
-            // No conflict — proceed directly. Still show a confirm dialog with the original name.
             pendingImportFile = file;
             const proceed = confirm(
                 `Import project "${originalName}"?\n\n` +
@@ -270,7 +388,6 @@ const Dashboard = (() => {
             await doImport(file, originalName);
         } catch (err) {
             console.error('Manifest peek failed:', err);
-            // Fall back to importing with a generic name
             const proceed = confirm(
                 `Import this backup file?\n\n` +
                 `Could not read the project name from the backup. The imported project ` +
@@ -281,13 +398,31 @@ const Dashboard = (() => {
         }
     }
 
+    async function bulkImportFiles(files) {
+        showToast(`Importing ${files.length} backup file${files.length === 1 ? '' : 's'}...`, 15000);
+        let ok = 0, fail = 0;
+        for (const file of files) {
+            try {
+                // For bulk import, always use 'copy' mode with a default name.
+                // The server generates a unique name if there's a conflict.
+                const result = await Api.importProject(file, null, 'copy');
+                ok++;
+                console.log(`Imported: ${result.name}`);
+            } catch (err) {
+                console.error(`Import failed for ${file.name}:`, err);
+                fail++;
+            }
+        }
+        showToast(`Imported ${ok} of ${files.length} file${files.length === 1 ? '' : 's'}`, 4000);
+        if (fail > 0) {
+            showAlert('Bulk Import Partial',
+                `Imported: ${ok}<br>Failed: ${fail}<br>Check the browser console for details.`);
+        }
+        await refresh();
+    }
+
     function peekManifest(file) {
-        // Read the manifest.json from the .plsx file (a ZIP).
-        // We use a tiny client-side unzip via fetch + Blob → no extra library needed
-        // because we can hand off to the server's /import endpoint with a peek flag...
-        // But simplest is to use the browser's built-in DecompressionStream (Chrome 80+).
         return new Promise((resolve, reject) => {
-            // Try the FileReader + manual ZIP parse approach
             file.arrayBuffer().then(buf => {
                 try {
                     const manifest = _extractManifestFromZip(buf);
@@ -298,28 +433,10 @@ const Dashboard = (() => {
         });
     }
 
-    // Tiny ZIP-file manifest extractor — only reads the first file's local header
-    // and central directory. Doesn't handle all ZIP variants, but works for files
-    // produced by Python's zipfile module (which is what our server uses).
     function _extractManifestFromZip(buf) {
-        // We need a real ZIP reader. Use the browser's built-in
-        // DecompressionStream API (Chrome 80+, Firefox 113+, Safari 16.4+).
-        // For older browsers, we'd need a library like JSZip — but since the
-        // server always produces the file, we can rely on the manifest being
-        // small + stored uncompressed.
-        //
-        // Fallback: ask the server via a quick /import?peek=true endpoint.
-        // But since we don't want to add that, let's use a simpler approach:
-        // try to find "manifest.json" in the binary by scanning for the string,
-        // then parse the JSON that follows.
-        const bytes = new Uint8Array(buf);
-        const decoder = new TextDecoder();
-        const fullText = decoder.decode(bytes);
-        // Look for the start of the manifest.json file content.
-        // In a DEFLATEd zip, this won't work — we'd need to inflate.
-        // In a STORED zip, the content appears verbatim.
-        // Since Python's zipfile uses DEFLATE by default, we can't rely on this.
-        // For robustness, return null and let the caller fall back to "Imported Project".
+        // Try to find "manifest.json" content in the zip.
+        // Python's zipfile uses DEFLATE by default, so we can't rely on string scanning.
+        // Return null → caller falls back to "Imported Project".
         return null;
     }
 
@@ -334,7 +451,6 @@ const Dashboard = (() => {
             alert('Please enter a name for the imported copy.');
             return;
         }
-        // Check the new name doesn't conflict either
         if (projects.some(p => p.name.toLowerCase() === newName.toLowerCase())) {
             alert(`A project named "${newName}" already exists. Please choose another name.`);
             return;
@@ -355,56 +471,123 @@ const Dashboard = (() => {
         }
     }
 
-    function confirmDelete(projectId) {
-        const project = projects.find(p => p.id === projectId);
-        if (!project) return;
-        if (projectId === 'default') {
+    // ---- Delete ----
+    function confirmDelete(projectIds) {
+        // projectIds can be a single ID or an array
+        const ids = Array.isArray(projectIds) ? projectIds : [projectIds];
+        if (ids.length === 0) return;
+
+        // Filter out the default project (can't be deleted)
+        const deletable = ids.filter(id => id !== 'default');
+        const skipped = ids.length - deletable.length;
+        if (deletable.length === 0) {
             showAlert('Cannot Delete',
-                'The default project holds migrated data from the previous single-project version ' +
-                'and cannot be deleted. You can still open or export it.');
+                'The default project holds migrated data and cannot be deleted. ' +
+                'You can still open or export it.');
             return;
         }
-        pendingDeleteProjectId = projectId;
-        document.getElementById('delete-project-name').innerText = project.name;
+
+        pendingDeleteProjectIds = deletable;
+        const names = deletable.map(id => projects.find(p => p.id === id)?.name || id);
+        const isBulk = deletable.length > 1;
+
+        // Update the modal content
+        document.getElementById('delete-project-name').innerHTML = names
+            .map(n => `<b>${escapeHtml(n)}</b>`).join('<br>');
+        const warningEl = document.getElementById('delete-warning-count');
+        if (warningEl) {
+            warningEl.innerText = `${deletable.length} project${deletable.length === 1 ? '' : 's'}`;
+        }
+        if (skipped > 0) {
+            const noteEl = document.getElementById('delete-skipped-note');
+            if (noteEl) {
+                noteEl.innerText = `(${skipped} default project${skipped === 1 ? '' : 's'} skipped — cannot be deleted)`;
+                noteEl.classList.remove('hidden');
+            }
+        } else {
+            const noteEl = document.getElementById('delete-skipped-note');
+            if (noteEl) noteEl.classList.add('hidden');
+        }
+
+        // Show the export-then-delete button only for single-project deletes
+        // (bulk export-then-delete would be confusing)
+        const exportBtn = document.querySelector('#delete-confirm-modal .export-backup-btn');
+        if (exportBtn) {
+            if (isBulk) {
+                exportBtn.classList.add('hidden');
+            } else {
+                exportBtn.classList.remove('hidden');
+            }
+        }
+
         document.getElementById('delete-confirm-modal').classList.remove('hidden');
     }
 
     function cancelDelete() {
-        pendingDeleteProjectId = null;
+        pendingDeleteProjectIds = null;
         document.getElementById('delete-confirm-modal').classList.add('hidden');
     }
 
-    async function confirmDelete() {
-        if (!pendingDeleteProjectId) return;
-        const projectId = pendingDeleteProjectId;
-        const project = projects.find(p => p.id === projectId);
+    async function confirmDeleteAction() {
+        if (!pendingDeleteProjectIds || pendingDeleteProjectIds.length === 0) return;
+        const ids = [...pendingDeleteProjectIds];
+        const names = ids.map(id => projects.find(p => p.id === id)?.name || id);
         document.getElementById('delete-confirm-modal').classList.add('hidden');
-        pendingDeleteProjectId = null;
-        showToast(`Deleting "${project?.name || 'project'}"...`, 5000);
-        try {
-            await Api.deleteProject(projectId);
-            showToast('Project deleted');
-            await refresh();
-        } catch (err) {
-            showAlert('Delete Failed', escapeHtml(String(err)));
+        pendingDeleteProjectIds = null;
+        showToast(`Deleting ${ids.length} project${ids.length === 1 ? '' : 's'}...`, 5000);
+        let ok = 0, fail = 0;
+        for (let i = 0; i < ids.length; i++) {
+            try {
+                await Api.deleteProject(ids[i]);
+                ok++;
+            } catch (err) {
+                console.error(`Delete failed for ${names[i]}:`, err);
+                fail++;
+            }
         }
+        if (fail === 0) {
+            showToast(`Deleted ${ok} project${ok === 1 ? '' : 's'}`);
+        } else {
+            showAlert('Bulk Delete Partial',
+                `Deleted: ${ok}<br>Failed: ${fail}<br>Check the browser console for details.`);
+        }
+        selectedProjectIds.clear();
+        await refresh();
     }
 
     async function exportThenDelete() {
-        if (!pendingDeleteProjectId) return;
-        const projectId = pendingDeleteProjectId;
-        // Close the delete modal, do the export, then re-open delete confirmation
+        if (!pendingDeleteProjectIds || pendingDeleteProjectIds.length !== 1) return;
+        const projectId = pendingDeleteProjectIds[0];
         document.getElementById('delete-confirm-modal').classList.add('hidden');
         await exportProject(projectId);
-        // Re-show delete confirmation so the user can confirm after backing up
         setTimeout(() => {
             const project = projects.find(p => p.id === projectId);
             if (project) {
-                pendingDeleteProjectId = projectId;
-                document.getElementById('delete-project-name').innerText = project.name;
+                pendingDeleteProjectIds = [projectId];
+                document.getElementById('delete-project-name').innerHTML = `<b>${escapeHtml(project.name)}</b>`;
+                document.querySelector('#delete-confirm-modal .export-backup-btn')?.classList.remove('hidden');
                 document.getElementById('delete-confirm-modal').classList.remove('hidden');
             }
         }, 800);
+    }
+
+    // ---- Bulk actions ----
+    function selectAll() {
+        projects.forEach(p => selectedProjectIds.add(p.id));
+        render();
+        updateBulkActionBar();
+    }
+
+    function deselectAll() {
+        selectedProjectIds.clear();
+        render();
+        updateBulkActionBar();
+    }
+
+    function bulkDelete() {
+        const selected = getSelectedProjects();
+        if (selected.length === 0) return;
+        confirmDelete(selected.map(p => p.id));
     }
 
     // ---- Color picker ----
@@ -432,7 +615,6 @@ const Dashboard = (() => {
     // ---- Init ----
     function init() {
         initColorPicker();
-        // Wire up the import file input (kept as backup trigger if needed)
         const importInput = document.getElementById('import-file-input');
         if (importInput) {
             importInput.addEventListener('change', (e) => {
@@ -447,14 +629,15 @@ const Dashboard = (() => {
         init, refresh, render,
         createNewProject, cancelNewProject, confirmCreateNewProject,
         openProject,
-        exportProject,
+        showRenameModal, cancelRename, confirmRename,
+        exportProject, bulkExport,
         importProject, cancelImport, confirmImportAsCopy,
-        confirmDelete, cancelDelete, confirmDelete, exportThenDelete,
+        confirmDelete, cancelDelete, confirmDeleteAction, exportThenDelete,
+        selectAll, deselectAll, bulkDelete,
         closeAlert,
     };
 })();
 
 window.Dashboard = Dashboard;
 
-// Bootstrap on page load
 document.addEventListener('DOMContentLoaded', () => Dashboard.init());

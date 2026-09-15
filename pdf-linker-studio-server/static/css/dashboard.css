@@ -34,19 +34,38 @@
 .project-card.selected {
     border-color: #3b82f6;
     background: #eff6ff;
+    box-shadow: 0 0 0 1px #3b82f6;
 }
 .project-card .color-bar {
     position: absolute;
     top: 0; left: 0; right: 0;
     height: 4px;
 }
+
+/* Checkbox (top-left corner of each card) */
+.project-card .card-checkbox {
+    position: absolute;
+    top: 0.5rem; left: 0.5rem;
+    z-index: 10;
+}
+.project-card .card-checkbox input[type="checkbox"] {
+    width: 18px; height: 18px;
+    cursor: pointer;
+    accent-color: #3b82f6;
+}
+
 .project-card .actions {
     position: absolute;
     top: 0.5rem; right: 0.5rem;
     opacity: 0;
     transition: opacity 0.15s;
+    display: flex;
+    gap: 4px;
 }
 .project-card:hover .actions {
+    opacity: 1;
+}
+.project-card.selected .actions {
     opacity: 1;
 }
 .project-card .action-btn {
@@ -58,10 +77,22 @@
     cursor: pointer;
     transition: all 0.15s;
     border: 1px solid #e5e7eb;
+    font-size: 11px;
 }
 .project-card .action-btn:hover { background: #f3f4f6; }
+.project-card .action-btn.open-btn:hover { color: #2563eb; border-color: #93c5fd; }
+.project-card .action-btn.rename-btn:hover { color: #2563eb; border-color: #93c5fd; }
 .project-card .action-btn.export-btn:hover { color: #2563eb; border-color: #93c5fd; }
 .project-card .action-btn.delete-btn:hover { color: #dc2626; border-color: #fca5a5; }
+.project-card .action-btn.delete-btn.disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+.project-card .action-btn.delete-btn.disabled:hover {
+    background: white;
+    color: #4b5563;
+    border-color: #e5e7eb;
+}
 
 /* Stats row */
 .project-stats {

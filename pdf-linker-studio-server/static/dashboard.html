@@ -21,16 +21,23 @@
                 <span class="text-xs text-gray-400 ml-2">Project Dashboard</span>
             </div>
             <div class="flex items-center gap-2">
+                <button onclick="Dashboard.selectAll()" class="text-gray-600 hover:text-blue-600 text-xs font-medium px-2 py-1.5 rounded hover:bg-blue-50 transition-colors" title="Select all projects">
+                    <i class="fa-solid fa-check-double mr-1"></i>Select All
+                </button>
+                <button onclick="Dashboard.deselectAll()" class="text-gray-600 hover:text-blue-600 text-xs font-medium px-2 py-1.5 rounded hover:bg-blue-50 transition-colors" title="Deselect all">
+                    Clear
+                </button>
+                <span class="w-px h-6 bg-gray-200 mx-1"></span>
                 <button onclick="Dashboard.createNewProject()" class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm transition-colors" title="Create a new project">
                     <i class="fa-solid fa-plus"></i>
                     <span>New Project</span>
                 </button>
-                <button onclick="Dashboard.importProject()" class="flex items-center gap-1.5 text-gray-700 hover:text-blue-600 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 bg-white cursor-pointer transition-colors" title="Import a project backup (.plsx)">
+                <button onclick="Dashboard.importProject()" class="flex items-center gap-1.5 text-gray-700 hover:text-blue-600 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 bg-white cursor-pointer transition-colors" title="Import project backup (.plsx) — supports multiple files">
                     <i class="fa-solid fa-file-import"></i>
                     <span>Import</span>
                 </button>
-                <!-- Hidden file input for imports -->
-                <input type="file" id="import-file-input" class="hidden" accept=".plsx,.zip">
+                <!-- Hidden file input for imports (supports multiple) -->
+                <input type="file" id="import-file-input" class="hidden" accept=".plsx,.zip" multiple>
             </div>
         </header>
 
@@ -65,6 +72,20 @@
             <div id="project-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
 
         </main>
+
+        <!-- Bulk action bar (shown when projects are selected) -->
+        <div id="bulk-action-bar" class="hidden border-t border-gray-200 bg-blue-50/50 px-6 py-2 flex items-center gap-2 text-xs">
+            <span id="bulk-selection-count" class="text-blue-700 font-medium"></span>
+            <div class="ml-auto flex items-center gap-2">
+                <button onclick="Dashboard.bulkExport()" class="flex items-center gap-1 text-blue-600 hover:underline font-medium" title="Export all selected projects as .plsx files">
+                    <i class="fa-solid fa-download"></i> Export Selected
+                </button>
+                <button onclick="Dashboard.bulkDelete()" class="flex items-center gap-1 text-red-600 hover:underline font-medium" title="Delete all selected projects">
+                    <i class="fa-solid fa-trash"></i> Delete Selected
+                </button>
+                <button onclick="Dashboard.deselectAll()" class="text-gray-500 hover:underline" title="Clear selection">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <!-- New Project Modal -->
@@ -95,6 +116,23 @@
                 <div class="flex justify-end gap-2 pt-2">
                     <button type="button" onclick="Dashboard.cancelNewProject()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
                     <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">Create Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Rename Project Modal -->
+    <div id="rename-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <h3 id="rename-modal-title" class="text-lg font-bold text-gray-800 mb-4">Rename Project</h3>
+            <form onsubmit="event.preventDefault(); Dashboard.confirmRename()">
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">New Project Name</label>
+                    <input type="text" id="rename-project-name" class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="Dashboard.cancelRename()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">Rename</button>
                 </div>
             </form>
         </div>
@@ -131,7 +169,7 @@
             </div>
             <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                 <p class="text-sm text-red-800 font-medium mb-2">
-                    Deleting this project will permanently remove its PDFs, folders, annotations, links, chats, AI/RAG data, and other project data from the server.
+                    Deleting <span id="delete-warning-count">this project</span> will permanently remove its PDFs, folders, annotations, links, chats, AI/RAG data, and other project data from the server.
                 </p>
                 <p class="text-xs text-red-700">
                     <i class="fa-solid fa-circle-info"></i>
@@ -144,22 +182,24 @@
                     <b>Recommendation:</b> We recommend exporting this project before deleting it.
                 </p>
             </div>
+            <p id="delete-skipped-note" class="text-xs text-gray-500 mb-2 hidden"></p>
             <div class="text-sm text-gray-600 mb-4">
-                Project to delete: <b id="delete-project-name"></b>
+                Project(s) to delete:<br>
+                <div id="delete-project-name" class="mt-1"></div>
             </div>
             <div class="flex justify-end gap-2">
                 <button type="button" onclick="Dashboard.cancelDelete()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
-                <button type="button" onclick="Dashboard.exportThenDelete()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">
+                <button type="button" onclick="Dashboard.exportThenDelete()" class="export-backup-btn bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">
                     <i class="fa-solid fa-download mr-1"></i> Export Backup
                 </button>
-                <button type="button" onclick="Dashboard.confirmDelete()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium">
+                <button type="button" onclick="Dashboard.confirmDeleteAction()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium">
                     <i class="fa-solid fa-trash mr-1"></i> Delete Permanently
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Generic Alert Modal (used for errors + success messages) -->
+    <!-- Generic Alert Modal -->
     <div id="alert-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
         <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
             <h3 id="alert-title" class="text-lg font-bold text-gray-800 mb-2"></h3>
@@ -173,10 +213,10 @@
     <!-- Toast notification -->
     <div id="toast" class="fixed bottom-6 right-6 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg hidden z-[10000]"></div>
 
-    <!-- Hidden file input for exports -->
-    <input type="file" id="import-file-input-real" class="hidden" accept=".plsx,.zip">
+    <!-- Hidden file input for imports (used by JS) -->
+    <input type="file" id="import-file-input-real" class="hidden" accept=".plsx,.zip" multiple>
 
-    <!-- Scripts (only what the dashboard needs) -->
+    <!-- Scripts -->
     <script src="/js/utils.js"></script>
     <script src="/js/api.js"></script>
     <script src="/js/dashboard.js"></script>
