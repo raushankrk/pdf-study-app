@@ -360,42 +360,48 @@ const Dashboard = (() => {
     }
 
     async function handleImportFile(file) {
+        // Ask the server to peek at the .plsx manifest and return the original
+        // project name + metadata. This is the ONLY reliable way to read a
+        // DEFLATEd ZIP in the browser without a JSZip library.
+        let originalName = null;
+        let description = '';
+        let color = '#3b82f6';
         try {
-            const manifest = await peekManifest(file);
-            const originalName = manifest.project_name || 'Imported Project';
-            const exists = projects.some(p => p.name.toLowerCase() === originalName.toLowerCase());
-
-            if (exists) {
-                pendingImportFile = file;
-                document.getElementById('conflict-name').innerText = originalName;
-                let candidate = `${originalName} (Copy 1)`;
-                let i = 1;
-                while (projects.some(p => p.name.toLowerCase() === candidate.toLowerCase())) {
-                    i++;
-                    candidate = `${originalName} (Copy ${i})`;
-                }
-                document.getElementById('conflict-new-name').value = candidate;
-                document.getElementById('import-conflict-modal').classList.remove('hidden');
-                return;
-            }
-
-            pendingImportFile = file;
-            const proceed = confirm(
-                `Import project "${originalName}"?\n\n` +
-                `This will create a new project on the server with new IDs for all data.`
-            );
-            if (!proceed) return;
-            await doImport(file, originalName);
+            showToast('Reading backup file...', 5000);
+            const info = await Api.peekProjectBackup(file);
+            originalName = info.project_name || 'Imported Project';
+            description = info.description || '';
+            color = info.color || '#3b82f6';
+            showToast('');
         } catch (err) {
-            console.error('Manifest peek failed:', err);
-            const proceed = confirm(
-                `Import this backup file?\n\n` +
-                `Could not read the project name from the backup. The imported project ` +
-                `will be named "Imported Project". You can rename it afterwards.`
-            );
-            if (!proceed) return;
-            await doImport(file, 'Imported Project');
+            console.error('Peek failed:', err);
+            // If the peek fails (e.g. invalid file), show an error and abort.
+            showAlert('Cannot Read Backup',
+                `Could not read the project name from this backup file.<br><br>` +
+                `Error: ${escapeHtml(String(err))}<br><br>` +
+                `Make sure the file is a valid .plsx backup created by PDF Linker Studio.`);
+            return;
         }
+
+        const exists = projects.some(p => p.name.toLowerCase() === originalName.toLowerCase());
+
+        if (exists) {
+            // Name conflict → show the conflict modal with a suggested unique name
+            pendingImportFile = file;
+            document.getElementById('conflict-name').innerText = originalName;
+            let candidate = `${originalName} (Copy 1)`;
+            let i = 1;
+            while (projects.some(p => p.name.toLowerCase() === candidate.toLowerCase())) {
+                i++;
+                candidate = `${originalName} (Copy ${i})`;
+            }
+            document.getElementById('conflict-new-name').value = candidate;
+            document.getElementById('import-conflict-modal').classList.remove('hidden');
+            return;
+        }
+
+        // No conflict → proceed directly with the original name
+        await doImport(file, originalName);
     }
 
     async function bulkImportFiles(files) {
@@ -403,8 +409,9 @@ const Dashboard = (() => {
         let ok = 0, fail = 0;
         for (const file of files) {
             try {
-                // For bulk import, always use 'copy' mode with a default name.
-                // The server generates a unique name if there's a conflict.
+                // For bulk import, always use 'copy' mode with null name.
+                // The server peeks the manifest internally and generates a unique
+                // name if there's a conflict.
                 const result = await Api.importProject(file, null, 'copy');
                 ok++;
                 console.log(`Imported: ${result.name}`);
@@ -419,25 +426,6 @@ const Dashboard = (() => {
                 `Imported: ${ok}<br>Failed: ${fail}<br>Check the browser console for details.`);
         }
         await refresh();
-    }
-
-    function peekManifest(file) {
-        return new Promise((resolve, reject) => {
-            file.arrayBuffer().then(buf => {
-                try {
-                    const manifest = _extractManifestFromZip(buf);
-                    if (manifest) resolve(manifest);
-                    else reject(new Error('manifest.json not found in zip'));
-                } catch (e) { reject(e); }
-            }).catch(reject);
-        });
-    }
-
-    function _extractManifestFromZip(buf) {
-        // Try to find "manifest.json" content in the zip.
-        // Python's zipfile uses DEFLATE by default, so we can't rely on string scanning.
-        // Return null → caller falls back to "Imported Project".
-        return null;
     }
 
     function cancelImport() {

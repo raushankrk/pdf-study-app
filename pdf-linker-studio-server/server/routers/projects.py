@@ -439,6 +439,85 @@ def export_project(project_id: str):
 
 # ---- Import ----
 
+@router.post("/peek")
+async def peek_backup(file: UploadFile = File(...)):
+    """Read just the manifest.json from an uploaded .plsx file and return the
+    project name + metadata. This lets the dashboard show the user the original
+    project name BEFORE committing to the import.
+
+    Returns: { project_name, project_id, description, color, format, version }
+    """
+    contents = await file.read()
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".plsx", delete=False) as tmp:
+        tmp.write(contents)
+        tmp_path = tmp.name
+
+    try:
+        if not zipfile.is_zipfile(tmp_path):
+            raise HTTPException(400, "Uploaded file is not a valid .plsx backup")
+
+        with zipfile.ZipFile(tmp_path, "r") as zf:
+            names = zf.namelist()
+            if "manifest.json" not in names:
+                raise HTTPException(400, "Backup is missing manifest.json")
+
+            manifest = json.loads(zf.read("manifest.json"))
+            if manifest.get("format") != "pdf-linker-studio-project":
+                raise HTTPException(400, "Backup format is not recognized")
+
+            # If the snapshot is also available, read the project_meta for richer info
+            project_name = manifest.get("project_name", "Imported Project")
+            project_id = manifest.get("project_id", "")
+            description = ""
+            color = "#3b82f6"
+            created_at = manifest.get("created_at")
+
+            if "data.sqlite" in names:
+                snap_bytes = zf.read("data.sqlite")
+                with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as snap_tmp:
+                    snap_tmp.write(snap_bytes)
+                    snap_path = snap_tmp.name
+                try:
+                    src = sqlite3.connect(snap_path)
+                    src.row_factory = sqlite3.Row
+                    def meta(key, default=None):
+                        r = src.execute(
+                            "SELECT value FROM project_meta WHERE key = ?", (key,)
+                        ).fetchone()
+                        return r[0] if r else default
+                    project_name = meta("name", project_name)
+                    project_id = meta("id", project_id)
+                    description = meta("description", "") or ""
+                    color = meta("color", "#3b82f6")
+                    created_at = int(meta("created_at", str(created_at or 0)))
+                    src.close()
+                finally:
+                    try:
+                        os.remove(snap_path)
+                    except OSError:
+                        pass
+
+            return {
+                "project_name": project_name,
+                "project_id": project_id,
+                "description": description,
+                "color": color,
+                "created_at": created_at,
+                "format": manifest.get("format"),
+                "version": manifest.get("version", 1),
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Could not read backup: {e}")
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 @router.post("/import")
 async def import_project(
     file: UploadFile = File(...),

@@ -257,6 +257,21 @@ const Api = {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         return { filename };
     },
+    async peekProjectBackup(file) {
+        // Read just the manifest from a .plsx file (server-side) to get the
+        // original project name before committing to an import.
+        const form = new FormData();
+        form.append('file', file);
+        const resp = await fetch(`${API_BASE}/projects/peek`, {
+            method: 'POST',
+            body: form,
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        return resp.json();
+    },
     async importProject(file, newName = null, onConflict = 'copy') {
         const form = new FormData();
         form.append('file', file);
