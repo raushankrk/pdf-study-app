@@ -732,10 +732,10 @@ async def import_project(
                             # (do this per-doc so we use the right page_map)
                             for old_did, page_map in page_id_maps.items():
                                 new_did = doc_id_map.get(old_did, old_did)
-                                for old_pid, new_pid in page_map.items():
-                                    # This is O(N²) over citations × pages — fine for typical
-                                    # chat sizes, but could be optimized.
-                                    html = html.replace(f'data-page-id="{old_pid}"', f'data-page-id="{new_pid}"')
+                                # IMPORTANT: use new_page_id here, NOT new_pid —
+                                # new_pid is the PROJECT ID and must not be shadowed.
+                                for old_page_id, new_page_id in page_map.items():
+                                    html = html.replace(f'data-page-id="{old_page_id}"', f'data-page-id="{new_page_id}"')
                             m["html"] = html
                         # Also remap any 'context' field's chunks (docId / doc_id, pageId / page_id)
                         if isinstance(m, dict) and isinstance(m.get("context"), list):
@@ -813,10 +813,14 @@ async def import_project(
 
                 src.close()
                 # Return the new project
-                return _project_row_to_dict(
-                    db.query_one("SELECT * FROM projects WHERE id = ?", (new_pid,)),
-                    include_stats=True
-                )
+                proj_row = db.query_one("SELECT * FROM projects WHERE id = ?", (new_pid,))
+                if not proj_row:
+                    # This should never happen — if it does, the import partially
+                    # failed. Raise a clear error so the user knows to check.
+                    raise HTTPException(500, f"Import appeared to succeed but the project "
+                                         f"(id={new_pid}) could not be found in the database. "
+                                         f"The import may have partially failed.")
+                return _project_row_to_dict(proj_row, include_stats=True)
 
             finally:
                 try:
