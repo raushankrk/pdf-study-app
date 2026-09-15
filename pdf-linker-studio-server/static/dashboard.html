@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Linker Studio — Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/dashboard.css">
+</head>
+<body class="bg-gray-50 h-screen overflow-hidden text-gray-800 font-sans">
+
+    <div id="dashboard-app" class="flex flex-col h-screen">
+
+        <!-- Top bar -->
+        <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-6 shrink-0 shadow-sm">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
+                <h1 class="text-base font-bold text-gray-800">PDF Linker Studio</h1>
+                <span class="text-xs text-gray-400 ml-2">Project Dashboard</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="Dashboard.createNewProject()" class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3 py-1.5 rounded-lg shadow-sm transition-colors" title="Create a new project">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>New Project</span>
+                </button>
+                <button onclick="Dashboard.importProject()" class="flex items-center gap-1.5 text-gray-700 hover:text-blue-600 text-sm font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:border-blue-300 bg-white cursor-pointer transition-colors" title="Import a project backup (.plsx)">
+                    <i class="fa-solid fa-file-import"></i>
+                    <span>Import</span>
+                </button>
+                <!-- Hidden file input for imports -->
+                <input type="file" id="import-file-input" class="hidden" accept=".plsx,.zip">
+            </div>
+        </header>
+
+        <!-- Main content area -->
+        <main class="flex-1 overflow-y-auto p-6">
+
+            <!-- Loading state -->
+            <div id="dashboard-loading" class="flex flex-col items-center justify-center h-full">
+                <div class="spinner mb-4"></div>
+                <span class="text-sm text-gray-500">Loading projects...</span>
+            </div>
+
+            <!-- Error state -->
+            <div id="dashboard-error" class="hidden flex flex-col items-center justify-center h-full">
+                <i class="fa-solid fa-triangle-exclamation text-red-400 text-5xl mb-4"></i>
+                <h2 class="text-lg font-bold text-gray-800 mb-2">Cannot connect to the server</h2>
+                <p class="text-sm text-gray-500 mb-4">Make sure the FastAPI backend is running.</p>
+                <button onclick="Dashboard.refresh()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg">Retry</button>
+            </div>
+
+            <!-- Project grid -->
+            <div id="dashboard-empty" class="hidden flex flex-col items-center justify-center h-full">
+                <i class="fa-regular fa-folder-open text-gray-300 text-6xl mb-4"></i>
+                <h2 class="text-lg font-bold text-gray-800 mb-1">No projects yet</h2>
+                <p class="text-sm text-gray-500 mb-4">Create your first project to get started.</p>
+                <button onclick="Dashboard.createNewProject()" class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Create Project</span>
+                </button>
+            </div>
+
+            <div id="project-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+        </main>
+    </div>
+
+    <!-- New Project Modal -->
+    <div id="new-project-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Create New Project</h3>
+            <form id="new-project-form" onsubmit="Dashboard.confirmCreateNewProject(event)">
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Project Name</label>
+                    <input type="text" id="new-project-name" class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="e.g. Research Papers" required>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Description (optional)</label>
+                    <textarea id="new-project-description" rows="2" class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Brief description..."></textarea>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Color</label>
+                    <div class="flex gap-2" id="color-picker">
+                        <button type="button" data-color="#3b82f6" class="w-8 h-8 rounded-full border-2 border-white shadow ring-2 ring-blue-500" style="background:#3b82f6"></button>
+                        <button type="button" data-color="#10b981" class="w-8 h-8 rounded-full border-2 border-white shadow" style="background:#10b981"></button>
+                        <button type="button" data-color="#f59e0b" class="w-8 h-8 rounded-full border-2 border-white shadow" style="background:#f59e0b"></button>
+                        <button type="button" data-color="#ef4444" class="w-8 h-8 rounded-full border-2 border-white shadow" style="background:#ef4444"></button>
+                        <button type="button" data-color="#8b5cf6" class="w-8 h-8 rounded-full border-2 border-white shadow" style="background:#8b5cf6"></button>
+                        <button type="button" data-color="#ec4899" class="w-8 h-8 rounded-full border-2 border-white shadow" style="background:#ec4899"></button>
+                        <button type="button" data-color="#6b7280" class="w-8 h-8 rounded-full border-2 border-white shadow" style="background:#6b7280"></button>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="Dashboard.cancelNewProject()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">Create Project</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Import Conflict Modal -->
+    <div id="import-conflict-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <div class="flex items-center gap-3 mb-3">
+                <i class="fa-solid fa-triangle-exclamation text-yellow-500 text-xl"></i>
+                <h3 class="text-lg font-bold text-gray-800">Project Name Conflict</h3>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">
+                A project with the name <b id="conflict-name"></b> already exists.
+                Importing this project will create a <b>copy</b> with a new name.
+            </p>
+            <div class="mb-4">
+                <label class="block text-xs font-semibold text-gray-600 mb-1">New name for the imported copy</label>
+                <input type="text" id="conflict-new-name" class="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="Dashboard.cancelImport()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
+                <button type="button" onclick="Dashboard.confirmImportAsCopy()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">Import as Copy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="delete-confirm-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full">
+            <div class="flex items-center gap-3 mb-3">
+                <i class="fa-solid fa-triangle-exclamation text-red-500 text-xl"></i>
+                <h3 class="text-lg font-bold text-gray-800">Delete Project</h3>
+            </div>
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <p class="text-sm text-red-800 font-medium mb-2">
+                    Deleting this project will permanently remove its PDFs, folders, annotations, links, chats, AI/RAG data, and other project data from the server.
+                </p>
+                <p class="text-xs text-red-700">
+                    <i class="fa-solid fa-circle-info"></i>
+                    This action cannot be undone.
+                </p>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <p class="text-xs text-blue-800">
+                    <i class="fa-solid fa-lightbulb"></i>
+                    <b>Recommendation:</b> We recommend exporting this project before deleting it.
+                </p>
+            </div>
+            <div class="text-sm text-gray-600 mb-4">
+                Project to delete: <b id="delete-project-name"></b>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button type="button" onclick="Dashboard.cancelDelete()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
+                <button type="button" onclick="Dashboard.exportThenDelete()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">
+                    <i class="fa-solid fa-download mr-1"></i> Export Backup
+                </button>
+                <button type="button" onclick="Dashboard.confirmDelete()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded text-sm font-medium">
+                    <i class="fa-solid fa-trash mr-1"></i> Delete Permanently
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Alert Modal (used for errors + success messages) -->
+    <div id="alert-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <h3 id="alert-title" class="text-lg font-bold text-gray-800 mb-2"></h3>
+            <div id="alert-body" class="text-sm text-gray-600 mb-4"></div>
+            <div class="flex justify-end">
+                <button onclick="Dashboard.closeAlert()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg hidden z-[10000]"></div>
+
+    <!-- Hidden file input for exports -->
+    <input type="file" id="import-file-input-real" class="hidden" accept=".plsx,.zip">
+
+    <!-- Scripts (only what the dashboard needs) -->
+    <script src="/js/utils.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/dashboard.js"></script>
+</body>
+</html>

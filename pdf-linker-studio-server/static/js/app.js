@@ -1,8 +1,64 @@
 // ==========================================
 // 📁 12. app.js
 // ==========================================
+
+// ---- Dashboard navigation ----
+// Tracks in-flight API requests so we can warn the user before navigating away
+// (browser "beforeunload" doesn't see pending fetches, so we track them manually).
+let _pendingSaveCount = 0;
+
+function _incPendingSave() { _pendingSaveCount++; }
+function _decPendingSave() { _pendingSaveCount = Math.max(0, _pendingSaveCount - 1); }
+function hasPendingSaves() { return _pendingSaveCount > 0; }
+
+// Warn the user before navigating away / closing the tab if there are pending saves.
+window.addEventListener('beforeunload', (e) => {
+    if (hasPendingSaves()) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
+// Navigate back to the dashboard. Warns the user if there are pending saves.
+async function goToDashboard() {
+    if (hasPendingSaves()) {
+        if (!confirm('There are pending saves still in flight. Leaving now may lose unsaved changes. Continue?')) {
+            return;
+        }
+    }
+    // Best-effort flush of settings (view state, scroll position, etc.) before leaving.
+    try {
+        if (typeof saveSettings === 'function') await saveSettings();
+    } catch (e) { /* ignore */ }
+    window.location.href = '/';
+}
+window.goToDashboard = goToDashboard;
+
 async function init() {
     configureMarked();
+
+    // ---- Determine which project we're editing ----
+    // The URL is /editor/<project_id>. Extract the project_id and tell the API
+    // client to send it as the X-Project-Id header on every request.
+    const pathMatch = window.location.pathname.match(/\/editor\/([^/]+)/);
+    if (pathMatch) {
+        const projectId = decodeURIComponent(pathMatch[1]);
+        setProjectId(projectId);
+        // Update the editor header to show the project name.
+        try {
+            const proj = await Api.getProject(projectId);
+            const titleEl = document.querySelector('h1.text-base.font-bold');
+            if (titleEl) titleEl.innerText = `PDF Linker Studio — ${proj.name}`;
+            document.title = `PDF Linker Studio — ${proj.name}`;
+        } catch (err) {
+            console.warn('Could not load project info:', err);
+        }
+    } else {
+        // No project in URL — redirect to the dashboard.
+        window.location.href = '/';
+        return;
+    }
+
     try {
         // sql.js is no longer needed for IndexedDB-style persistence — the server
         // is the source of truth. We still load it for project export/import, which

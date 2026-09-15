@@ -6,12 +6,29 @@
 
 const API_BASE = '/api';  // Same origin — served by FastAPI
 
+// The current project ID is read from the URL (/editor/<project_id>) on init,
+// and sent as the X-Project-Id header on every API request so the server can
+// scope all data to the current project. The dashboard doesn't set this.
+let CURRENT_PROJECT_ID = null;
+
+function setProjectId(pid) {
+    CURRENT_PROJECT_ID = pid;
+}
+function getProjectId() {
+    return CURRENT_PROJECT_ID;
+}
+
 // ---- Internal fetch helper ----
 async function _fetch(path, options = {}) {
     const opts = {
         headers: {},
         ...options,
     };
+    // Always include the project ID header (when set) so the server can scope
+    // all queries to the current project.
+    if (CURRENT_PROJECT_ID) {
+        opts.headers['X-Project-Id'] = CURRENT_PROJECT_ID;
+    }
     if (opts.body && !(opts.body instanceof FormData) && typeof opts.body === 'object') {
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(opts.body);
@@ -23,7 +40,6 @@ async function _fetch(path, options = {}) {
         catch (e) { /* keep default */ }
         throw new Error(msg);
     }
-    // Don't try to parse empty bodies (e.g. from DELETE)
     const ct = resp.headers.get('content-type') || '';
     if (ct.includes('application/json')) {
         return resp.json();
@@ -32,7 +48,11 @@ async function _fetch(path, options = {}) {
 }
 
 async function _fetchBlob(path, options = {}) {
-    const resp = await fetch(API_BASE + path, options);
+    const opts = { headers: {}, ...options };
+    if (CURRENT_PROJECT_ID) {
+        opts.headers['X-Project-Id'] = CURRENT_PROJECT_ID;
+    }
+    const resp = await fetch(API_BASE + path, opts);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.blob();
 }
@@ -51,6 +71,12 @@ const Api = {
     },
     async fetchDocumentBlob(docId) {
         return _fetchBlob(`/documents/${docId}/file`);
+    },
+    async fetchDocumentBlobWithProjectHeader(docId) {
+        // PDF.js fetches the URL directly without our headers — so we use a
+        // query parameter as a fallback for the project_id.
+        const qs = CURRENT_PROJECT_ID ? `?project_id=${encodeURIComponent(CURRENT_PROJECT_ID)}` : '';
+        return _fetchBlob(`/documents/${docId}/file${qs}`);
     },
     async uploadDocuments(files, folderId = 'root') {
         const form = new FormData();
@@ -159,15 +185,97 @@ const Api = {
         return _fetch('/settings', { method: 'PUT', body: settings });
     },
 
-    // ---- Projects ----
-    async exportProjectUrl() {
-        // Returns a URL the browser can use to download the SQLite file.
-        return `${API_BASE}/projects/export`;
+    // ---- Projects (multi-project dashboard) ----
+    async listProjects() {
+        // NOTE: this is NOT project-scoped (we don't have a current project yet —
+        // we're listing them all). So no X-Project-Id header is sent.
+        const resp = await fetch(`${API_BASE}/projects`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
     },
-    async importProject(file) {
+    async createProject(name, description = '', color = '#3b82f6') {
+        const resp = await fetch(`${API_BASE}/projects`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description, color }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        return resp.json();
+    },
+    async getProject(projectId) {
+        const resp = await fetch(`${API_BASE}/projects/${projectId}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
+    },
+    async updateProject(projectId, update) {
+        const resp = await fetch(`${API_BASE}/projects/${projectId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(update),
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        return resp.json();
+    },
+    async deleteProject(projectId) {
+        const resp = await fetch(`${API_BASE}/projects/${projectId}`, { method: 'DELETE' });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        return resp.json();
+    },
+    // Export returns a binary file (zip). We navigate to it directly so the
+    // browser triggers a download.
+    exportProjectUrl(projectId) {
+        return `${API_BASE}/projects/${projectId}/export`;
+    },
+    async exportProject(projectId) {
+        // POST request that returns a binary blob — we trigger a download via an
+        // invisible <a> element.
+        const resp = await fetch(`${API_BASE}/projects/${projectId}/export`, { method: 'POST' });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        const blob = await resp.blob();
+        const cd = resp.headers.get('content-disposition') || '';
+        const match = cd.match(/filename="?([^";]+)"?/i);
+        const filename = match ? match[1] : `project_${projectId}.plsx`;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return { filename };
+    },
+    async importProject(file, newName = null, onConflict = 'copy') {
         const form = new FormData();
         form.append('file', file);
-        return _fetch('/projects/import', { method: 'POST', body: form });
+        if (newName) form.append('new_name', newName);
+        form.append('on_conflict', onConflict);
+        const resp = await fetch(`${API_BASE}/projects/import`, {
+            method: 'POST',
+            body: form,
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${resp.status}`);
+        }
+        return resp.json();
+    },
+    async checkProjectNameExists(name) {
+        // Helper for the dashboard: check if a project name already exists.
+        const projects = await Api.listProjects();
+        return projects.some(p => p.name.toLowerCase() === name.toLowerCase());
     },
 
     // ---- AI / RAG ----
@@ -193,9 +301,11 @@ const Api = {
      */
     streamChat(request, callbacks) {
         return new Promise((resolve, reject) => {
+            const headers = { 'Content-Type': 'application/json' };
+            if (CURRENT_PROJECT_ID) headers['X-Project-Id'] = CURRENT_PROJECT_ID;
             fetch(API_BASE + '/ai/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: headers,
                 body: JSON.stringify(request),
             }).then(resp => {
                 if (!resp.ok) {
@@ -214,9 +324,8 @@ const Api = {
                             return;
                         }
                         buffer += decoder.decode(value, { stream: true });
-                        // SSE events are separated by \n\n
                         const events = buffer.split('\n\n');
-                        buffer = events.pop();  // Keep the partial last event
+                        buffer = events.pop();
                         for (const evt of events) {
                             if (!evt.startsWith('data: ')) continue;
                             const payload = evt.slice(6).trim();
@@ -263,3 +372,5 @@ const Api = {
 };
 
 window.Api = Api;
+window.setProjectId = setProjectId;
+window.getProjectId = getProjectId;

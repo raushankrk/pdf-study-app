@@ -16,7 +16,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="/css/style.css">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -37,9 +37,14 @@
 
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
-        
-        <!-- Left: Brand -->
+
+        <!-- Left: Brand + Dashboard button -->
         <div class="flex items-center gap-3">
+            <button onclick="goToDashboard()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm font-medium" title="Back to Dashboard">
+                <i class="fa-solid fa-arrow-left"></i>
+                <span class="hidden sm:inline">Dashboard</span>
+            </button>
+            <span class="w-px h-6 bg-gray-200"></span>
             <button onclick="toggleLeftSidebar()" class="toggle-left-btn w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-all" title="Toggle Sidebar (Ctrl+B)">
                 <i class="fa-solid fa-bars"></i>
             </button>
@@ -603,22 +608,22 @@
         </div>
     </div>
 
-    <script src="js/utils.js"></script>
-    <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/state.js"></script>
-    <script src="js/database.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/ai.js"></script>
-    <script src="js/pdf.js"></script>
-    <script src="js/search.js"></script>
-    <script src="js/annotations.js"></script>
-    <script src="js/links.js"></script>
+    <script src="/js/utils.js"></script>
+    <script src="/js/config.js"></script>
+    <script src="/js/api.js"></script>
+    <script src="/js/state.js"></script>
+    <script src="/js/database.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/ai.js"></script>
+    <script src="/js/pdf.js"></script>
+    <script src="/js/search.js"></script>
+    <script src="/js/annotations.js"></script>
+    <script src="/js/links.js"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="js/folders.js"></script>
-    <script src="js/filemanager.js"></script>
-    <script src="js/events.js"></script>
-    <script src="js/app.js"></script>
+    <script src="/js/folders.js"></script>
+    <script src="/js/filemanager.js"></script>
+    <script src="/js/events.js"></script>
+    <script src="/js/app.js"></script>
 
 </body>
 </html>

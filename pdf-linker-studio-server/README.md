@@ -1,431 +1,352 @@
-# PDF Linker Studio — Server Edition
+# PDF Linker Studio — Server Edition (Multi-Project)
 
-A server-side version of **PDF Linker Studio** that runs on your Windows PC and is
-accessible from any device (iPad, phone, laptop) on the same local network via a
-browser URL.
+A server-side PDF management studio with a **Project Dashboard** that lets you
+manage multiple isolated projects. Each project contains its own PDFs, folders,
+annotations, links, chats, and AI/RAG indexes — completely independent of other
+projects.
 
 ```
    ┌──────────────────────────────────────┐
    │  Windows PC                           │
    │  ┌────────────┐  ┌────────────────┐ │
-   │  │ FastAPI    │→ │ SQLite (app.db) │ │
-   │  │  :8000     │  │ + /data/pdfs/   │ │
+   │  │ FastAPI     │→ │ SQLite (app.db) │ │
+   │  │  :8000      │  │ + /data/pdfs/   │ │
+   │  │             │  │   per-project   │ │
    │  └─────┬──────┘  └────────────────┘ │
    │        │                             │
    │        ↓                             │
    │  ┌────────────┐                      │
    │  │ Ollama     │  (LLM + embeddings)  │
-   │  │ :11434     │                      │
    │  └────────────┘                      │
    └──────────────────────────────────────┘
                     ↑
-                    │ HTTP (LAN / Wi-Fi)
+                    │ HTTP
                     │
    ┌────────────────┴─────────────────────┐
    │  iPad / Phone / Laptop browser        │
-   │  http://WINDOWS-PC-IP:8000            │
-   │  PDF.js renders pages locally         │
+   │  http://WINDOWS-PC-IP:8000           │
+   │                                        │
+   │  /  → Project Dashboard                │
+   │  /editor/<project_id> → PDF Editor    │
    └───────────────────────────────────────┘
 ```
 
-The browser never talks to Ollama directly — every AI/RAG request goes through
-the FastAPI backend, which forwards it to Ollama running on the same PC.
+---
+
+## What's New (this revision)
+
+### Project Dashboard (`/`)
+A new landing page that lists all projects on the server. Each project card
+shows:
+- Project name + color tag
+- Description
+- Number of PDFs, folders
+- Total size
+- Created / modified dates
+
+### Multi-project isolation
+- Every database table now has a `project_id` column
+- All API endpoints require the `X-Project-Id` header (or `?project_id=` query param)
+- PDFs are stored at `data/pdfs/<project_id>/<doc_id>.pdf` — one subdirectory per project
+- Opening Project A never displays or modifies Project B's data
+
+### Project actions (dashboard)
+1. **Create New Project** — modal asks for name, description, color → server creates the project + root folder → automatically opens the editor
+2. **Open Project** — click a card to navigate to `/editor/<project_id>`
+3. **Export Project** — downloads a `.plsx` backup file (zip with `manifest.json`, `data.sqlite`, and all PDFs)
+4. **Import Project** — uploads a `.plsx` file. If a project with the same name exists, a modal asks for a new name (always imports as a **copy** with fresh IDs)
+5. **Delete Project** — modal shows a strong warning, recommends exporting first, and offers three buttons: Cancel / Export Backup / Delete Permanently
+
+### Navigation
+- Editor header has a **← Dashboard** button that returns to the dashboard
+- The button warns the user if there are pending saves (via `beforeunload`)
+- The URL `/editor/<project_id>` is shareable — refresh keeps you in the same project
+
+### Auto-migration of existing data
+On first startup with an existing `data/app.db`, the server:
+1. Creates a `projects` table
+2. Recreates every resource table with a composite `(project_id, id)` primary key
+3. Moves all existing rows into a project named **"My First Project"** (ID: `default`)
+4. Creates a root folder for every project that lacks one
+5. The `default` project cannot be deleted (it holds migrated data)
 
 ---
 
-## 1. Files changed (vs. the previous standalone version)
-
-| File | Status | Purpose |
-|------|--------|---------|
-| `server/main.py` | **NEW** | FastAPI app entry point, registers routers + static file serving |
-| `server/config.py` | **NEW** | Loads `config.ini`, resolves paths, exposes `HOST`/`PORT`/`OLLAMA_URL`/etc. |
-| `server/database.py` | **NEW** | SQLite schema + thread-local connection helper |
-| `server/routers/documents.py` | **NEW** | Documents REST API (list/get/upload/move/delete/duplicate/replace-file) |
-| `server/routers/folders.py` | **NEW** | Folders REST API (CRUD + tree + cycle-safe move) |
-| `server/routers/annotations.py` | **NEW** | Annotations REST API (per-doc and per-page) |
-| `server/routers/links.py` | **NEW** | Links REST API |
-| `server/routers/chats.py` | **NEW** | Chats REST API |
-| `server/routers/settings.py` | **NEW** | Settings REST API (key/value store for app state) |
-| `server/routers/projects.py` | **NEW** | Project export/import (build/restore SQLite file) |
-| `server/routers/ai.py` | **NEW** | AI/RAG endpoints: index, search, streaming chat, Ollama status |
-| `server/services/ollama.py` | **NEW** | Ollama HTTP client (embeddings + generate + generate_stream) |
-| `server/services/embeddings.py` | **NEW** | Server-side indexing (PyMuPDF text extraction + chunking + Ollama embeddings) |
-| `server/config.ini.example` | **NEW** | Default config template (auto-copied to `config.ini` on first run) |
-| `server/requirements.txt` | **NEW** | Python deps: fastapi, uvicorn, python-multipart, pydantic, PyMuPDF |
-| `run.bat` | **NEW** | Windows launcher — creates venv, installs deps, starts uvicorn |
-| `run.sh` | **NEW** | Linux/macOS launcher (optional, kept for parity) |
-| `static/js/api.js` | **NEW** | Frontend REST client (wraps `fetch` for every endpoint) |
-| `static/js/database.js` | **REWRITTEN** | Originally IndexedDB wrapper; now routes everything through `Api.*`. Same function names so the rest of the code doesn't change. |
-| `static/js/ai.js` | **MODIFIED** | `getEmbedding()` and `generateLLMResponse()` are now no-ops (server does the work). `indexDocuments()` calls `Api.triggerIndexing()`. `handleChat()` uses `Api.streamChat()` for streaming SSE retrieval + LLM. |
-| `static/js/pdf.js` | **MODIFIED** | New `ensureDocLoaded()` lazy-loads PDF bytes + annotations on first viewport open. `handleFileUpload()` uploads to server. `renderPage()` awaits `ensureDocLoaded()`. |
-| `static/js/folders.js` | **MODIFIED** | `createFolder`/`renameFolder`/`moveFolder`/`deleteFolder`/`toggleFolderExpanded` now call `Api.*` instead of writing to IndexedDB. Same external API. |
-| `static/js/filemanager.js` | **MODIFIED** | `duplicateDocument()` calls server. `_deleteDocumentRecord()` calls `Api.deleteDocument`. |
-| `static/js/app.js` | **MODIFIED** | Init flow no longer loads every PDF into memory — only metadata. PDF bytes are lazy-loaded when a doc is opened. |
-| `static/js/state.js` | **MODIFIED** | `db` and `SqlDb` globals kept as `null` for backward-compat (no longer used). |
-| `static/js/config.js` | **MODIFIED** | `els.globalSearchInput` now aliases the unified-search input element. |
-| `static/index.html` | **MODIFIED** | Added `<script src="js/api.js">` before `database.js`. |
-
-All existing UI features (folder tree, breadcrumbs, file explorer, annotation tools,
-link drawing, snip-link, page insert/delete, AI settings modal, project export/import,
-keyboard shortcuts) are preserved.
-
----
-
-## 2. New files
+## 1. Files added
 
 ```
 pdf-linker-studio-server/
 ├── server/
-│   ├── __init__.py
-│   ├── main.py                      ← FastAPI app
-│   ├── config.py                    ← config loader
-│   ├── config.ini.example           ← copy to config.ini to customize
-│   ├── database.py                  ← SQLite schema + helpers
-│   ├── requirements.txt
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── documents.py
-│   │   ├── folders.py
-│   │   ├── annotations.py
-│   │   ├── links.py
-│   │   ├── chats.py
-│   │   ├── settings.py
-│   │   ├── projects.py
-│   │   └── ai.py
-│   └── services/
-│       ├── __init__.py
-│       ├── ollama.py                ← Ollama HTTP client
-│       └── embeddings.py            ← text extraction + chunking + retrieval
-├── static/                           ← existing frontend (HTML/CSS/JS)
-│   ├── index.html
-│   ├── css/style.css
+│   ├── deps.py                        ← NEW: FastAPI dependency for X-Project-Id
+│   └── ... (existing files, see below)
+├── static/
+│   ├── dashboard.html                 ← NEW: dashboard page (project cards)
+│   ├── css/
+│   │   └── dashboard.css              ← NEW: dashboard styles
 │   └── js/
-│       ├── api.js                   ← NEW: REST client
-│       ├── database.js              ← REWRITTEN: routes through API
-│       ├── ai.js                    ← MODIFIED: server-side AI
-│       ├── pdf.js                   ← MODIFIED: lazy loading
-│       ├── folders.js               ← MODIFIED: API calls
-│       ├── filemanager.js           ← MODIFIED: API calls
-│       ├── app.js                   ← MODIFIED: lazy init
-│       ├── state.js, config.js, ui.js, events.js, annotations.js, links.js, search.js, utils.js  (unchanged)
-├── data/                             ← created on first run
-│   ├── app.db                        ← SQLite database
-│   ├── pdfs/                         ← uploaded PDFs
-│   ├── images/                       ← annotation images
-│   └── thumbnails/
-├── run.bat                           ← Windows launcher
-├── run.sh                            ← Linux/macOS launcher
-└── README.md                         ← this file
+│       └── dashboard.js               ← NEW: dashboard logic (CRUD + modals)
+└── README.md                          ← this file (updated)
 ```
 
----
+## 2. Files modified
 
-## 3. How to install
+| File | Change |
+|------|--------|
+| `server/database.py` | Rewrote schema with `project_id` columns + composite PKs. Added `_migrate()` that recreates old tables preserving data, plus a default-project auto-creation step. |
+| `server/main.py` | Routes `/` → dashboard, `/editor/{project_id}` → editor. Updated startup banner. |
+| `server/deps.py` | **NEW** — `get_current_project` dependency reads `X-Project-Id` header (or `?project_id=`), validates against `projects` table, returns the project_id. |
+| `server/routers/projects.py` | Replaced single-project export/import with full project CRUD: `GET /api/projects`, `POST`, `GET /{id}`, `PATCH /{id}`, `DELETE /{id}`, `POST /{id}/export`, `POST /import`. Import creates new IDs for all resources (folders, documents, pages, annotations, links, chats, embeddings, settings) so the imported copy is fully independent. |
+| `server/routers/documents.py` | All endpoints now take `project_id: str = Depends(get_current_project)` and filter queries by it. PDFs saved to `data/pdfs/<project_id>/`. |
+| `server/routers/folders.py` | Same project-scoping applied. |
+| `server/routers/annotations.py` | Same project-scoping applied. |
+| `server/routers/links.py` | Same project-scoping applied. |
+| `server/routers/chats.py` | Same project-scoping applied. |
+| `server/routers/settings.py` | Same project-scoping applied. Updates project's `modified_at` when settings are saved. |
+| `server/routers/ai.py` | All AI/RAG endpoints are project-scoped — embeddings and chats never leak across projects. |
+| `server/services/embeddings.py` | `index_documents(project_id, force)` and `search(project_id, ...)` now take project_id. Indexing state is tracked per-project. |
+| `static/js/api.js` | Added `CURRENT_PROJECT_ID` + `setProjectId()`/`getProjectId()`. Every request sends `X-Project-Id` header. Added project management methods: `listProjects`, `createProject`, `getProject`, `updateProject`, `deleteProject`, `exportProject`, `importProject`, `checkProjectNameExists`. |
+| `static/js/app.js` | Reads project_id from URL `/editor/<project_id>`, calls `setProjectId()` before init. Added `goToDashboard()` with pending-save warning. |
+| `static/js/database.js` | `exportProject()` now exports the CURRENT project via `Api.exportProject(projectId)`. `handleProjectImport()` redirects to the dashboard. |
+| `static/index.html` | Added "← Dashboard" button in the editor header. Made all script/css paths absolute (`/js/...`, `/css/...`) so they work from `/editor/<id>` URLs. |
 
-### Prerequisites
+## 3. Database changes
 
-1. **Python 3.9 or newer** — download from <https://www.python.org/downloads/>
-   - During install, **check "Add Python to PATH"**.
-2. **Ollama** — download from <https://ollama.com/> and install.
-3. Pull the AI models (one-time, ~1 GB download each):
-   ```bat
-   ollama pull nomic-embed-text
-   ollama pull gemma3:1b
-   ```
-   (You can change these models in `server/config.ini` later.)
+```sql
+-- New table
+CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at INTEGER NOT NULL,
+    modified_at INTEGER NOT NULL,
+    color TEXT
+);
 
-### Install steps
-
-1. **Unzip** the `pdf-linker-studio-server.zip` to any folder, e.g.
-   `C:\Users\YourName\PDF Linker Studio`.
-2. **Double-click `run.bat`**. On first run it will:
-   - Create a Python virtual environment in `.venv\`
-   - Install FastAPI, uvicorn, PyMuPDF, and other dependencies
-   - Copy `server/config.ini.example` → `server/config.ini` (edit this to customize)
-   - Start the server on `http://0.0.0.0:8000`
-3. The first run takes ~1-2 minutes for dependency installation. Subsequent
-   runs start in ~3 seconds.
-
-You only need to do this once. After that, double-clicking `run.bat` is enough.
-
----
-
-## 4. How to run on Windows
-
-1. **Start Ollama** (if not already running in the system tray):
-   - Launch the Ollama app, or run `ollama serve` in a terminal.
-2. **Double-click `run.bat`**.
-3. A console window opens showing:
-   ```
-   Starting PDF Linker Studio server...
-
-     Web UI:  http://localhost:8000
-
-     To access from another device on your network (iPad, phone, etc.):
-     Replace WINDOWS-PC-IP below with this PC's local IP address, then
-     open this URL on the other device:
-
-     http://WINDOWS-PC-IP:8000
-   ```
-4. **Open the URL in your browser** on the same PC: <http://localhost:8000>
-5. **Leave the console window open** while you use the app. Close it (or press
-   `Ctrl+C`) to stop the server.
-
-### Find your Windows PC's local IP address
-
-The startup console prints it for you. Or to find it manually:
-
-- Press `Win + R`, type `cmd`, press Enter.
-- Run: `ipconfig`
-- Look for the line `IPv4 Address` under your active network adapter
-  (Ethernet or Wi-Fi). It will look like `192.168.1.42` or `10.0.0.15`.
-
----
-
-## 5. How to access from iPad / phone
-
-1. Make sure your iPad/phone is on the **same Wi-Fi network** as the Windows PC.
-2. Open Safari/Chrome on the iPad/phone.
-3. Type the URL: `http://WINDOWS-PC-IP:8000`
-   - Example: `http://192.168.1.42:8000`
-4. The full PDF Linker Studio UI loads. You can:
-   - Browse the folder tree
-   - Upload PDFs (from the iPad's Files app or photo library)
-   - Open PDFs in either viewport
-   - Annotate, draw, highlight, add text boxes, images
-   - Create links between PDFs/pages
-   - Search content (the search runs on the server)
-   - Chat with the AI (uses Ollama running on the PC)
-
-### Tips for mobile use
-
-- Pinch-to-zoom works in the PDF viewports.
-- The left/right split view is most useful on iPad landscape; on a phone,
-  collapse one of the viewports (lock icon) to focus on the other.
-- Long-press a file/folder to bring up the right-click context menu.
-
----
-
-## 6. Windows Firewall requirements
-
-When you first run `run.bat`, **Windows Defender Firewall** will likely show
-a popup asking: *"Windows Defender Firewall has blocked some features of
-this app"* — for **Python**.
-
-**Tick both checkboxes**:
-- ✅ Private networks (such as my home or work network)
-- ✅ Public networks (use this only if you trust the network)
-
-Then click **Allow access**.
-
-### If you missed the popup, or want to verify
-
-1. Press `Win + R`, type `wf.msc`, press Enter (opens Windows Defender Firewall
-   with Advanced Security).
-2. Click **Inbound Rules** on the left.
-3. Look for **Python** in the list. There should be two entries (one for TCP,
-   one for UDP) marked as **Allowed, Yes** for both Profile and Enabled.
-4. If not present, click **New Rule…** on the right:
-   - Rule type: **Port**
-   - Protocol: **TCP**
-   - Specific local ports: **8000** (or whatever port you set in `config.ini`)
-   - Action: **Allow the connection**
-   - Profile: tick all three (Domain, Private, Public)
-   - Name: `PDF Linker Studio`
-
-### Alternative: open port via netsh (Command Prompt as admin)
-
-```bat
-netsh advfirewall firewall add rule name="PDF Linker Studio" dir=in action=allow protocol=TCP localport=8000
+-- All existing tables now have a project_id column + composite PK:
+folders       (project_id, id, name, parent_id, ...)        PK (project_id, id)
+documents     (project_id, id, name, folder_id, ...)       PK (project_id, id)
+annotations   (project_id, doc_id, page_id, data_json)      PK (project_id, doc_id, page_id)
+links         (project_id, id, source_json, target_json)    PK (project_id, id)
+chats         (project_id, id, title, messages_json)        PK (project_id, id)
+embeddings    (project_id, id, doc_id, page_id, ...)        PK (project_id, id)
+settings      (project_id, key, value)                     PK (project_id, key)
 ```
 
-### Verifying the firewall rule
+The migration is **idempotent and automatic** — on first startup with an old DB:
+1. Backs up each table's rows
+2. Drops the table
+3. Recreates it with the new composite PK
+4. Restores the rows with `project_id = 'default'`
+5. Creates the `default` project named "My First Project"
 
-From another device, try opening `http://WINDOWS-PC-IP:8000/api/health` in
-a browser. If you see `{"status":"ok","data_dir":"..."}` — the firewall is
-open. If the page hangs or times out — the firewall is blocking port 8000.
+No manual migration steps required.
 
----
-
-## 7. Configuration
-
-All settings live in `server/config.ini`. Edit it (any text editor) and
-restart `run.bat` to apply.
-
-```ini
-[server]
-host = 0.0.0.0          # 0.0.0.0 = listen on all interfaces (LAN access)
-port = 8000              # change if 8000 is in use
-static_dir = static      # frontend folder (relative to project root)
-data_dir = data          # SQLite DB + PDF storage (relative to project root)
-
-[ollama]
-url = http://localhost:11434
-embedding_model = nomic-embed-text
-llm_model = gemma3:1b    # change to llama3.2, mistral, qwen2.5, etc.
-
-[ai]
-max_pages_per_doc = 50   # cap on text extraction per PDF during indexing
-request_timeout = 120    # seconds before Ollama requests time out
-```
-
-### Where data is stored
-
-- **Database**: `data/app.db` (SQLite, ~10 KB to several MB depending on library size)
-- **PDF files**: `data/pdfs/<doc_id>.pdf` (one file per uploaded PDF)
-- **Thumbnails**: stored inline in the database as base64 PNG
-- **Annotation images**: stored inline in the database as base64
-
-To back up your library, just copy the `data/` folder somewhere safe.
-
----
-
-## 8. REST API endpoints (for power users / scripting)
+## 4. API endpoints added
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| GET | `/api/health` | Health check |
-| GET | `/api/documents` | List all documents (metadata only) |
-| GET | `/api/documents/{id}` | Get one document's metadata |
-| GET | `/api/documents/{id}/file` | Download the PDF bytes |
-| POST | `/api/documents/upload` | Upload PDF(s) to a folder (multipart/form-data) |
-| PUT | `/api/documents/{id}` | Update metadata (name, folder, favorite) |
-| POST | `/api/documents/{id}/duplicate` | Duplicate a document |
-| DELETE | `/api/documents/{id}` | Delete a document (cascades to annotations, links, embeddings, file) |
-| PUT | `/api/documents/{id}/move` | Move to a different folder |
-| PUT | `/api/documents/{id}/file` | Replace the PDF (after page insert/delete in browser) |
-| GET | `/api/folders` | List all folders |
-| GET | `/api/folders/tree` | Get nested folder tree |
-| POST | `/api/folders` | Create folder |
-| PUT | `/api/folders/{id}` | Rename folder |
-| PUT | `/api/folders/{id}/move` | Move folder (cycle-safe) |
-| PUT | `/api/folders/{id}/expanded` | Toggle expanded state |
-| DELETE | `/api/folders/{id}` | Delete folder (cascade or move-to-root) |
-| GET | `/api/annotations/{doc_id}` | Get all page annotations for a doc |
-| PUT | `/api/annotations/{doc_id}/{page_id}` | Save one page's annotations |
-| PUT | `/api/annotations/{doc_id}` | Replace all annotations for a doc |
-| DELETE | `/api/annotations/{doc_id}` | Delete all annotations |
-| GET | `/api/links` | List all links |
-| POST | `/api/links` | Create link |
-| DELETE | `/api/links/{id}` | Delete link |
-| GET | `/api/chats` | List chats |
-| POST | `/api/chats` | Create chat |
-| PUT | `/api/chats/{id}` | Update chat (title or messages) |
-| DELETE | `/api/chats/{id}` | Delete chat |
-| GET | `/api/settings` | Get app-state settings |
-| PUT | `/api/settings` | Save app-state settings |
-| GET | `/api/projects/export` | Download SQLite backup file |
-| POST | `/api/projects/import` | Upload SQLite backup file |
-| POST | `/api/ai/index` | Trigger server-side indexing |
-| GET | `/api/ai/index/status` | Indexing progress |
-| POST | `/api/ai/search` | Semantic search across PDFs |
-| POST | `/api/ai/chat` | Streaming chat (SSE) with retrieval |
-| GET | `/api/ai/status` | Ollama connection + model status |
+| GET | `/api/projects` | List all projects (with stats: doc count, folder count, size) |
+| POST | `/api/projects` | Create a new project |
+| GET | `/api/projects/{project_id}` | Get one project with full stats |
+| PATCH | `/api/projects/{project_id}` | Update name/description/color |
+| DELETE | `/api/projects/{project_id}` | Delete project + ALL its data (DB rows + PDF files). The `default` project cannot be deleted. |
+| POST | `/api/projects/{project_id}/export` | Export as `.plsx` backup file |
+| POST | `/api/projects/import` | Import a `.plsx` file as a NEW copy with fresh IDs |
+
+All other endpoints (`/api/documents/*`, `/api/folders/*`, etc.) now require the
+`X-Project-Id` header.
+
+## 5. Project export format
+
+A `.plsx` file is a standard ZIP archive containing:
+
+```
+my-project.plsx
+├── manifest.json         # { format, version, project_id, project_name, created_at, pdf_count }
+├── data.sqlite           # SQLite snapshot with tables: project_meta, folders, documents,
+│                         #   annotations, links, chats, embeddings, settings
+└── pdfs/
+    ├── <doc_id_1>.pdf
+    ├── <doc_id_2>.pdf
+    └── ...
+```
+
+The SQLite snapshot contains a `project_meta` table with the original project's
+metadata (id, name, description, color, created_at, modified_at) and a
+`backup_format_version` field (currently `1`).
+
+The browser never builds this file — all packing happens server-side.
+
+## 6. Project import behavior
+
+1. Server receives the `.plsx` file
+2. Opens the ZIP, reads `manifest.json` and `data.sqlite`
+3. Resolves the new project name:
+   - If `new_name` is provided in the form data, use it (after uniqueness check)
+   - Otherwise use the original name from the backup
+   - If a project with that name already exists AND `on_conflict='copy'` (default):
+     append " (Copy N)" until unique
+   - If `on_conflict='cancel'`: return 409 without importing
+4. Creates a new project with a fresh `proj_...` ID
+5. Inserts all resources with **fresh IDs**:
+   - Folders: new `folder_...` IDs (root keeps `root`)
+   - Documents: new `doc_...` IDs
+   - Pages: new `id_...` pageIds (so annotations/links/chat-citations stay valid)
+   - Annotations: new page_id keys, with internal `pageId`/`docId` references remapped
+   - Links: source/target JSON `docId`/`pageId` fields remapped
+   - Chats: message HTML `data-doc`/`data-page-id` attributes remapped; `context` array remapped
+   - Embeddings: new `chunk_...` IDs, `doc_id`/`page_id` remapped
+   - Settings: `recentDocIds` and `view.left.docId`/`view.right.docId` remapped
+6. Copies PDF files from the zip into `data/pdfs/<new_project_id>/`
+7. Returns the new project's metadata
+
+The imported copy is fully independent — no shared IDs with the original.
+
+## 7. Delete / backup behavior
+
+**Delete** endpoint (`DELETE /api/projects/{project_id}`):
+1. Refuses to delete the `default` project (holds migrated data)
+2. Deletes all DB rows for this project across all tables (embeddings, annotations, links, chats, documents, folders, settings, projects)
+3. Removes the project's PDF directory `data/pdfs/<project_id>/` from disk
+4. No orphaned files or DB records remain
+
+**Backup recommendation**: The dashboard's delete modal shows:
+- Strong warning: "Deleting this project will permanently remove its PDFs, folders, annotations, links, chats, AI/RAG data, and other project data from the server."
+- "This action cannot be undone."
+- Recommendation: "We recommend exporting this project before deleting it."
+- Three buttons: **Cancel** / **Export Backup** / **Delete Permanently**
+
+The "Export Backup" button triggers the export, then re-opens the delete modal so the user can confirm after backing up.
+
+## 8. How to test (create / open / export / import / delete)
+
+### Via the dashboard UI
+1. Start the server: `run.bat` (Windows) or `./run.sh` (Linux/Mac)
+2. Open `http://localhost:8000/` in your browser → dashboard loads
+3. **Create**: Click "New Project" → fill in name → submit → editor opens automatically
+4. **Open**: Click any project card → editor opens for that project
+5. **Export**: Hover over a card → click the download icon → `.plsx` file downloads
+6. **Import**: Click "Import" → select a `.plsx` file → if name conflicts, modal asks for a new name → confirm → project appears in dashboard
+7. **Delete**: Hover over a card → click the trash icon → modal with warning + 3 buttons → choose Cancel / Export Backup / Delete Permanently
+
+### Via curl (for scripting)
+```bash
+# List projects
+curl http://localhost:8000/api/projects
+
+# Create project
+curl -X POST http://localhost:8000/api/projects \
+    -H "Content-Type: application/json" \
+    -d '{"name":"My Project","description":"Test","color":"#3b82f6"}'
+
+# Upload a PDF into a project (note the X-Project-Id header)
+curl -X POST http://localhost:8000/api/documents/upload \
+    -H "X-Project-Id: proj_xxx" \
+    -F "files=@test.pdf" \
+    -F "folder_id=root"
+
+# Export project
+curl -X POST http://localhost:8000/api/projects/proj_xxx/export -o backup.plsx
+
+# Import as a copy
+curl -X POST http://localhost:8000/api/projects/import \
+    -F "file=@backup.plsx" \
+    -F "new_name=Imported Copy" \
+    -F "on_conflict=copy"
+
+# Delete project
+curl -X DELETE http://localhost:8000/api/projects/proj_xxx
+```
+
+### Verify isolation
+1. Create Project A and Project B
+2. Upload a PDF into Project A
+3. Open Project B's editor — the PDF list should be empty
+4. List documents via API with each project's ID — only that project's docs are returned
+
+## 9. Migration required for existing projects
+
+**Automatic — no manual steps required.**
+
+On first startup with an existing `data/app.db` from the previous (single-project) version:
+1. The server detects old table shapes (single-column PK without `project_id`)
+2. Backs up all rows
+3. Drops and recreates each table with the new composite PK
+4. Restores rows with `project_id = 'default'`
+5. Creates a project named **"My First Project"** (ID: `default`) to hold the migrated data
+6. The `default` project shows up in the dashboard like any other project
+
+You can rename "My First Project" via the dashboard (open it, then use the editor's Save button — the project name comes from the URL/title), or via the API:
+```bash
+curl -X PATCH http://localhost:8000/api/projects/default \
+    -H "Content-Type: application/json" \
+    -d '{"name":"My Renamed Project"}'
+```
+
+The `default` project cannot be deleted (to prevent accidental loss of migrated data). To "delete" it, export it first, then manually clear the database.
 
 ---
 
-## 9. Remaining limitations
+## How to install (unchanged from previous version)
 
-1. **Ollama required on the PC** — the AI chat and semantic search won't work
-   unless Ollama is installed and running on the same Windows PC. The browser
-   shows a clear error if Ollama is unreachable.
-2. **Single-user server** — there's no authentication. Anyone on your LAN can
-   access the app and modify the library. For home use this is fine; for a
-   shared office, put it behind a reverse proxy with auth (nginx + basic auth).
-3. **No concurrent edits** — if two devices edit the same annotation at the
-   same time, the last save wins. The server uses SQLite WAL mode so reads
-   don't block writes, but there's no operational-transform merging.
-4. **PDF rendering stays in the browser** — large PDFs (100+ MB) take a few
-   seconds to load on iPad/phone because the bytes have to transfer over Wi-Fi.
-   Once loaded, scrolling/zooming is local and fast.
-5. **Annotation images stored as base64 in DB** — for libraries with thousands
-   of annotation images, consider migrating to filesystem storage. Not a
-   problem for typical use (<1000 images).
-6. **Indexing is synchronous** — for libraries with 100+ PDFs, the first
-   indexing call blocks the HTTP request until done (~1-3 sec per PDF
-   depending on length). The browser shows a "Indexing PDFs on server..."
-   spinner. A background-task version is possible but not implemented.
-7. **No upload progress bar** — large PDFs upload in a single POST. For
-   multi-GB PDFs, chunked upload would be better.
-8. **SQLite is the only DB** — fine for personal use (millions of rows
-   supported). For multi-user heavy load, swap to PostgreSQL by changing
-   `server/database.py`.
+1. Install Python 3.9+ (with "Add to PATH" checked) and Ollama from ollama.com
+2. Pull models: `ollama pull nomic-embed-text` and `ollama pull gemma3:1b`
+3. Unzip the archive and double-click `run.bat`
 
----
+See the previous README sections for full Windows setup, firewall, and LAN access instructions.
 
-## 10. Troubleshooting
+## How to access from iPad / phone
 
-### "Cannot reach Ollama at http://localhost:11434"
+1. Find the PC's local IP (`ipconfig` → IPv4 Address)
+2. On the iPad/phone (same Wi-Fi), open `http://WINDOWS-PC-IP:8000`
+3. The dashboard loads → tap a project card to open the editor
+4. The URL bar shows `/editor/<project_id>` — bookmarkable per project
 
-- Make sure Ollama is running: open a terminal and run `ollama list` — it should
-  list your installed models without error.
-- If Ollama is running on a different port, edit `server/config.ini` and change
-  `url` under `[ollama]`.
-- If the embedding model isn't pulled yet: `ollama pull nomic-embed-text`.
+## Windows Firewall requirements
 
-### Browser can't open `http://WINDOWS-PC-IP:8000`
+Same as before — allow port 8000 (TCP) inbound. The first time you run `run.bat`,
+Windows Defender Firewall shows a popup for Python; tick both Private and Public
+networks.
 
-- Verify the IP is correct: on the PC, run `ipconfig` and use the IPv4 address.
-- Verify both devices are on the same Wi-Fi (some routers isolate clients —
-  check your router's "AP Isolation" / "Client Isolation" setting).
-- Verify Windows Firewall allows port 8000 (see section 6).
-- Try `http://localhost:8000` on the PC itself — if that works but other devices
-  can't reach it, it's definitely a firewall issue.
+## Remaining limitations
 
-### "Init failed" or blank page
+1. **Ollama required on the PC** — AI chat/search won't work without it
+2. **Single-user, no auth** — anyone on the LAN can access the dashboard and modify any project
+3. **No concurrent-edit merging** — last save wins if two devices edit the same project simultaneously
+4. **PDF bytes transfer over Wi-Fi** — large PDFs take a few seconds to load on mobile
+5. **Annotation images stored as base64 in DB** — fine for typical use
+6. **Indexing is synchronous per project** — large libraries (100+ PDFs) may take a few minutes per project on first index
+7. **No upload progress bar** — large PDFs upload in one POST
+8. **SQLite only** — fine for personal use (millions of rows); swap to PostgreSQL in `database.py` if needed
+9. **Project dashboard is a separate page** — not a SPA. Navigation between dashboard and editor is a full page load (fast, but not animated)
 
-- Check the server console for Python tracebacks.
-- Verify `/api/health` responds: open `http://localhost:8000/api/health` in
-  the browser.
-- Clear browser cache and reload with Ctrl+F5.
-
-### PDF upload fails
-
-- Check the server console. Most common cause: the `data/pdfs/` folder isn't
-  writable. Right-click the project folder → Properties → Security → make sure
-  your user has Write permission.
-- Large PDFs (>50 MB) may need `client_max_body_size` raised if you put nginx
-  in front — but uvicorn alone has no upload size limit.
-
-### AI chat returns an error
-
-- The error message includes the underlying cause (e.g. "Cannot reach Ollama",
-  "model not found"). Pull the model with `ollama pull <name>`.
-- If the chat hangs forever, the LLM may be too large for your PC's RAM. Try
-  a smaller model (e.g. `gemma3:1b` instead of `gemma3:4b`).
-
----
-
-## 11. Architecture summary
+## Architecture summary
 
 ```
 Browser (iPad/phone/PC)             Windows PC
 ─────────────────────               ────────────────────────
 ┌──────────────────┐                ┌──────────────────────┐
-│ HTML/CSS/JS      │  HTTP/REST     │ FastAPI (port 8000)  │
-│  ├ PDF.js        │ ←──────────→   │  ├ routers/          │
-│  ├ PDF-Lib       │                │  │  ├ documents      │
-│  ├ Tailwind      │                │  │  ├ folders         │
-│  ├ KaTeX         │                │  │  ├ annotations     │
-│  └ api.js        │                │  │  ├ chats/links     │
-│                  │                │  │  ├ settings        │
-│  Renders pages   │                │  │  └ projects       │
-│  locally; all    │                │  └ services/         │
-│  data goes via   │                │     ├ ollama.py ───→ Ollama (11434)
-│  REST API.       │                │     └ embeddings.py   │
-└──────────────────┘                │                      │
-                                    │  SQLite (data/app.db)│
-                                    │  + data/pdfs/*.pdf   │
-                                    └──────────────────────┘
+│ Dashboard page   │  HTTP/REST     │ FastAPI (port 8000)  │
+│  /               │ ←──────────→   │  ├ routers/          │
+│  - list projects │                │  │  ├ projects       │
+│  - CRUD actions  │                │  │  ├ documents      │
+│                  │                │  │  ├ folders        │
+│ Editor page      │                │  │  ├ annotations    │
+│  /editor/<pid>   │                │  │  ├ chats/links    │
+│  ├ PDF.js        │                │  │  ├ settings       │
+│  ├ PDF-Lib       │                │  │  └ ai (Ollama)    │
+│  ├ Tailwind      │                │  └ services/         │
+│  └ api.js        │                │     ├ ollama.py      │
+│                  │                │     └ embeddings.py │
+│  All data via    │                │                      │
+│  REST API +      │                │  SQLite (data/app.db)│
+│  X-Project-Id    │                │  + data/pdfs/<pid>/  │
+│  header          │                │    per-project       │
+└──────────────────┘                └──────────────────────┘
+                                                ↓
+                                        Ollama (port 11434)
 ```
 
-- **Browser**: PDF.js renders PDF pages on canvas; PDF-Lib edits pages; the
-  annotation system draws on overlay canvas. **No data is stored in the
-  browser** — everything goes through the REST API.
-- **FastAPI**: serves the static frontend, handles all REST endpoints, and
-  proxies AI/RAG requests to Ollama.
-- **SQLite**: stores folder tree, document metadata, annotations, links,
-  chats, embeddings, and settings.
-- **Filesystem**: `data/pdfs/<doc_id>.pdf` — one file per uploaded PDF.
-- **Ollama**: runs locally on the PC. Provides embedding generation
-  (`nomic-embed-text`) and chat completion (`gemma3:1b` by default).
+- **Dashboard page** (`/`): lists projects, manages CRUD. No project context.
+- **Editor page** (`/editor/<project_id>`): full PDF editor. Reads project_id from URL, sends it as `X-Project-Id` header on every API call.
+- **Server**: validates every project-scoped request against the `projects` table; queries always filter by `project_id`; PDFs stored in per-project subdirectories.

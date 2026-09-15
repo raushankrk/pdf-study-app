@@ -248,97 +248,33 @@ async function clearDB() {
     try { await Api.saveSettings({}); } catch (e) { /* ignore */ }
 }
 
-// ---- Project export/import (server-side now, but the entry points stay) ----
+// ---- Project export (in-editor shortcut; full multi-project management is on the dashboard) ----
+// Export the CURRENT project as a .plsx backup file. Server-side handles all the packing.
 window.exportProject = async function() {
-    const docKeys = Object.keys(state.documents);
-    if (docKeys.length === 0) { showModal("Export", "No documents loaded."); return; }
+    const projectId = getProjectId();
+    if (!projectId) { showModal("Export", "No project is currently open."); return; }
 
     els.loadingSpinner.classList.remove('hidden');
-    els.loadingSpinner.querySelector('span').innerText = "Building SQLite export...";
+    els.loadingSpinner.querySelector('span').innerText = "Building project backup (.plsx)...";
 
     try {
-        // Trigger a download by navigating to the export URL.
-        const url = Api.exportProjectUrl();
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `pdf_linker_project_${Date.now()}.sqlite`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        showModal("Saved", "Project exported. Check your Downloads folder.");
+        const result = await Api.exportProject(projectId);
+        showModal("Exported", `Project backup saved as <b>${escapeHtml(result.filename)}</b>.<br><br>` +
+            `Check your browser's Downloads folder.`);
     } catch (err) {
         console.error('Export failed:', err);
-        showModal("Error", "Failed to export project.");
+        showModal("Error", "Failed to export project: " + escapeHtml(String(err)));
     } finally {
         els.loadingSpinner.classList.add('hidden');
     }
 };
 
+// The legacy single-project import flow is replaced by the multi-project dashboard.
+// If the editor's "Open Project" button is clicked, redirect to the dashboard.
 window.handleProjectImport = async function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    els.loadingSpinner.classList.remove('hidden');
-    els.loadingSpinner.querySelector('span').innerText = "Importing SQLite Project...";
-
-    try {
-        await Api.importProject(file);
-
-        // Reload state from server (mirrors the original behavior after import).
-        const savedData = await loadStateFromDB();
-
-        state.links = savedData.links;
-        state.annotations = savedData.annotations || {};
-        state.chats = savedData.chats || [];
-
-        if (state.chats.length === 0) {
-            await createNewChat();
-        } else {
-            state.currentChatId = state.chats[0].id;
-        }
-
-        // Rebuild folders + documents from the server's view.
-        state.folders = {};
-        state.folders[ROOT_FOLDER_ID] = {
-            id: ROOT_FOLDER_ID, name: 'Root', parentId: null,
-            createdAt: Date.now(), expanded: true
-        };
-        savedData.folders.forEach(f => {
-            if (f.id !== ROOT_FOLDER_ID) state.folders[f.id] = f;
-        });
-
-        state.documents = {};
-        for (const dbDoc of savedData.documents) {
-            state.documents[dbDoc.id] = dbDoc;
-        }
-
-        if (savedData.settings) {
-            const s = savedData.settings;
-            // Restore only the UI-critical settings — full restoration is below.
-            if (s.splitRatio) state.splitRatio = s.splitRatio;
-            if (s.aiSettings) state.aiSettings = { ...state.aiSettings, ...s.aiSettings };
-            if (s.currentFolderId && state.folders[s.currentFolderId]) state.currentFolderId = s.currentFolderId;
-            if (s.fileSort) state.fileSort = s.fileSort;
-            if (Array.isArray(s.recentDocIds)) state.recentDocIds = s.recentDocIds.filter(id => state.documents[id]);
-        }
-
-        showModal("Import Success", "Project loaded.");
-
-        renderDocList();
-        renderChatList();
-        renderChatMessages();
-        updateZoomIndicator('left');
-        updateZoomIndicator('right');
-        if (state.view.left.docId) renderPage('left');
-        if (state.view.right.docId) renderPage('right');
-
-        // Trigger re-indexing for the newly-imported docs.
-        if (typeof indexDocuments === 'function') indexDocuments(false);
-    } catch (err) {
-        console.error('Import failed:', err);
-        showModal("Import Error", "Failed to load project. " + escapeHtml(String(err)));
-    } finally {
-        els.loadingSpinner.classList.add('hidden');
-        e.target.value = '';
-    }
+    // The dashboard handles imports now. Redirect there.
+    showModal("Import moved",
+        "Project import is now handled on the Dashboard. " +
+        "You will be redirected there now.");
+    setTimeout(() => { window.location.href = '/'; }, 1500);
 };

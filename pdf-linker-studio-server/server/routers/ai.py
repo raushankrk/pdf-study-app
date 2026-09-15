@@ -1,27 +1,23 @@
 """
-AI / RAG REST API.
+AI / RAG REST API (project-scoped).
 
 All Ollama communication happens here on the server. The browser never calls
 Ollama directly — it calls these endpoints instead.
 
-Endpoints:
-  POST /api/ai/index           — Index all un-indexed documents (or force re-index)
-  GET  /api/ai/index/status    — Indexing progress
-  POST /api/ai/search          — Semantic search across PDFs
-  POST /api/ai/chat            — Streaming chat with retrieval (Server-Sent Events)
-  GET  /api/ai/status          — Ollama connection status + model availability
-  GET  /api/ai/embeddings      — List all chunks for a doc (for client-side fallback)
+Every endpoint requires the `X-Project-Id` header so AI/RAG indexes and chats
+are isolated per project.
 """
 import json
-import time
+import re
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .. import config
 from .. import database as db
+from ..deps import get_current_project
 from ..services import ollama, embeddings
 
 router = APIRouter()
@@ -41,7 +37,7 @@ class SearchRequest(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     system_prompt: str = "You are a helpful assistant answering questions based on the provided PDF context."
-    chat_history: list = []  # [{role, html}, ...]
+    chat_history: list = []
     model: Optional[str] = None
     temperature: float = 0.7
     response_style: str = "Detailed"
@@ -54,38 +50,36 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/index")
-def index_endpoint(req: IndexRequest):
-    """Trigger indexing. Runs synchronously — may take a while for large libraries."""
-    # Run in current thread (FastAPI worker) since Ollama calls are blocking anyway.
-    # The browser should call this async-with-spinner; consider running in background
-    # task for very large libraries.
+def index_endpoint(req: IndexRequest, project_id: str = Depends(get_current_project)):
     try:
-        result = embeddings.index_documents(force=req.force)
+        result = embeddings.index_documents(project_id, force=req.force)
         return result
     except Exception as e:
         raise HTTPException(500, f"Indexing failed: {e}")
 
 
 @router.get("/index/status")
-def index_status():
-    return embeddings.get_indexing_status()
+def index_status(project_id: str = Depends(get_current_project)):
+    return embeddings.get_indexing_status(project_id)
 
 
 @router.post("/search")
-def search_endpoint(req: SearchRequest):
-    """Return top matching chunks for a query."""
+def search_endpoint(req: SearchRequest, project_id: str = Depends(get_current_project)):
     try:
         results = embeddings.search(
+            project_id,
             req.query,
             top_k=req.top_k,
             min_score=req.min_score,
             context_budget=req.context_budget,
         )
-        # Attach doc name to each result for display
         for r in results:
             if "error" in r:
                 continue
-            doc = db.query_one("SELECT name FROM documents WHERE id = ?", (r.get("doc_id"),))
+            doc = db.query_one(
+                "SELECT name FROM documents WHERE id = ? AND project_id = ?",
+                (r.get("doc_id"), project_id)
+            )
             r["docName"] = doc["name"] if doc else "Unknown"
         return {"results": results}
     except Exception as e:
@@ -93,31 +87,25 @@ def search_endpoint(req: SearchRequest):
 
 
 @router.get("/status")
-def status():
-    """Quick Ollama health check."""
+def status(project_id: str = Depends(get_current_project)):
     return {
         "ollama_reachable": ollama.check_connection(),
         "ollama_url": config.OLLAMA_URL,
         "embedding_model": config.OLLAMA_EMBEDDING_MODEL,
         "llm_model": config.OLLAMA_LLM_MODEL,
-        "embedding_count": (db.query_one("SELECT COUNT(*) as c FROM embeddings") or {}).get("c", 0),
+        "embedding_count": (db.query_one(
+            "SELECT COUNT(*) as c FROM embeddings WHERE project_id = ?", (project_id,)
+        ) or {}).get("c", 0),
     }
 
 
 @router.post("/chat")
-def chat_endpoint(req: ChatRequest):
-    """Streaming chat with retrieval.
-
-    Returns Server-Sent Events: each chunk is a JSON line with either:
-      {"type": "sources", "data": [...]}     — sent once before LLM generation
-      {"type": "token", "text": "..."}        — streamed LLM tokens
-      {"type": "done", "answer": "..."}       — final assembled answer
-      {"type": "error", "message": "..."}
-    """
+def chat_endpoint(req: ChatRequest, project_id: str = Depends(get_current_project)):
+    """Streaming chat with retrieval (Server-Sent Events)."""
     def event_stream():
         try:
-            # Step 1: retrieval
             search_results = embeddings.search(
+                project_id,
                 req.question,
                 top_k=req.max_chunks,
                 min_score=req.similarity_threshold,
@@ -127,11 +115,12 @@ def chat_endpoint(req: ChatRequest):
                 yield f"data: {json.dumps({'type': 'error', 'message': search_results[0]['error']})}\n\n"
                 return
 
-            # Attach doc names + current page numbers
             for r in search_results:
-                doc = db.query_one("SELECT name, page_ids_json FROM documents WHERE id = ?", (r.get("doc_id"),))
+                doc = db.query_one(
+                    "SELECT name, page_ids_json FROM documents WHERE id = ? AND project_id = ?",
+                    (r.get("doc_id"), project_id)
+                )
                 r["docName"] = doc["name"] if doc else "Unknown"
-                # Resolve current page number from stable pageId
                 page_num = "?"
                 if doc and doc.get("page_ids_json"):
                     try:
@@ -148,7 +137,6 @@ def chat_endpoint(req: ChatRequest):
                 yield f"data: {json.dumps({'type': 'done', 'answer': '', 'skipped_llm': True})}\n\n"
                 return
 
-            # Step 2: build the prompt
             context_text = "\n---\n".join(
                 f"[{i+1}] Source: {r.get('docName')} (Page {r.get('pageNum')})\nText: {r.get('text', '')}"
                 for i, r in enumerate(search_results)
@@ -159,8 +147,6 @@ def chat_endpoint(req: ChatRequest):
                 if recent:
                     history_text = "--- Recent Chat History ---\n"
                     for m in recent:
-                        # Extract plain text from HTML
-                        import re
                         text = re.sub(r"<[^>]+>", "", m.get("html", "")).strip()
                         role = "User" if m.get("role") == "user" else "Assistant"
                         history_text += f"{role}: {text}\n\n"
@@ -174,12 +160,11 @@ def chat_endpoint(req: ChatRequest):
                 system_prompt += "\n\nResponse Style Instruction: Be extremely concise and direct. Provide only the essential facts extracted from the context. Keep your response brief (2-3 sentences if possible) without unnecessary fluff or conversational filler."
             elif req.response_style == "Expert":
                 system_prompt += "\n\nResponse Style Instruction: Answer as a domain expert. Use precise, technical, and professional language. Provide a nuanced, highly rigorous analysis based on the context. Assume the reader possesses advanced technical knowledge."
-            else:  # Detailed
+            else:
                 system_prompt += "\n\nResponse Style Instruction: Provide a thorough, comprehensive, and detailed explanation. Break down the information clearly, step-by-step. Use formatting like bullet points or bold text if helpful to make the detailed answer highly readable."
 
             full_prompt = f"{system_prompt}\n\nContext:\n{context_text}\n\n{history_text}User Question: {req.question}\n\nAnswer:"
 
-            # Step 3: stream LLM tokens
             full_answer = ""
             try:
                 for token in ollama.generate_stream(full_prompt, model=req.model, temperature=req.temperature):
@@ -197,7 +182,9 @@ def chat_endpoint(req: ChatRequest):
 
 
 @router.get("/embeddings/{doc_id}")
-def list_embeddings(doc_id: str):
-    """Return all chunks for a document (text only — no vectors)."""
-    rows = db.query_all("SELECT id, page_id, text FROM embeddings WHERE doc_id = ?", (doc_id,))
+def list_embeddings(doc_id: str, project_id: str = Depends(get_current_project)):
+    rows = db.query_all(
+        "SELECT id, page_id, text FROM embeddings WHERE doc_id = ? AND project_id = ?",
+        (doc_id, project_id)
+    )
     return {"chunks": [{"id": r["id"], "pageId": r["page_id"], "text": r["text"]} for r in rows]}

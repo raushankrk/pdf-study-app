@@ -1,17 +1,9 @@
 """
-Documents REST API.
+Documents REST API (project-scoped).
 
-Endpoints:
-  GET    /api/documents                 — list all documents (metadata only)
-  GET    /api/documents/{doc_id}        — get one document's metadata
-  GET    /api/documents/{doc_id}/file   — get PDF bytes (for PDF.js in browser)
-  GET    /api/documents/{doc_id}/thumbnail — get thumbnail data URL
-  POST   /api/documents/upload           — upload one or more PDFs to a folder
-  PUT    /api/documents/{doc_id}         — update metadata (name, folderId, favorite, modifiedAt)
-  POST   /api/documents/{doc_id}/duplicate — duplicate the doc
-  DELETE /api/documents/{doc_id}         — delete doc + its annotations + links + embeddings + file
-  PUT    /api/documents/{doc_id}/move    — move to a different folder
-  PUT    /api/documents/{doc_id}/file    — replace the PDF file (after page insert/delete in browser)
+Every endpoint requires the `X-Project-Id` header (injected by the
+get_current_project dependency). All DB queries filter by project_id, so
+projects are fully isolated.
 """
 import json
 import os
@@ -20,11 +12,12 @@ import hashlib
 import shutil
 from typing import Optional, List
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Response, Depends
 from pydantic import BaseModel
 
 from .. import config
 from .. import database as db
+from ..deps import get_current_project
 
 router = APIRouter()
 
@@ -45,7 +38,6 @@ class MoveRequest(BaseModel):
 
 # ---- Helpers ----
 def _doc_row_to_dict(row: dict) -> dict:
-    """Convert a DB row to the JSON shape expected by the frontend."""
     page_ids = []
     if row.get("page_ids_json"):
         try:
@@ -64,7 +56,6 @@ def _doc_row_to_dict(row: dict) -> dict:
         "createdAt": row.get("created_at"),
         "modifiedAt": row.get("modified_at"),
         "favorite": bool(row.get("favorite", 0)),
-        # Note: we don't return the PDF bytes here — fetched on demand via /file endpoint.
     }
 
 
@@ -72,17 +63,11 @@ def _generate_id(prefix: str = "doc") -> str:
     return f"{prefix}_{int(time.time() * 1000)}_{os.urandom(4).hex()}"
 
 
-def _compute_file_hash(file_path: str) -> str:
-    h = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _save_pdf(file: UploadFile, doc_id: str) -> tuple[str, int, str]:
-    """Save the uploaded PDF to disk. Returns (file_path, file_size, file_hash)."""
-    file_path = os.path.join(config.PDF_DIR, f"{doc_id}.pdf")
+def _save_pdf(file: UploadFile, doc_id: str, project_id: str) -> tuple[str, int, str]:
+    """Save the uploaded PDF to disk under the project's PDF directory."""
+    proj_pdf_dir = os.path.join(config.PDF_DIR, project_id)
+    os.makedirs(proj_pdf_dir, exist_ok=True)
+    file_path = os.path.join(proj_pdf_dir, f"{doc_id}.pdf")
     file_size = 0
     sha = hashlib.sha256()
     with open(file_path, "wb") as out:
@@ -97,11 +82,6 @@ def _save_pdf(file: UploadFile, doc_id: str) -> tuple[str, int, str]:
 
 
 def _generate_thumbnail(file_path: str, doc_id: str) -> str:
-    """Generate a small thumbnail data URL from page 1 of the PDF.
-
-    Tries PyMuPDF first (much faster, no external deps), falls back to base64
-    placeholder if PyMuPDF is not installed.
-    """
     try:
         import fitz
         doc = fitz.open(file_path)
@@ -118,11 +98,10 @@ def _generate_thumbnail(file_path: str, doc_id: str) -> str:
         pass
     except Exception as e:
         print(f"Thumbnail generation failed for {file_path}: {e}")
-    return ""  # Empty thumbnail — frontend handles gracefully
+    return ""
 
 
 def _get_page_count(file_path: str) -> int:
-    """Return the page count of the PDF. Uses PyMuPDF if available."""
     try:
         import fitz
         doc = fitz.open(file_path)
@@ -136,25 +115,31 @@ def _get_page_count(file_path: str) -> int:
     return 0
 
 
-def _delete_document_completely(doc_id: str):
+def _delete_document_completely(doc_id: str, project_id: str):
     """Delete a document and all its associated data (file, annotations, links, embeddings)."""
-    row = db.query_one("SELECT file_path FROM documents WHERE id = ?", (doc_id,))
+    row = db.query_one(
+        "SELECT file_path FROM documents WHERE id = ? AND project_id = ?",
+        (doc_id, project_id)
+    )
     if row and os.path.exists(row["file_path"]):
         try:
             os.remove(row["file_path"])
         except OSError as e:
             print(f"Failed to remove PDF file {row['file_path']}: {e}")
-    db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-    db.execute("DELETE FROM annotations WHERE doc_id = ?", (doc_id,))
-    db.execute("DELETE FROM embeddings WHERE doc_id = ?", (doc_id,))
+    db.execute("DELETE FROM documents WHERE id = ? AND project_id = ?", (doc_id, project_id))
+    db.execute("DELETE FROM annotations WHERE doc_id = ? AND project_id = ?", (doc_id, project_id))
+    db.execute("DELETE FROM embeddings WHERE doc_id = ? AND project_id = ?", (doc_id, project_id))
     # Delete any links that reference this doc
-    all_links = db.query_all("SELECT id, source_json, target_json FROM links")
+    all_links = db.query_all(
+        "SELECT id, source_json, target_json FROM links WHERE project_id = ?", (project_id,)
+    )
     for link in all_links:
         try:
             src = json.loads(link["source_json"])
             tgt = json.loads(link["target_json"])
-            if src.get("docId") == doc_id or tgt.get("docId") == doc_id:
-                db.execute("DELETE FROM links WHERE id = ?", (link["id"],))
+            if (src.get("docId") == doc_id or src.get("doc_id") == doc_id or
+                tgt.get("docId") == doc_id or tgt.get("doc_id") == doc_id):
+                db.execute("DELETE FROM links WHERE id = ? AND project_id = ?", (link["id"], project_id))
         except json.JSONDecodeError:
             pass
 
@@ -162,22 +147,29 @@ def _delete_document_completely(doc_id: str):
 # ---- Endpoints ----
 
 @router.get("")
-def list_documents():
-    rows = db.query_all("SELECT * FROM documents ORDER BY name")
+def list_documents(project_id: str = Depends(get_current_project)):
+    rows = db.query_all(
+        "SELECT * FROM documents WHERE project_id = ? ORDER BY name", (project_id,)
+    )
     return [_doc_row_to_dict(r) for r in rows]
 
 
 @router.get("/{doc_id}")
-def get_document(doc_id: str):
-    row = db.query_one("SELECT * FROM documents WHERE id = ?", (doc_id,))
+def get_document(doc_id: str, project_id: str = Depends(get_current_project)):
+    row = db.query_one(
+        "SELECT * FROM documents WHERE id = ? AND project_id = ?", (doc_id, project_id)
+    )
     if not row:
         raise HTTPException(404, "Document not found")
     return _doc_row_to_dict(row)
 
 
 @router.get("/{doc_id}/file")
-def get_document_file(doc_id: str):
-    row = db.query_one("SELECT file_path, name FROM documents WHERE id = ?", (doc_id,))
+def get_document_file(doc_id: str, project_id: str = Depends(get_current_project)):
+    row = db.query_one(
+        "SELECT file_path, name FROM documents WHERE id = ? AND project_id = ?",
+        (doc_id, project_id)
+    )
     if not row:
         raise HTTPException(404, "Document not found")
     if not os.path.exists(row["file_path"]):
@@ -189,8 +181,10 @@ def get_document_file(doc_id: str):
 
 
 @router.get("/{doc_id}/thumbnail")
-def get_document_thumbnail(doc_id: str):
-    row = db.query_one("SELECT thumbnail FROM documents WHERE id = ?", (doc_id,))
+def get_document_thumbnail(doc_id: str, project_id: str = Depends(get_current_project)):
+    row = db.query_one(
+        "SELECT thumbnail FROM documents WHERE id = ? AND project_id = ?", (doc_id, project_id)
+    )
     if not row:
         raise HTTPException(404, "Document not found")
     return {"thumbnail": row["thumbnail"]}
@@ -200,32 +194,31 @@ def get_document_thumbnail(doc_id: str):
 async def upload_documents(
     files: List[UploadFile] = File(...),
     folder_id: str = Form("root"),
+    project_id: str = Depends(get_current_project),
 ):
-    """Upload one or more PDFs into the specified folder."""
     if folder_id != "root":
-        folder = db.query_one("SELECT id FROM folders WHERE id = ?", (folder_id,))
+        folder = db.query_one(
+            "SELECT id FROM folders WHERE id = ? AND project_id = ?",
+            (folder_id, project_id)
+        )
         if not folder:
-            raise HTTPException(400, f"Folder '{folder_id}' does not exist")
+            raise HTTPException(400, f"Folder '{folder_id}' does not exist in this project")
 
     results = []
     for upload in files:
         doc_id = _generate_id("doc")
         try:
-            # Save file to disk
-            file_path, file_size, file_hash = _save_pdf(upload, doc_id)
-
-            # Generate metadata
+            file_path, file_size, file_hash = _save_pdf(upload, doc_id, project_id)
             thumbnail = _generate_thumbnail(file_path, doc_id)
             page_count = _get_page_count(file_path)
-            # Stable page IDs
             page_ids = [_generate_id("id") for _ in range(page_count)]
             now = int(time.time() * 1000)
 
             # Auto-rename if name conflicts in the same folder
             name = upload.filename or f"{doc_id}.pdf"
             existing = db.query_one(
-                "SELECT id FROM documents WHERE folder_id = ? AND LOWER(name) = LOWER(?)",
-                (folder_id, name),
+                "SELECT id FROM documents WHERE project_id = ? AND folder_id = ? AND LOWER(name) = LOWER(?)",
+                (project_id, folder_id, name)
             )
             if existing:
                 base = name.rsplit(".", 1)[0]
@@ -234,18 +227,18 @@ async def upload_documents(
                 while existing:
                     candidate = f"{base} ({i}){'.' + ext if ext else ''}"
                     existing = db.query_one(
-                        "SELECT id FROM documents WHERE folder_id = ? AND LOWER(name) = LOWER(?)",
-                        (folder_id, candidate),
+                        "SELECT id FROM documents WHERE project_id = ? AND folder_id = ? AND LOWER(name) = LOWER(?)",
+                        (project_id, folder_id, candidate)
                     )
                     i += 1
                 name = candidate
 
             db.execute(
                 """INSERT INTO documents
-                   (id, name, folder_id, file_path, thumbnail, page_count, page_ids_json,
+                   (id, project_id, name, folder_id, file_path, thumbnail, page_count, page_ids_json,
                     file_size, file_hash, created_at, modified_at, favorite)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
-                (doc_id, name, folder_id, file_path, thumbnail, page_count,
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                (doc_id, project_id, name, folder_id, file_path, thumbnail, page_count,
                  json.dumps(page_ids), file_size, file_hash, now, now),
             )
             results.append({"id": doc_id, "name": name, "pageCount": page_count, "fileSize": file_size})
@@ -256,8 +249,10 @@ async def upload_documents(
 
 
 @router.put("/{doc_id}")
-def update_document(doc_id: str, update: DocumentUpdate):
-    row = db.query_one("SELECT * FROM documents WHERE id = ?", (doc_id,))
+def update_document(doc_id: str, update: DocumentUpdate, project_id: str = Depends(get_current_project)):
+    row = db.query_one(
+        "SELECT * FROM documents WHERE id = ? AND project_id = ?", (doc_id, project_id)
+    )
     if not row:
         raise HTTPException(404, "Document not found")
 
@@ -267,9 +262,11 @@ def update_document(doc_id: str, update: DocumentUpdate):
         updates.append("name = ?")
         params.append(update.name)
     if update.folder_id is not None:
-        # Validate folder
         if update.folder_id != "root":
-            f = db.query_one("SELECT id FROM folders WHERE id = ?", (update.folder_id,))
+            f = db.query_one(
+                "SELECT id FROM folders WHERE id = ? AND project_id = ?",
+                (update.folder_id, project_id)
+            )
             if not f:
                 raise HTTPException(400, "Target folder does not exist")
         updates.append("folder_id = ?")
@@ -291,53 +288,63 @@ def update_document(doc_id: str, update: DocumentUpdate):
         updates.append("modified_at = ?")
         params.append(int(time.time() * 1000))
         params.append(doc_id)
-        db.execute(f"UPDATE documents SET {', '.join(updates)} WHERE id = ?", tuple(params))
+        params.append(project_id)
+        db.execute(
+            f"UPDATE documents SET {', '.join(updates)} WHERE id = ? AND project_id = ?",
+            tuple(params)
+        )
 
     return {"status": "ok"}
 
 
 @router.post("/{doc_id}/duplicate")
-def duplicate_document(doc_id: str):
-    src = db.query_one("SELECT * FROM documents WHERE id = ?", (doc_id,))
+def duplicate_document(doc_id: str, project_id: str = Depends(get_current_project)):
+    src = db.query_one(
+        "SELECT * FROM documents WHERE id = ? AND project_id = ?", (doc_id, project_id)
+    )
     if not src:
         raise HTTPException(404, "Document not found")
 
     new_id = _generate_id("doc")
-    new_path = os.path.join(config.PDF_DIR, f"{new_id}.pdf")
+    new_path = os.path.join(config.PDF_DIR, project_id, f"{new_id}.pdf")
+    os.makedirs(os.path.dirname(new_path), exist_ok=True)
     shutil.copyfile(src["file_path"], new_path)
 
-    # Auto-name the duplicate
     base_name = src["name"]
     name = base_name + " (copy)"
     counter = 1
-    while db.query_one("SELECT id FROM documents WHERE folder_id = ? AND LOWER(name) = LOWER(?",
-                       (src["folder_id"], name)):
+    while db.query_one(
+        "SELECT id FROM documents WHERE project_id = ? AND folder_id = ? AND LOWER(name) = LOWER(?)",
+        (project_id, src["folder_id"], name)
+    ):
         name = f"{base_name} ({counter})"
         counter += 1
 
     now = int(time.time() * 1000)
-    # Fresh page IDs (the duplicate's pages are a fresh copy)
     page_ids = json.loads(src["page_ids_json"]) if src["page_ids_json"] else []
     new_page_ids = [_generate_id("id") for _ in page_ids]
 
     db.execute(
         """INSERT INTO documents
-           (id, name, folder_id, file_path, thumbnail, page_count, page_ids_json,
+           (id, project_id, name, folder_id, file_path, thumbnail, page_count, page_ids_json,
             file_size, file_hash, created_at, modified_at, favorite)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
-        (new_id, name, src["folder_id"], new_path, src["thumbnail"], src["page_count"],
-         json.dumps(new_page_ids), src["file_size"], src["file_hash"], now, now),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+        (new_id, project_id, name, src["folder_id"], new_path, src["thumbnail"],
+         src["page_count"], json.dumps(new_page_ids), src["file_size"], src["file_hash"], now, now),
     )
 
     # Copy annotations (deep copy, with new page IDs)
-    annos = db.query_all("SELECT page_id, data_json FROM annotations WHERE doc_id = ?", (doc_id,))
+    annos = db.query_all(
+        "SELECT page_id, data_json FROM annotations WHERE doc_id = ? AND project_id = ?",
+        (doc_id, project_id)
+    )
     for anno in annos:
         try:
             idx = page_ids.index(anno["page_id"])
             new_page_id = new_page_ids[idx]
             db.execute(
-                "INSERT OR REPLACE INTO annotations (doc_id, page_id, data_json) VALUES (?, ?, ?)",
-                (new_id, new_page_id, anno["data_json"]),
+                "INSERT OR REPLACE INTO annotations (doc_id, project_id, page_id, data_json) VALUES (?, ?, ?, ?)",
+                (new_id, project_id, new_page_id, anno["data_json"]),
             )
         except (ValueError, json.JSONDecodeError):
             pass
@@ -346,40 +353,47 @@ def duplicate_document(doc_id: str):
 
 
 @router.delete("/{doc_id}")
-def delete_document(doc_id: str):
-    if doc_id == "root":
-        raise HTTPException(400, "Cannot delete root")
-    _delete_document_completely(doc_id)
+def delete_document(doc_id: str, project_id: str = Depends(get_current_project)):
+    _delete_document_completely(doc_id, project_id)
     return {"status": "deleted"}
 
 
 @router.put("/{doc_id}/move")
-def move_document(doc_id: str, req: MoveRequest):
+def move_document(doc_id: str, req: MoveRequest, project_id: str = Depends(get_current_project)):
     target = req.target_folder_id
     if target != "root":
-        f = db.query_one("SELECT id FROM folders WHERE id = ?", (target,))
+        f = db.query_one(
+            "SELECT id FROM folders WHERE id = ? AND project_id = ?", (target, project_id)
+        )
         if not f:
             raise HTTPException(400, "Target folder does not exist")
     db.execute(
-        "UPDATE documents SET folder_id = ?, modified_at = ? WHERE id = ?",
-        (target, int(time.time() * 1000), doc_id),
+        "UPDATE documents SET folder_id = ?, modified_at = ? WHERE id = ? AND project_id = ?",
+        (target, int(time.time() * 1000), doc_id, project_id),
     )
     return {"status": "moved"}
 
 
 @router.put("/{doc_id}/file")
-async def replace_document_file(doc_id: str, file: UploadFile = File(...)):
-    """Replace the PDF file (after page insert/delete in browser using PDF-Lib)."""
-    row = db.query_one("SELECT file_path FROM documents WHERE id = ?", (doc_id,))
+async def replace_document_file(
+    doc_id: str,
+    file: UploadFile = File(...),
+    project_id: str = Depends(get_current_project)
+):
+    row = db.query_one(
+        "SELECT file_path FROM documents WHERE id = ? AND project_id = ?", (doc_id, project_id)
+    )
     if not row:
         raise HTTPException(404, "Document not found")
     # Save new PDF
-    file_path, file_size, file_hash = _save_pdf(file, doc_id)
+    file_path, file_size, file_hash = _save_pdf(file, doc_id, project_id)
     page_count = _get_page_count(file_path)
     thumbnail = _generate_thumbnail(file_path, doc_id)
 
     db.execute(
-        "UPDATE documents SET file_size = ?, file_hash = ?, page_count = ?, thumbnail = ?, modified_at = ? WHERE id = ?",
-        (file_size, file_hash, page_count, thumbnail, int(time.time() * 1000), doc_id),
+        "UPDATE documents SET file_path = ?, file_size = ?, file_hash = ?, page_count = ?, "
+        "thumbnail = ?, modified_at = ? WHERE id = ? AND project_id = ?",
+        (file_path, file_size, file_hash, page_count, thumbnail,
+         int(time.time() * 1000), doc_id, project_id),
     )
     return {"status": "ok", "pageCount": page_count, "fileSize": file_size}
