@@ -1,0 +1,94 @@
+// ==========================================
+// 📁 2. config.js
+// ==========================================
+const DB_NAME = 'PDFLinkerStudioDB';
+const DB_VERSION = 17;
+const dbSaveDebounceMap = { left: null, right: null };
+
+// Ensure DOM is parsed before running this block if separating files!
+// In this unified file, it runs at the end of the body, so it's safe.
+const els = {
+    uploadInput: document.getElementById('pdf-upload-input'),
+    imageInput: document.getElementById('image-upload'),
+    docList: document.getElementById('doc-list'),
+    emptyMsg: document.getElementById('empty-state-msg'),
+    loadingSpinner: document.getElementById('loading-spinner'),
+    leftPanel: document.getElementById('left-panel'),
+    rightPanel: document.getElementById('right-panel'),
+    resizer: document.getElementById('vertical-resizer'),
+    workspaceMain: document.getElementById('workspace-main'),
+    leftCanvas: document.getElementById('left-canvas'),
+    rightCanvas: document.getElementById('right-canvas'),
+    leftTextLayer: document.getElementById('left-text-layer'),
+    rightTextLayer: document.getElementById('right-text-layer'),
+    leftAnnoCanvas: document.getElementById('left-anno-canvas'),
+    rightAnnoCanvas: document.getElementById('right-anno-canvas'),
+    leftWrapper: document.getElementById('left-canvas-wrapper'),
+    rightWrapper: document.getElementById('right-canvas-wrapper'),
+    leftViewport: document.getElementById('left-viewport'),
+    rightViewport: document.getElementById('right-viewport'),
+    leftSearchLayer: document.getElementById('left-search-layer'),
+    rightSearchLayer: document.getElementById('right-search-layer'),
+    drawingLayer: document.getElementById('drawing-layer'),
+    currentPath: document.getElementById('current-draw-path'),
+    textCreationRect: document.getElementById('text-creation-rect'),
+    modeNavBtn: document.getElementById('mode-nav-btn'),
+    modeLinkBtn: document.getElementById('mode-link-btn'),
+    modeSnipLinkBtn: document.getElementById('mode-snip-link-btn'), // SNIP BUTTON
+    modeDelLinkBtn: document.getElementById('mode-del-link-btn'),
+    // modeAnnoBtn: document.getElementById('mode-anno-btn'),
+    annoTools: document.getElementById('anno-tools'),
+    toolSelect: document.getElementById('tool-select'),
+    toolPen: document.getElementById('tool-pen'),
+    toolText: document.getElementById('tool-text'),
+    toolEraserPixel: document.getElementById('tool-eraser-pixel'),
+    toolEraserStroke: document.getElementById('tool-eraser-stroke'),
+    toolImage: document.getElementById('tool-image'),
+    colorPicker: document.getElementById('color-picker'),
+    thicknessPicker: document.getElementById('thickness-picker'),
+    importInput: document.getElementById('import-project-input'),
+    modal: document.getElementById('modal'),
+    modalTitle: document.getElementById('modal-title'),
+    modalBody: document.getElementById('modal-body'),
+    modalInput: document.getElementById('modal-input'),
+    modalActions: document.getElementById('modal-actions'),
+    modalConfirmBtn: document.getElementById('modal-confirm-btn'),
+    leftTitle: document.getElementById('left-view-title'),
+    rightTitle: document.getElementById('right-view-title'),
+    
+    // NEW: Interactive Input Paging Elements
+    leftPageInput: document.getElementById('left-page-input'),
+    rightPageInput: document.getElementById('right-page-input'),
+    leftPageTotal: document.getElementById('left-page-total'),
+    rightPageTotal: document.getElementById('right-page-total'),
+    leftPageSlider: document.getElementById('left-page-slider'),
+    rightPageSlider: document.getElementById('right-page-slider'),
+    
+    leftZoomLevel: document.getElementById('left-zoom-level'),
+    rightZoomLevel: document.getElementById('right-zoom-level'),
+    globalSearchInput: document.getElementById('unified-search-input'),
+    globalSearchResults: document.getElementById('global-search-results'),
+    chatHistory: document.getElementById('chat-history'),
+    chatList: document.getElementById('chat-list'),
+    chatInput: document.getElementById('chat-input'),
+    sendChatBtn: document.getElementById('send-chat-btn'),
+    aiStatus: document.getElementById('ai-status'),
+    toolHighlighter: document.getElementById('tool-highlighter'),
+    snipPreview: document.getElementById('snip-preview'), // SNIP PREVIEW LAYER
+    
+    // AI Settings Modal Elements
+    aiSettingsModal: document.getElementById('ai-settings-modal'),
+    aiSettingModel: document.getElementById('ai-setting-model'),
+    aiSettingPrompt: document.getElementById('ai-setting-prompt'),
+    aiSettingStyle: document.getElementById('ai-setting-style'),
+    aiSettingTemp: document.getElementById('ai-setting-temp'),
+    aiSettingTempVal: document.getElementById('ai-setting-temp-val'),
+    aiSettingStrict: document.getElementById('ai-setting-strict'),
+    aiSettingHistory: document.getElementById('ai-setting-history'),
+    aiSettingSkipLlm: document.getElementById('ai-setting-skip-llm'),
+    aiSettingSim: document.getElementById('ai-setting-sim'),
+    aiSettingSimVal: document.getElementById('ai-setting-sim-val'),
+    aiSettingBudget: document.getElementById('ai-setting-budget'),
+    aiSettingMaxChunks: document.getElementById('ai-setting-max-chunks'),
+    aiSettingChunkSize: document.getElementById('ai-setting-chunk-size')
+};
