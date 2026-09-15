@@ -160,9 +160,7 @@ async function renderPage(side) {
     }
 
     const canvas = els[side + 'Canvas'];
-    const ctx = canvas.getContext('2d');
     const annoCanvas = els[side + 'AnnoCanvas'];
-    const annoCtx = annoCanvas.getContext('2d');
     const textLayer = els[side + 'TextLayer'];
 
     if (state.zoomLive[side] !== 1.0) {
@@ -190,15 +188,37 @@ async function renderPage(side) {
         const scale = viewState.scale || 1.5;
         const viewport = page.getViewport({ scale: scale }); 
 
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        annoCanvas.width = viewport.width; annoCanvas.height = viewport.height;
+        // When a zoom commit is in progress, render the PDF to an
+        // offscreen canvas so the visible canvas is never blank.
+        const isCommitRender = state._commitFocus && state._commitFocus.side === side;
+        const pdfCanvas = isCommitRender ? document.createElement('canvas') : canvas;
+        const pdfCtx = pdfCanvas.getContext('2d');
+
+        pdfCanvas.width = viewport.width; pdfCanvas.height = viewport.height;
+
+        // Only resize the annotation canvas directly in non-commit mode.
+        // In commit mode the annoCanvas already has upscaled content from
+        // commitZoom's atomic swap — renderAnnotations() will redraw it.
+        if (!isCommitRender) {
+            annoCanvas.width = viewport.width; annoCanvas.height = viewport.height;
+        }
 
         const wrapper = els[side + 'Wrapper'];
         wrapper.style.width = `${viewport.width}px`;
         wrapper.style.height = `${viewport.height}px`;
 
-        const renderContext = { canvasContext: ctx, viewport: viewport };
+        const renderContext = { canvasContext: pdfCtx, viewport: viewport };
         await page.render(renderContext).promise;
+
+        // If we rendered offscreen, copy to the visible canvas now.
+        // This swap is synchronous — the user never sees a blank frame.
+        if (isCommitRender) {
+            canvas.width = viewport.width; canvas.height = viewport.height;
+            canvas.getContext('2d').drawImage(pdfCanvas, 0, 0);
+            // Resize annoCanvas to match so renderAnnotations() draws
+            // at the correct scale. It clears and redraws moments later.
+            annoCanvas.width = viewport.width; annoCanvas.height = viewport.height;
+        }
 
         const textContent = await page.getTextContent();
         renderTextLayerCustom(textContent, textLayer, viewport);
@@ -639,10 +659,12 @@ function resetZoom(side) {
 function commitZoom(side, focusScreenX, focusScreenY) {
     const viewport = els[side + 'Viewport'];
     const wrapper = els[side + 'Wrapper'];
+    const canvas = els[side + 'Canvas'];
+    const annoCanvas = els[side + 'AnnoCanvas'];
+    const textLayer = els[side + 'TextLayer'];
     const liveScale = state.zoomLive[side];
 
-    // If liveScale is 1.0, nothing to commit (can happen if commit is called
-    // twice or zoom was already committed).
+    // If liveScale is 1.0, nothing to commit.
     if (liveScale === 1.0 || !liveScale) {
         wrapper.style.transform = 'none';
         wrapper.style.transformOrigin = '';
@@ -651,52 +673,86 @@ function commitZoom(side, focusScreenX, focusScreenY) {
     }
 
     const baseScale = state.view[side].scale;
-    const finalScale = baseScale * liveScale;
+    let finalScale = baseScale * liveScale;
+    finalScale = Math.max(0.25, Math.min(5.0, finalScale));
 
-    // ---- Capture the content point under the focus BEFORE clearing ----
+    // ---- Capture focus info BEFORE any visual changes ----
     const wrapperRect = wrapper.getBoundingClientRect();
     const viewportRect = viewport.getBoundingClientRect();
-
-    // Fractional position of the focus point within the wrapper's visual bounds.
-    // With transformOrigin 0 0, wrapperRect is the visual bounding box.
     const fracX = wrapperRect.width > 0
         ? Math.max(0, Math.min(1, (focusScreenX - wrapperRect.left) / wrapperRect.width))
         : 0.5;
     const fracY = wrapperRect.height > 0
         ? Math.max(0, Math.min(1, (focusScreenY - wrapperRect.top) / wrapperRect.height))
         : 0.5;
-
-    // Viewport-relative position of the focus point on screen.
     const vpX = focusScreenX - viewportRect.left;
     const vpY = focusScreenY - viewportRect.top;
 
-    // ---- Merge the live scale into the base scale ----
-    if (finalScale < 0.25) state.view[side].scale = 0.25;
-    else if (finalScale > 5.0) state.view[side].scale = 5.0;
-    else state.view[side].scale = finalScale;
+    // ---- Step 1: Upscale existing canvas to new size (synchronous) ----
+    // This gives us a full-size placeholder that looks identical to the
+    // CSS-transformed version, so the visual never blanks out.
+    const newW = Math.round(canvas.width * liveScale);
+    const newH = Math.round(canvas.height * liveScale);
 
+    const tmpPdf = document.createElement('canvas');
+    tmpPdf.width = newW; tmpPdf.height = newH;
+    tmpPdf.getContext('2d').drawImage(canvas, 0, 0, newW, newH);
+
+    const tmpAnno = document.createElement('canvas');
+    tmpAnno.width = newW; tmpAnno.height = newH;
+    tmpAnno.getContext('2d').drawImage(annoCanvas, 0, 0, newW, newH);
+
+    // ---- Step 2: Update state ----
+    state.view[side].scale = finalScale;
     state.zoomLive[side] = 1.0;
 
-    // ---- Clear the CSS transform smoothly ----
-    wrapper.style.transform = 'none';
-    wrapper.style.transformOrigin = '';
-    wrapper.style.zIndex = '';
-
-    // ---- Set a pending scroll focus so renderPage won't restore old scrollTop ----
+    // Tell renderPage to render PDF to an offscreen canvas (no blank frame).
     state._commitFocus = { side, fracX, fracY, vpX, vpY };
 
-    updateZoomIndicator(side);
+    // Hide text layer and text-box overlays — they are at the old scale
+    // and will be recreated at the correct scale by renderPage.
+    textLayer.style.visibility = 'hidden';
+    wrapper.querySelectorAll('.text-box').forEach(el => el.style.visibility = 'hidden');
 
-    // Re-render at the new base scale, then restore scroll to keep the focus point stable.
-    renderPage(side).then(() => {
-        if (state._commitFocus && state._commitFocus.side === side) {
-            const f = state._commitFocus;
-            scrollToKeepPoint(f.side, f.fracX, f.fracY, f.vpX, f.vpY);
-            // Save the new scroll position for future page navigation
-            state.view[side].scrollTop = els[side + 'Viewport'].scrollTop;
-            state._commitFocus = null;
-        }
+    // ---- Step 3: Atomic swap in a single animation frame ----
+    // Resize wrapper, swap canvas content, clear transform, set scroll —
+    // all synchronously so there is zero visible gap.
+    requestAnimationFrame(() => {
+        wrapper.style.width = newW + 'px';
+        wrapper.style.height = newH + 'px';
+
+        canvas.width = newW; canvas.height = newH;
+        canvas.getContext('2d').drawImage(tmpPdf, 0, 0);
+
+        annoCanvas.width = newW; annoCanvas.height = newH;
+        annoCanvas.getContext('2d').drawImage(tmpAnno, 0, 0);
+
+        wrapper.style.transform = 'none';
+        wrapper.style.transformOrigin = '';
+        wrapper.style.zIndex = '';
+
+        // Scroll so the focus point stays at the same screen position.
+        // Must include wrapper.offsetLeft/offsetTop for correct positioning.
+        viewport.scrollLeft = wrapper.offsetLeft + fracX * newW - vpX;
+        viewport.scrollTop = wrapper.offsetTop + fracY * newH - vpY;
+        state.view[side].scrollTop = viewport.scrollTop;
+
+        updateZoomIndicator(side);
+        saveSettings();
+
+        // ---- Step 4: Background sharp re-render ----
+        // renderPage will render to an offscreen canvas (because _commitFocus
+        // is set), then copy to the visible canvas — no blank frame.
+        renderPage(side).then(() => {
+            if (state._commitFocus && state._commitFocus.side === side) {
+                const f = state._commitFocus;
+                // Re-adjust scroll for potentially slightly different
+                // dimensions from the PDF.js viewport calculation.
+                viewport.scrollLeft = wrapper.offsetLeft + f.fracX * wrapper.offsetWidth - f.vpX;
+                viewport.scrollTop = wrapper.offsetTop + f.fracY * wrapper.offsetHeight - f.vpY;
+                state.view[side].scrollTop = viewport.scrollTop;
+                state._commitFocus = null;
+            }
+        });
     });
-
-    saveSettings();
 }

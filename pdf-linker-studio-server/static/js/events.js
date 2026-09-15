@@ -1020,9 +1020,11 @@ function scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY) {
     const newPointX = fracX * newCanvasWidth;
     const newPointY = fracY * newCanvasHeight;
 
-    // Scroll so that point aligns back under the mouse
-    viewport.scrollLeft = newPointX - mouseX;
-    viewport.scrollTop = newPointY - mouseY;
+    // Scroll so that point aligns back under the mouse.
+    // Must include wrapper.offsetLeft/offsetTop for correct positioning
+    // (accounts for viewport padding and wrapper centering).
+    viewport.scrollLeft = wrapper.offsetLeft + newPointX - mouseX;
+    viewport.scrollTop = wrapper.offsetTop + newPointY - mouseY;
 }
 
 function resetZoomAtMouse() {
