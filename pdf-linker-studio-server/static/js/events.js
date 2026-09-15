@@ -914,23 +914,45 @@ function handleViewportZoom(e, side) {
         const zoomSpeed = 0.009; 
         const delta = -e.deltaY * zoomSpeed;
         
-        let currentLiveScale = state.zoomLive[side];
-        let newLiveScale = currentLiveScale * (1 + delta);
+        const viewport = els[side + 'Viewport'];
+        const wrapper = els[side + 'Wrapper'];
+        const oldLiveScale = state.zoomLive[side];
+        let newLiveScale = oldLiveScale * (1 + delta);
 
         if (newLiveScale < 0.1) newLiveScale = 0.1;
         if (newLiveScale > 5.0) newLiveScale = 5.0;
 
+        // --- Zoom toward mouse cursor position ---
+        // With transformOrigin at 0 0, the wrapper's visual top-left stays fixed.
+        // A content point (cx, cy) in wrapper CSS-pixels appears at:
+        //   screenX = wrapperRect.left + cx * liveScale
+        // To keep the point under the mouse stable after changing liveScale:
+        //   scrollLeft_new = scrollLeft + cx * (newLiveScale - oldLiveScale)
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const cx = (e.clientX - wrapperRect.left) / oldLiveScale;
+        const cy = (e.clientY - wrapperRect.top) / oldLiveScale;
+
         state.zoomLive[side] = newLiveScale;
 
-        const wrapper = els[side + 'Wrapper'];
+        wrapper.style.transformOrigin = '0 0';
         wrapper.style.transform = `scale(${newLiveScale})`;
-        wrapper.style.transformOrigin = 'top left'; 
         wrapper.style.zIndex = '10'; 
+
+        // Adjust scroll to keep the content point under the mouse cursor
+        viewport.scrollLeft += cx * (newLiveScale - oldLiveScale);
+        viewport.scrollTop += cy * (newLiveScale - oldLiveScale);
 
         const currentBaseScale = state.view[side].scale;
         const effectiveScale = currentBaseScale * newLiveScale;
         
         els[side + 'ZoomLevel'].innerText = Math.round(effectiveScale * 100) + '%';
+
+        // Debounce commit: after 350ms of no wheel events, re-render at final scale
+        if (state.zoomTimer[side]) clearTimeout(state.zoomTimer[side]);
+        state.zoomTimer[side] = setTimeout(() => {
+            state.zoomTimer[side] = null;
+            commitZoom(side, state.globalMouse.x, state.globalMouse.y);
+        }, 350);
     }
 }
 
@@ -1026,6 +1048,13 @@ function resetZoomAtMouse() {
 // live CSS transform during the pinch, then committed (re-rendered at the new
 // scale) when the fingers lift. Works in ALL modes — annotation, navigation,
 // linking, etc. Two fingers always means "zoom", never "draw".
+//
+// The zoom targets the pinch center point. On each touchmove we calculate
+// the content coordinate under the pinch center, apply the new CSS scale
+// (with transformOrigin 0 0), and adjust viewport scroll so that content
+// point stays exactly under the fingers. When the pinch ends, commitZoom
+// re-renders the PDF at the final scale and preserves scroll so there is
+// no visible snap, jitter, or repositioning.
 
 let _pinchState = null;
 
@@ -1054,15 +1083,18 @@ function initPinchZoom() {
                 if (typeof clearSelection === 'function') clearSelection();
             }
 
+            // Commit any pending wheel-zoom before starting a pinch
+            if (state.zoomTimer[side]) {
+                clearTimeout(state.zoomTimer[side]);
+                state.zoomTimer[side] = null;
+            }
+
             _pinchState = {
                 side: side,
                 startDist: dist,
                 startScale: state.zoomLive[side] || 1.0,
-                centerX: cx,
-                centerY: cy,
-                // Track the viewport's scroll position relative to the pinch
-                // center so we can keep the pinch point centered after zoom.
-                viewportRect: viewport.getBoundingClientRect(),
+                lastCenterX: cx,
+                lastCenterY: cy,
             };
             e.preventDefault();
         }, { passive: false });
@@ -1075,6 +1107,8 @@ function initPinchZoom() {
             const t1 = e.touches[0];
             const t2 = e.touches[1];
             const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
 
             // Scale factor = current distance / start distance
             const scaleFactor = dist / _pinchState.startDist;
@@ -1086,25 +1120,49 @@ function initPinchZoom() {
             if (effectiveScale < 0.25) newLiveScale = 0.25 / currentBaseScale;
             if (effectiveScale > 5.0) newLiveScale = 5.0 / currentBaseScale;
 
+            // --- Zoom toward pinch center ---
+            const wrapper = els[side + 'Wrapper'];
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const oldLiveScale = state.zoomLive[side];
+
+            // Content point under pinch center (in wrapper CSS-pixel coords).
+            // With transformOrigin 0 0 and current liveScale, a content point (px,py)
+            // visually appears at wrapperRect.left + px*liveScale.
+            // So px = (pinchScreenX - wrapperRect.left) / liveScale
+            const contentX = (cx - wrapperRect.left) / oldLiveScale;
+            const contentY = (cy - wrapperRect.top) / oldLiveScale;
+
             state.zoomLive[side] = newLiveScale;
 
-            // Apply CSS transform
-            const wrapper = els[side + 'Wrapper'];
+            // Apply CSS transform with origin at 0 0
+            wrapper.style.transformOrigin = '0 0';
             wrapper.style.transform = `scale(${newLiveScale})`;
-            wrapper.style.transformOrigin = 'top left';
             wrapper.style.zIndex = '10';
+
+            // Adjust viewport scroll so the content point stays under the pinch center.
+            // Derivation: after changing liveScale, the visual shift of the content
+            // point is contentX * (newLiveScale - oldLiveScale). Scrolling by this
+            // amount compensates exactly.
+            viewport.scrollLeft += contentX * (newLiveScale - oldLiveScale);
+            viewport.scrollTop += contentY * (newLiveScale - oldLiveScale);
 
             // Update zoom indicator
             const finalScale = currentBaseScale * newLiveScale;
             els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+
+            // Track last pinch center for commit
+            _pinchState.lastCenterX = cx;
+            _pinchState.lastCenterY = cy;
         }, { passive: false });
 
         viewport.addEventListener('touchend', (e) => {
             if (!_pinchState) return;
             const pside = _pinchState.side;
+            const focusX = _pinchState.lastCenterX;
+            const focusY = _pinchState.lastCenterY;
             _pinchState = null;
             if (typeof commitZoom === 'function') {
-                commitZoom(pside);
+                commitZoom(pside, focusX, focusY);
             }
         }, { passive: false });
 
@@ -1112,9 +1170,11 @@ function initPinchZoom() {
         viewport.addEventListener('touchcancel', (e) => {
             if (!_pinchState) return;
             const pside = _pinchState.side;
+            const focusX = _pinchState.lastCenterX;
+            const focusY = _pinchState.lastCenterY;
             _pinchState = null;
             if (typeof commitZoom === 'function') {
-                commitZoom(pside);
+                commitZoom(pside, focusX, focusY);
             }
         }, { passive: false });
     });

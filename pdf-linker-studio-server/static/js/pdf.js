@@ -172,6 +172,7 @@ async function renderPage(side) {
 
         const wrapper = els[side + 'Wrapper'];
         wrapper.style.transform = 'none';
+        wrapper.style.transformOrigin = '';
         wrapper.style.zIndex = '';
     }
 
@@ -226,7 +227,11 @@ async function renderPage(side) {
         // ----------------------------------
 
         const viewportEl = els[side + 'Viewport'];
-        if (viewState.scrollTop) viewportEl.scrollTop = viewState.scrollTop;
+        // If a zoom-commit focus is pending, commitZoom will set the scroll
+        // after this render completes — don't snap back to the old scrollTop.
+        if (viewState.scrollTop && !state._commitFocus) {
+            viewportEl.scrollTop = viewState.scrollTop;
+        }
 
         renderMarkersForView(side);
         renderAnnotations(side);
@@ -631,22 +636,67 @@ function resetZoom(side) {
     saveSettings();
 }
 
-function commitZoom(side) {
+function commitZoom(side, focusScreenX, focusScreenY) {
+    const viewport = els[side + 'Viewport'];
+    const wrapper = els[side + 'Wrapper'];
     const liveScale = state.zoomLive[side];
+
+    // If liveScale is 1.0, nothing to commit (can happen if commit is called
+    // twice or zoom was already committed).
+    if (liveScale === 1.0 || !liveScale) {
+        wrapper.style.transform = 'none';
+        wrapper.style.transformOrigin = '';
+        wrapper.style.zIndex = '';
+        return;
+    }
+
     const baseScale = state.view[side].scale;
     const finalScale = baseScale * liveScale;
 
-    state.zoomLive[side] = 1.0;
+    // ---- Capture the content point under the focus BEFORE clearing ----
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const viewportRect = viewport.getBoundingClientRect();
 
+    // Fractional position of the focus point within the wrapper's visual bounds.
+    // With transformOrigin 0 0, wrapperRect is the visual bounding box.
+    const fracX = wrapperRect.width > 0
+        ? Math.max(0, Math.min(1, (focusScreenX - wrapperRect.left) / wrapperRect.width))
+        : 0.5;
+    const fracY = wrapperRect.height > 0
+        ? Math.max(0, Math.min(1, (focusScreenY - wrapperRect.top) / wrapperRect.height))
+        : 0.5;
+
+    // Viewport-relative position of the focus point on screen.
+    const vpX = focusScreenX - viewportRect.left;
+    const vpY = focusScreenY - viewportRect.top;
+
+    // ---- Merge the live scale into the base scale ----
     if (finalScale < 0.25) state.view[side].scale = 0.25;
     else if (finalScale > 5.0) state.view[side].scale = 5.0;
     else state.view[side].scale = finalScale;
 
-    const wrapper = els[side + 'Wrapper'];
+    state.zoomLive[side] = 1.0;
+
+    // ---- Clear the CSS transform smoothly ----
     wrapper.style.transform = 'none';
-    wrapper.style.zIndex = ''; 
+    wrapper.style.transformOrigin = '';
+    wrapper.style.zIndex = '';
+
+    // ---- Set a pending scroll focus so renderPage won't restore old scrollTop ----
+    state._commitFocus = { side, fracX, fracY, vpX, vpY };
 
     updateZoomIndicator(side);
-    renderPage(side);
+
+    // Re-render at the new base scale, then restore scroll to keep the focus point stable.
+    renderPage(side).then(() => {
+        if (state._commitFocus && state._commitFocus.side === side) {
+            const f = state._commitFocus;
+            scrollToKeepPoint(f.side, f.fracX, f.fracY, f.vpX, f.vpY);
+            // Save the new scroll position for future page navigation
+            state.view[side].scrollTop = els[side + 'Viewport'].scrollTop;
+            state._commitFocus = null;
+        }
+    });
+
     saveSettings();
 }
