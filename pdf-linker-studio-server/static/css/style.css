@@ -8,6 +8,16 @@
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
     transition: transform 0.2s;
     display: block;
+    /* Prevent touch gestures from triggering browser defaults (selection, callout, scroll-zoom)
+       on iPad/touch devices. In annotation mode the annotation-canvas handles all drawing;
+       in navigation mode the viewport handles scroll. */
+    touch-action: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 /* --- Text Layer --- */
@@ -62,6 +72,55 @@ body.anno-stroke-eraser .annotation-canvas { cursor: grab; }
 body.anno-stroke-eraser .annotation-canvas:active { cursor: grabbing; }
 body.anno-select .annotation-canvas { cursor: default; }
 body.anno-select .annotation-canvas:active { cursor: grabbing; }
+
+/* ---- Touch behavior for iPad / phone ----
+   In annotation, linking, snip-link, and delete-link modes, the ENTIRE viewport
+   must suppress browser defaults: text selection, long-press callout menu,
+   pinch-zoom, and double-tap zoom. The annotation canvas itself already has
+   touch-action: none, but the PDF canvas beneath it and the text-layer also
+   need it so that a touch that starts on the canvas (not the annotation layer)
+   doesn't trigger the OS-level selection callout. */
+body.annotation-mode .pdf-canvas,
+body.annotation-mode .textLayer,
+body.annotation-mode .textLayer > span,
+body.annotation-mode .pdf-canvas-container,
+body.linking-mode .pdf-canvas,
+body.linking-mode .textLayer,
+body.linking-mode .textLayer > span,
+body.linking-mode .pdf-canvas-container,
+body.snip-link-mode .pdf-canvas,
+body.snip-link-mode .textLayer,
+body.snip-link-mode .textLayer > span,
+body.snip-link-mode .pdf-canvas-container,
+body.delete-link-mode .pdf-canvas,
+body.delete-link-mode .textLayer,
+body.delete-link-mode .textLayer > span,
+body.delete-link-mode .pdf-canvas-container {
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: none !important;
+}
+
+/* In navigation mode, allow touch scrolling but still prevent text selection
+   on the canvas itself (text selection should only happen via the text layer). */
+body:not(.annotation-mode):not(.linking-mode):not(.snip-link-mode):not(.delete-link-mode) .pdf-canvas {
+    touch-action: pan-x pan-y;
+}
+
+/* The canvas wrapper (contains pdf-canvas + textLayer + annotation-canvas + markers).
+   On iPad/touch devices, the wrapper itself can also trigger selection callouts,
+   so we suppress the defaults here too. */
+[id$="-canvas-wrapper"] {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+}
 
 /* Snip & Link specific */
 body.snip-link-mode .pdf-canvas-container { cursor: crosshair; }

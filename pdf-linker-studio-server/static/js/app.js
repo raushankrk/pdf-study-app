@@ -259,10 +259,42 @@ async function init() {
     });
 
     window.addEventListener('paste', handlePaste);
-    window.addEventListener('pointerdown', handlePointerDown);
-    window.addEventListener('pointermove', handlePointerMove);
-    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointerdown', handlePointerDown, { passive: false });
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerUp, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
+
+    // ---- CRITICAL for iPad / touch devices ----
+    // On iOS Safari/Chrome, the browser starts its default touch action (text
+    // selection, long-press callout menu, double-tap zoom) BEFORE the
+    // pointerdown event fires. We need to intercept touchstart directly and
+    // call preventDefault() in drawing/editing modes to stop the OS-level
+    // behavior. The CSS rules (touch-action: none, user-select: none,
+    // -webkit-touch-callout: none) handle most of this, but on some iOS
+    // versions the touchstart event still needs to be explicitly cancelled.
+    //
+    // We register this as a capture-phase listener on the document so it runs
+    // before any other handler. We only prevent default when we're in a
+    // drawing/editing mode AND the touch lands inside a viewport.
+    document.addEventListener('touchstart', (e) => {
+        // Only intercept in non-navigation modes
+        if (state.appMode === 'navigation') return;
+        // Check if the touch is inside a viewport
+        const target = e.target;
+        if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
+            e.preventDefault();
+        }
+    }, { passive: false, capture: true });
+
+    // Also prevent touchmove defaults in drawing modes so the page doesn't
+    // scroll/pan while the user is drawing.
+    document.addEventListener('touchmove', (e) => {
+        if (state.appMode === 'navigation') return;
+        if (state.drawing && state.drawing.active) {
+            e.preventDefault();
+        }
+    }, { passive: false, capture: true });
+
     els.leftViewport.addEventListener('scroll', () => handleScroll('left'));
     els.rightViewport.addEventListener('scroll', () => handleScroll('right'));
 

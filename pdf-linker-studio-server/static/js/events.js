@@ -27,7 +27,27 @@ function handlePointerDown(e) {
 
     if (clickedSide && state.view[clickedSide].docId) {
         state.lastActiveSide = clickedSide;
-        updateViewportActiveVisuals(); 
+        updateViewportActiveVisuals();
+    }
+
+    // ---- CRITICAL for iPad/touch devices ----
+    // In annotation, linking, snip-link, or delete-link modes, we MUST call
+    // preventDefault() on the pointer event BEFORE the browser starts its
+    // default touch behavior (text selection, long-press callout menu, double-
+    // tap zoom, etc.). Without this, iPad Safari/Chrome will select the PDF
+    // page text or show the iOS callout menu when the user touches and holds.
+    //
+    // We only do this when the pointer is inside a viewport AND we're in a
+    // drawing/editing mode — in navigation mode we want the browser's default
+    // scroll/pan behavior.
+    if (clickedSide && state.appMode !== 'navigation') {
+        e.preventDefault();
+    }
+    // Also prevent default for touch events in navigation mode if the target
+    // is the PDF canvas (not the text layer or viewport scroll area).
+    // This stops the iPad from selecting the canvas element itself.
+    if (e.pointerType === 'touch' && e.target.classList.contains('pdf-canvas')) {
+        e.preventDefault();
     }
 
     if (e.target.closest('.link-marker')) {
