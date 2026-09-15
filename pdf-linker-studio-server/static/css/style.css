@@ -103,27 +103,23 @@ body.anno-select .annotation-canvas:active { cursor: grabbing; }
 
 /* ---- Touch behavior for iPad / phone ----
    In annotation, linking, snip-link, and delete-link modes, the ENTIRE viewport
-   must suppress browser defaults: text selection, long-press callout menu,
-   pinch-zoom, and double-tap zoom. The annotation canvas itself already has
-   touch-action: none, but the PDF canvas beneath it and the text-layer also
-   need it so that a touch that starts on the canvas (not the annotation layer)
-   doesn't trigger the OS-level selection callout. */
+   must suppress browser defaults: text selection, long-press callout menu, and
+   double-tap zoom. BUT we still want pinch-to-zoom to work, so we use
+   touch-action: pinch-zoom (which allows 2-finger pinch but blocks
+   everything else) on the viewport container, and touch-action: none on
+   the PDF canvas + text layer (so 1-finger touch goes to our JS handlers). */
 body.annotation-mode .pdf-canvas,
 body.annotation-mode .textLayer,
 body.annotation-mode .textLayer > span,
-body.annotation-mode .pdf-canvas-container,
 body.linking-mode .pdf-canvas,
 body.linking-mode .textLayer,
 body.linking-mode .textLayer > span,
-body.linking-mode .pdf-canvas-container,
 body.snip-link-mode .pdf-canvas,
 body.snip-link-mode .textLayer,
 body.snip-link-mode .textLayer > span,
-body.snip-link-mode .pdf-canvas-container,
 body.delete-link-mode .pdf-canvas,
 body.delete-link-mode .textLayer,
-body.delete-link-mode .textLayer > span,
-body.delete-link-mode .pdf-canvas-container {
+body.delete-link-mode .textLayer > span {
     -webkit-user-select: none !important;
     -moz-user-select: none !important;
     -ms-user-select: none !important;
@@ -133,10 +129,25 @@ body.delete-link-mode .pdf-canvas-container {
     touch-action: none !important;
 }
 
-/* In navigation mode, allow touch scrolling but still prevent text selection
-   on the canvas itself (text selection should only happen via the text layer). */
+/* The viewport container itself: allow pinch-zoom but block panning/scrolling
+   in annotation mode (1-finger touch = draw, not scroll). pinch-zoom lets
+   the browser fire touch events for 2-finger gestures without interfering. */
+body.annotation-mode .pdf-canvas-container,
+body.linking-mode .pdf-canvas-container,
+body.snip-link-mode .pdf-canvas-container,
+body.delete-link-mode .pdf-canvas-container {
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: pinch-zoom !important;
+}
+
+/* In navigation mode, allow touch scrolling + pinch-zoom. */
 body:not(.annotation-mode):not(.linking-mode):not(.snip-link-mode):not(.delete-link-mode) .pdf-canvas {
-    touch-action: pan-x pan-y;
+    touch-action: pan-x pan-y pinch-zoom;
 }
 
 /* The canvas wrapper (contains pdf-canvas + textLayer + annotation-canvas + markers).

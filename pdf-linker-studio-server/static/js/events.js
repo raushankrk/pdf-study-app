@@ -1020,3 +1020,105 @@ function resetZoomAtMouse() {
     setTimeout(() => scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY), 50);
     saveSettings();
 }
+
+// ---- Pinch-to-zoom for touch devices (iPad / phone) ----
+// Two-finger pinch zooms the PDF in/out smoothly. The zoom is applied as a
+// live CSS transform during the pinch, then committed (re-rendered at the new
+// scale) when the fingers lift. Works in ALL modes — annotation, navigation,
+// linking, etc. Two fingers always means "zoom", never "draw".
+
+let _pinchState = null;
+
+function initPinchZoom() {
+    // Register touchstart/touchmove/touchend on BOTH viewports.
+    // These are registered as non-capture listeners (bubble phase) so they
+    // run AFTER the capture-phase touchstart handler that suppresses text
+    // selection in annotation mode.
+    ['left', 'right'].forEach(side => {
+        const viewport = els[side + 'Viewport'];
+        if (!viewport) return;
+
+        viewport.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 2) return;
+            // Start pinch
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+
+            // If the user was drawing with one finger, cancel the drawing
+            // (two fingers takes over as pinch-zoom).
+            if (state.drawing && state.drawing.active) {
+                state.drawing.active = false;
+                if (typeof clearSelection === 'function') clearSelection();
+            }
+
+            _pinchState = {
+                side: side,
+                startDist: dist,
+                startScale: state.zoomLive[side] || 1.0,
+                centerX: cx,
+                centerY: cy,
+                // Track the viewport's scroll position relative to the pinch
+                // center so we can keep the pinch point centered after zoom.
+                viewportRect: viewport.getBoundingClientRect(),
+            };
+            e.preventDefault();
+        }, { passive: false });
+
+        viewport.addEventListener('touchmove', (e) => {
+            if (!_pinchState || _pinchState.side !== side) return;
+            if (e.touches.length !== 2) return;
+            e.preventDefault();
+
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+            // Scale factor = current distance / start distance
+            const scaleFactor = dist / _pinchState.startDist;
+            let newLiveScale = _pinchState.startScale * scaleFactor;
+
+            // Clamp
+            const currentBaseScale = state.view[side].scale;
+            const effectiveScale = currentBaseScale * newLiveScale;
+            if (effectiveScale < 0.25) newLiveScale = 0.25 / currentBaseScale;
+            if (effectiveScale > 5.0) newLiveScale = 5.0 / currentBaseScale;
+
+            state.zoomLive[side] = newLiveScale;
+
+            // Apply CSS transform
+            const wrapper = els[side + 'Wrapper'];
+            wrapper.style.transform = `scale(${newLiveScale})`;
+            wrapper.style.transformOrigin = 'top left';
+            wrapper.style.zIndex = '10';
+
+            // Update zoom indicator
+            const finalScale = currentBaseScale * newLiveScale;
+            els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+        }, { passive: false });
+
+        viewport.addEventListener('touchend', (e) => {
+            if (!_pinchState) return;
+            const pside = _pinchState.side;
+            _pinchState = null;
+            if (typeof commitZoom === 'function') {
+                commitZoom(pside);
+            }
+        }, { passive: false });
+
+        // Also handle touchcancel (e.g. system gesture interrupts)
+        viewport.addEventListener('touchcancel', (e) => {
+            if (!_pinchState) return;
+            const pside = _pinchState.side;
+            _pinchState = null;
+            if (typeof commitZoom === 'function') {
+                commitZoom(pside);
+            }
+        }, { passive: false });
+    });
+}
+
+// Expose for app.js to call
+window.initPinchZoom = initPinchZoom;
