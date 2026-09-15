@@ -12,6 +12,11 @@ function getMousePosInViewport(evt, side) {
 function handlePointerDown(e) {
     if (e.target.closest('#vertical-resizer') || e.target.closest('button') || e.target.closest('input')) return;
 
+    // Two-finger gesture (pan/zoom) is active — don't start any drawing/annotation.
+    // The touch-based two-finger handler sets _twoFingerState before the second
+    // pointerdown fires (touchstart fires before pointerdown per spec).
+    if (_twoFingerState) return;
+
     const leftPanelRect = els.leftPanel.getBoundingClientRect();
     const rightPanelRect = els.rightPanel.getBoundingClientRect();
     let clickedSide = null;
@@ -1045,22 +1050,25 @@ function resetZoomAtMouse() {
     saveSettings();
 }
 
-// ---- Pinch-to-zoom for touch devices (iPad / phone) ----
-// Two-finger pinch zooms the PDF in/out smoothly. The zoom is applied as a
-// live CSS transform during the pinch, then committed (re-rendered at the new
-// scale) when the fingers lift. Works in ALL modes — annotation, navigation,
-// linking, etc. Two fingers always means "zoom", never "draw".
+// ---- Two-finger gestures for touch devices (iPad / phone) ----
+// Two-finger touch handles BOTH pan (drag to scroll) AND pinch-zoom.
+// Works in ALL modes — annotation, navigation, linking, etc.
+// Two fingers always means "pan/zoom", never "draw", matching the
+// behavior of apps like Goodnotes.
 //
-// The zoom targets the pinch center point. On each touchmove we calculate
-// the content coordinate under the pinch center, apply the new CSS scale
-// (with transformOrigin 0 0), and adjust viewport scroll so that content
-// point stays exactly under the fingers. When the pinch ends, commitZoom
-// re-renders the PDF at the final scale and preserves scroll so there is
-// no visible snap, jitter, or repositioning.
+// Pan: tracks the center point of two fingers and scrolls the viewport
+// by the delta each frame. Zoom: tracks the distance between fingers
+// and applies a CSS scale transform, committed to a re-render when
+// fingers lift. Both can happen simultaneously — the math keeps the
+// content point under the gesture center stable.
+//
+// When a user starts drawing with one finger/stylus and puts down a
+// second finger, the in-progress stroke is cancelled (and cleaned up)
+// so no annotation artifacts remain, and the two-finger gesture takes over.
 
-let _pinchState = null;
+let _twoFingerState = null;
 
-function initPinchZoom() {
+function initTwoFingerGestures() {
     // Register touchstart/touchmove/touchend on BOTH viewports.
     // These are registered as non-capture listeners (bubble phase) so they
     // run AFTER the capture-phase touchstart handler that suppresses text
@@ -1071,38 +1079,38 @@ function initPinchZoom() {
 
         viewport.addEventListener('touchstart', (e) => {
             if (e.touches.length !== 2) return;
-            // Start pinch
+
             const t1 = e.touches[0];
             const t2 = e.touches[1];
             const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
             const cx = (t1.clientX + t2.clientX) / 2;
             const cy = (t1.clientY + t2.clientY) / 2;
 
-            // If the user was drawing with one finger, cancel the drawing
-            // (two fingers takes over as pinch-zoom).
+            // If the user was drawing with one finger/stylus, cancel the drawing
+            // and clean up the partial stroke so no annotation artifacts remain.
             if (state.drawing && state.drawing.active) {
-                state.drawing.active = false;
-                if (typeof clearSelection === 'function') clearSelection();
+                _cancelDrawingAndCleanStroke();
             }
 
-            // Commit any pending wheel-zoom before starting a pinch
+            // Commit any pending wheel-zoom before starting a gesture
             if (state.zoomTimer[side]) {
                 clearTimeout(state.zoomTimer[side]);
                 state.zoomTimer[side] = null;
             }
 
-            _pinchState = {
+            _twoFingerState = {
                 side: side,
                 startDist: dist,
                 startScale: state.zoomLive[side] || 1.0,
                 lastCenterX: cx,
                 lastCenterY: cy,
+                zoomStarted: false,  // becomes true once pinch intent is confirmed
             };
             e.preventDefault();
         }, { passive: false });
 
         viewport.addEventListener('touchmove', (e) => {
-            if (!_pinchState || _pinchState.side !== side) return;
+            if (!_twoFingerState || _twoFingerState.side !== side) return;
             if (e.touches.length !== 2) return;
             e.preventDefault();
 
@@ -1112,75 +1120,135 @@ function initPinchZoom() {
             const cx = (t1.clientX + t2.clientX) / 2;
             const cy = (t1.clientY + t2.clientY) / 2;
 
-            // Scale factor = current distance / start distance
-            const scaleFactor = dist / _pinchState.startDist;
-            let newLiveScale = _pinchState.startScale * scaleFactor;
+            const oldLiveScale = state.zoomLive[side] || 1.0;
 
-            // Clamp
-            const currentBaseScale = state.view[side].scale;
-            const effectiveScale = currentBaseScale * newLiveScale;
-            if (effectiveScale < 0.25) newLiveScale = 0.25 / currentBaseScale;
-            if (effectiveScale > 5.0) newLiveScale = 5.0 / currentBaseScale;
+            // ---- PAN: scroll viewport by center-point delta ----
+            // Dragging two fingers right → content moves right → scrollLeft decreases.
+            // Pan is ALWAYS applied regardless of zoom intent.
+            const dx = cx - _twoFingerState.lastCenterX;
+            const dy = cy - _twoFingerState.lastCenterY;
+            viewport.scrollLeft -= dx;
+            viewport.scrollTop -= dy;
 
-            // --- Zoom toward pinch center ---
-            const wrapper = els[side + 'Wrapper'];
-            const wrapperRect = wrapper.getBoundingClientRect();
-            const oldLiveScale = state.zoomLive[side];
+            // ---- ZOOM: only when distance change exceeds dead zone ----
+            // During a pure pan (two fingers moving together), the distance
+            // between them naturally wobbles by a few pixels. Without a dead
+            // zone, these tiny fluctuations get interpreted as zoom intent,
+            // causing the page to shrink/grow when the user only wants to pan.
+            //
+            // We use a dead zone of max(12px, 10% of start distance). Once the
+            // user's intent to zoom is confirmed (distance exceeds the dead
+            // zone), the zoomStarted flag stays true for the rest of the
+            // gesture so zoom follows the fingers smoothly without flickering.
+            const ZOOM_DEAD_ZONE = Math.max(12, _twoFingerState.startDist * 0.10);
+            const distDelta = Math.abs(dist - _twoFingerState.startDist);
 
-            // Content point under pinch center (in wrapper CSS-pixel coords).
-            // With transformOrigin 0 0 and current liveScale, a content point (px,py)
-            // visually appears at wrapperRect.left + px*liveScale.
-            // So px = (pinchScreenX - wrapperRect.left) / liveScale
-            const contentX = (cx - wrapperRect.left) / oldLiveScale;
-            const contentY = (cy - wrapperRect.top) / oldLiveScale;
+            if (!_twoFingerState.zoomStarted && distDelta < ZOOM_DEAD_ZONE) {
+                // Pure pan — skip zoom entirely. The CSS transform from a
+                // previous zooming frame (or from before the gesture) is
+                // left untouched.
+            } else {
+                // Pan + zoom.
+                if (!_twoFingerState.zoomStarted) {
+                    _twoFingerState.zoomStarted = true;
+                }
 
-            state.zoomLive[side] = newLiveScale;
+                const scaleFactor = dist / _twoFingerState.startDist;
+                let newLiveScale = _twoFingerState.startScale * scaleFactor;
 
-            // Apply CSS transform with origin at 0 0
-            wrapper.style.transformOrigin = '0 0';
-            wrapper.style.transform = `scale(${newLiveScale})`;
-            wrapper.style.zIndex = '10';
+                // Clamp effective scale
+                const currentBaseScale = state.view[side].scale;
+                const effectiveScale = currentBaseScale * newLiveScale;
+                if (effectiveScale < 0.25) newLiveScale = 0.25 / currentBaseScale;
+                if (effectiveScale > 5.0) newLiveScale = 5.0 / currentBaseScale;
 
-            // Adjust viewport scroll so the content point stays under the pinch center.
-            // Derivation: after changing liveScale, the visual shift of the content
-            // point is contentX * (newLiveScale - oldLiveScale). Scrolling by this
-            // amount compensates exactly.
-            viewport.scrollLeft += contentX * (newLiveScale - oldLiveScale);
-            viewport.scrollTop += contentY * (newLiveScale - oldLiveScale);
+                // Content point under gesture center AFTER pan (in wrapper
+                // CSS-pixel coords). We read wrapperRect AFTER the pan scroll
+                // so it reflects the current visual position.
+                const wrapper = els[side + 'Wrapper'];
+                const wrapperRect = wrapper.getBoundingClientRect();
+                const contentX = (cx - wrapperRect.left) / oldLiveScale;
+                const contentY = (cy - wrapperRect.top) / oldLiveScale;
 
-            // Update zoom indicator
-            const finalScale = currentBaseScale * newLiveScale;
-            els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+                state.zoomLive[side] = newLiveScale;
 
-            // Track last pinch center for commit
-            _pinchState.lastCenterX = cx;
-            _pinchState.lastCenterY = cy;
+                // Apply CSS transform with origin at 0 0
+                wrapper.style.transformOrigin = '0 0';
+                wrapper.style.transform = `scale(${newLiveScale})`;
+                wrapper.style.zIndex = '10';
+
+                // Adjust viewport scroll so the content point stays under
+                // the gesture center after the zoom-induced visual shift.
+                viewport.scrollLeft += contentX * (newLiveScale - oldLiveScale);
+                viewport.scrollTop += contentY * (newLiveScale - oldLiveScale);
+
+                // Update zoom indicator
+                const finalScale = currentBaseScale * newLiveScale;
+                els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+            }
+
+            // Track center for next frame
+            _twoFingerState.lastCenterX = cx;
+            _twoFingerState.lastCenterY = cy;
         }, { passive: false });
 
         viewport.addEventListener('touchend', (e) => {
-            if (!_pinchState) return;
-            const pside = _pinchState.side;
-            const focusX = _pinchState.lastCenterX;
-            const focusY = _pinchState.lastCenterY;
-            _pinchState = null;
-            if (typeof commitZoom === 'function') {
+            if (!_twoFingerState) return;
+            // Only finalize when going from 2 touches to fewer
+            if (e.touches.length >= 2) return;
+
+            const pside = _twoFingerState.side;
+            const focusX = _twoFingerState.lastCenterX;
+            const focusY = _twoFingerState.lastCenterY;
+            const didZoom = _twoFingerState.zoomStarted;
+            _twoFingerState = null;
+            // Only commit zoom if the user actually zoomed (not pure pan).
+            if (didZoom && typeof commitZoom === 'function') {
                 commitZoom(pside, focusX, focusY);
             }
         }, { passive: false });
 
         // Also handle touchcancel (e.g. system gesture interrupts)
         viewport.addEventListener('touchcancel', (e) => {
-            if (!_pinchState) return;
-            const pside = _pinchState.side;
-            const focusX = _pinchState.lastCenterX;
-            const focusY = _pinchState.lastCenterY;
-            _pinchState = null;
-            if (typeof commitZoom === 'function') {
+            if (!_twoFingerState) return;
+            const pside = _twoFingerState.side;
+            const focusX = _twoFingerState.lastCenterX;
+            const focusY = _twoFingerState.lastCenterY;
+            const didZoom = _twoFingerState.zoomStarted;
+            _twoFingerState = null;
+            if (didZoom && typeof commitZoom === 'function') {
                 commitZoom(pside, focusX, focusY);
             }
         }, { passive: false });
     });
 }
 
+// Helper: cancel in-progress drawing and remove the partial stroke artifact.
+// When the user transitions from 1-finger draw to 2-finger pan/zoom, the
+// first finger may have started a stroke with 1-2 points. We remove it so
+// no tiny stray marks are left on the page.
+function _cancelDrawingAndCleanStroke() {
+    const side = state.drawing.startSide;
+    if (side && state.view[side] && state.view[side].docId) {
+        const docId = state.view[side].docId;
+        const pageId = state.view[side].pageId;
+        const pageData = state.annotations[docId] && state.annotations[docId][pageId];
+        if (pageData && pageData.strokes && pageData.strokes.length > 0) {
+            const lastStroke = pageData.strokes[pageData.strokes.length - 1];
+            // Only remove short in-progress strokes (≤ 3 points), not eraser strokes
+            // or intentionally-drawn marks.
+            if (lastStroke && lastStroke.tool !== 'eraser-pixel' &&
+                lastStroke.points && lastStroke.points.length <= 3) {
+                pageData.strokes.pop();
+                if (typeof renderAnnotations === 'function') renderAnnotations(side);
+            }
+        }
+    }
+    state.drawing.active = false;
+    if (typeof clearSelection === 'function') clearSelection();
+}
+
 // Expose for app.js to call
-window.initPinchZoom = initPinchZoom;
+window.initTwoFingerGestures = initTwoFingerGestures;
+// Backward-compat alias so existing call sites still work
+window.initPinchZoom = initTwoFingerGestures;

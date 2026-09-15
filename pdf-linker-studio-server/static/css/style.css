@@ -104,10 +104,10 @@ body.anno-select .annotation-canvas:active { cursor: grabbing; }
 /* ---- Touch behavior for iPad / phone ----
    In annotation, linking, snip-link, and delete-link modes, the ENTIRE viewport
    must suppress browser defaults: text selection, long-press callout menu, and
-   double-tap zoom. BUT we still want pinch-to-zoom to work, so we use
-   touch-action: pinch-zoom (which allows 2-finger pinch but blocks
-   everything else) on the viewport container, and touch-action: none on
-   the PDF canvas + text layer (so 1-finger touch goes to our JS handlers). */
+   double-tap zoom. ALL touch handling (1-finger draw, 2-finger pan/zoom) is
+   managed by our JS handlers. touch-action: none on the viewport container
+   ensures the browser performs zero native actions and dispatches touch events
+   immediately (no gesture recognition delay). */
 body.annotation-mode .pdf-canvas,
 body.annotation-mode .textLayer,
 body.annotation-mode .textLayer > span,
@@ -129,9 +129,11 @@ body.delete-link-mode .textLayer > span {
     touch-action: none !important;
 }
 
-/* The viewport container itself: allow pinch-zoom but block panning/scrolling
-   in annotation mode (1-finger touch = draw, not scroll). pinch-zoom lets
-   the browser fire touch events for 2-finger gestures without interfering. */
+/* The viewport container itself: block ALL browser-native touch behavior
+   in annotation/linking/snip/delete modes. Our JS two-finger gesture handler
+   manages both pan and pinch-zoom, so the browser must not interfere.
+   touch-action: none ensures touch events dispatch immediately (no gesture
+   recognition delay) and the browser performs zero native actions. */
 body.annotation-mode .pdf-canvas-container,
 body.linking-mode .pdf-canvas-container,
 body.snip-link-mode .pdf-canvas-container,
@@ -142,7 +144,7 @@ body.delete-link-mode .pdf-canvas-container {
     user-select: none !important;
     -webkit-touch-callout: none !important;
     -webkit-tap-highlight-color: transparent !important;
-    touch-action: pinch-zoom !important;
+    touch-action: none !important;
 }
 
 /* In navigation mode, allow touch scrolling + pinch-zoom. */

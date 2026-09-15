@@ -296,10 +296,10 @@ async function init() {
 
     // Also prevent touchmove defaults in drawing modes so the page doesn't
     // scroll/pan while the user is drawing. BUT allow 2-finger touchmove for
-    // pinch-zoom (the pinch handler in initPinchZoom handles it).
+    // pan/zoom (the two-finger gesture handler in initTwoFingerGestures handles it).
     document.addEventListener('touchmove', (e) => {
         if (state.appMode === 'navigation') return;
-        // 2-finger touches are pinch-zoom — let the pinch handler deal with them
+        // 2-finger touches are pan/zoom — let the gesture handler deal with them
         if (e.touches.length >= 2) return;
         if (state.drawing && state.drawing.active) {
             e.preventDefault();
@@ -324,10 +324,11 @@ async function init() {
     els.leftViewport.addEventListener('wheel', (e) => handleViewportZoom(e, 'left'), { passive: false });
     els.rightViewport.addEventListener('wheel', (e) => handleViewportZoom(e, 'right'), { passive: false });
 
-    // ---- Pinch-to-zoom on touch devices (iPad / phone) ----
-    // Two-finger pinch zooms the PDF in/out. Works in ALL modes (navigation +
-    // annotation). One-finger touch in annotation mode draws; in navigation
-    // mode it scrolls/pan. Two fingers always = pinch zoom, never draws.
+    // ---- Two-finger gestures on touch devices (iPad / phone) ----
+    // Two-finger touch pans (scrolls) and/or pinch-zooms the PDF.
+    // Works in ALL modes (navigation + annotation + linking + ...).
+    // One-finger touch in annotation mode draws; two fingers always =
+    // pan/zoom, never draw. The mode (pen/highlighter/etc.) is preserved.
     initPinchZoom();
 
     els.colorPicker.addEventListener('input', (e) => {
