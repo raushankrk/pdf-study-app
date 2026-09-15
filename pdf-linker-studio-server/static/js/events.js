@@ -1073,6 +1073,19 @@ function initTwoFingerGestures() {
     // These are registered as non-capture listeners (bubble phase) so they
     // run AFTER the capture-phase touchstart handler that suppresses text
     // selection in annotation mode.
+    //
+    // ---- Architecture: translate+scale (GPU-composited, zero reflow) ----
+    // During the gesture, pan is handled by CSS translate() and zoom by
+    // CSS scale().  Both run entirely on the GPU compositor — NO scroll
+    // changes and NO layout reads happen between frames, which eliminates:
+    //   - Layout thrashing  (no getBoundingClientRect mid-frame)
+    //   - Integer scroll snapping jitter (scrollLeft/scrollTop are ints)
+    //   - Transform + scroll interaction glitches
+    //
+    // On finger lift (touchend), the accumulated translate is atomically
+    // converted to a viewport scroll offset, the CSS transform is reduced
+    // to just scale() (or none), and commitZoom re-renders at the new
+    // resolution if the user actually pinched.
     ['left', 'right'].forEach(side => {
         const viewport = els[side + 'Viewport'];
         if (!viewport) return;
@@ -1098,14 +1111,33 @@ function initTwoFingerGestures() {
                 state.zoomTimer[side] = null;
             }
 
+            // Read wrapper screen position ONCE at gesture start.
+            // Because we use translate() for panning (not scroll), this
+            // value stays valid for the entire gesture - no re-reads needed.
+            const wrapper = els[side + 'Wrapper'];
+            const wrapperRect = wrapper.getBoundingClientRect();
+
             _twoFingerState = {
                 side: side,
                 startDist: dist,
                 startScale: state.zoomLive[side] || 1.0,
-                lastCenterX: cx,
-                lastCenterY: cy,
+                startCX: cx,
+                startCY: cy,
+                // Wrapper's screen position at gesture start (constant).
+                // Used to compute translate so the content point under the
+                // start center stays under the current center every frame.
+                wrapperLeft: wrapperRect.left,
+                wrapperTop: wrapperRect.top,
                 zoomStarted: false,  // becomes true once pinch intent is confirmed
+                lastTX: 0,
+                lastTY: 0,
+                lastCX: cx,
+                lastCY: cy,
             };
+
+            // Promote wrapper to its own GPU layer for the duration of the
+            // gesture so translate+scale changes are compositor-only.
+            wrapper.style.willChange = 'transform';
             e.preventDefault();
         }, { passive: false });
 
@@ -1119,77 +1151,60 @@ function initTwoFingerGestures() {
             const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
             const cx = (t1.clientX + t2.clientX) / 2;
             const cy = (t1.clientY + t2.clientY) / 2;
+            const s = _twoFingerState;
 
-            const oldLiveScale = state.zoomLive[side] || 1.0;
-
-            // ---- PAN: scroll viewport by center-point delta ----
-            // Dragging two fingers right → content moves right → scrollLeft decreases.
-            // Pan is ALWAYS applied regardless of zoom intent.
-            const dx = cx - _twoFingerState.lastCenterX;
-            const dy = cy - _twoFingerState.lastCenterY;
-            viewport.scrollLeft -= dx;
-            viewport.scrollTop -= dy;
-
-            // ---- ZOOM: only when distance change exceeds dead zone ----
-            // During a pure pan (two fingers moving together), the distance
-            // between them naturally wobbles by a few pixels. Without a dead
-            // zone, these tiny fluctuations get interpreted as zoom intent,
-            // causing the page to shrink/grow when the user only wants to pan.
-            //
-            // We use a dead zone of max(12px, 10% of start distance). Once the
-            // user's intent to zoom is confirmed (distance exceeds the dead
-            // zone), the zoomStarted flag stays true for the rest of the
-            // gesture so zoom follows the fingers smoothly without flickering.
-            const ZOOM_DEAD_ZONE = Math.max(12, _twoFingerState.startDist * 0.10);
-            const distDelta = Math.abs(dist - _twoFingerState.startDist);
-
-            if (!_twoFingerState.zoomStarted && distDelta < ZOOM_DEAD_ZONE) {
-                // Pure pan — skip zoom entirely. The CSS transform from a
-                // previous zooming frame (or from before the gesture) is
-                // left untouched.
-            } else {
-                // Pan + zoom.
-                if (!_twoFingerState.zoomStarted) {
-                    _twoFingerState.zoomStarted = true;
-                }
-
-                const scaleFactor = dist / _twoFingerState.startDist;
-                let newLiveScale = _twoFingerState.startScale * scaleFactor;
-
-                // Clamp effective scale
-                const currentBaseScale = state.view[side].scale;
-                const effectiveScale = currentBaseScale * newLiveScale;
-                if (effectiveScale < 0.25) newLiveScale = 0.25 / currentBaseScale;
-                if (effectiveScale > 5.0) newLiveScale = 5.0 / currentBaseScale;
-
-                // Content point under gesture center AFTER pan (in wrapper
-                // CSS-pixel coords). We read wrapperRect AFTER the pan scroll
-                // so it reflects the current visual position.
-                const wrapper = els[side + 'Wrapper'];
-                const wrapperRect = wrapper.getBoundingClientRect();
-                const contentX = (cx - wrapperRect.left) / oldLiveScale;
-                const contentY = (cy - wrapperRect.top) / oldLiveScale;
-
-                state.zoomLive[side] = newLiveScale;
-
-                // Apply CSS transform with origin at 0 0
-                wrapper.style.transformOrigin = '0 0';
-                wrapper.style.transform = `scale(${newLiveScale})`;
-                wrapper.style.zIndex = '10';
-
-                // Adjust viewport scroll so the content point stays under
-                // the gesture center after the zoom-induced visual shift.
-                viewport.scrollLeft += contentX * (newLiveScale - oldLiveScale);
-                viewport.scrollTop += contentY * (newLiveScale - oldLiveScale);
-
-                // Update zoom indicator
-                const finalScale = currentBaseScale * newLiveScale;
-                els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+            // ---- ZOOM: dead-zone gated ----
+            // During pure pan the finger distance naturally wobbles by a few
+            // px.  We only enter zoom mode once the change exceeds a dead
+            // zone, and once entered we stay in zoom mode for the rest of
+            // the gesture so the transition is smooth.
+            const ZOOM_DEAD_ZONE = Math.max(12, s.startDist * 0.10);
+            const distDelta = Math.abs(dist - s.startDist);
+            if (!s.zoomStarted && distDelta >= ZOOM_DEAD_ZONE) {
+                s.zoomStarted = true;
             }
 
-            // Track center for next frame
-            _twoFingerState.lastCenterX = cx;
-            _twoFingerState.lastCenterY = cy;
+            let newScale = s.startScale;
+            if (s.zoomStarted) {
+                const scaleFactor = dist / s.startDist;
+                newScale = s.startScale * scaleFactor;
+                // Clamp effective scale
+                const baseScale = state.view[side].scale;
+                const effective = baseScale * newScale;
+                if (effective < 0.25) newScale = 0.25 / baseScale;
+                if (effective > 5.0) newScale = 5.0 / baseScale;
+                // Quantize to 0.1% to avoid sub-pixel raster jitter
+                newScale = Math.round(newScale * 1000) / 1000;
+            }
+
+            // ---- TRANSLATE: keep content point under start center
+            //              pinned to the current gesture center ----
+            // With transform-origin 0 0 the math is:
+            //   visual_x = wrapperLeft + tx + contentX * newScale
+            // We want visual_x = cx, and contentX = (startCX - wrapperLeft)/startScale,
+            // so: tx = (cx - wrapperLeft) - (startCX - wrapperLeft) * (newScale / startScale)
+            const ratio = newScale / s.startScale;
+            const tx = (cx - s.wrapperLeft) - (s.startCX - s.wrapperLeft) * ratio;
+            const ty = (cy - s.wrapperTop) - (s.startCY - s.wrapperTop) * ratio;
+
+            // ---- Single DOM write - no layout reads, no scroll changes ----
+            const wrapper = els[side + 'Wrapper'];
+            state.zoomLive[side] = newScale;
+            wrapper.style.transformOrigin = '0 0';
+            wrapper.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + newScale + ')';
+            wrapper.style.zIndex = '10';
+
+            // Remember for touchend scroll conversion
+            s.lastTX = tx;
+            s.lastTY = ty;
+            s.lastCX = cx;
+            s.lastCY = cy;
+
+            // Update zoom indicator
+            if (s.zoomStarted) {
+                const finalScale = state.view[side].scale * newScale;
+                els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+            }
         }, { passive: false });
 
         viewport.addEventListener('touchend', (e) => {
@@ -1197,27 +1212,84 @@ function initTwoFingerGestures() {
             // Only finalize when going from 2 touches to fewer
             if (e.touches.length >= 2) return;
 
-            const pside = _twoFingerState.side;
-            const focusX = _twoFingerState.lastCenterX;
-            const focusY = _twoFingerState.lastCenterY;
-            const didZoom = _twoFingerState.zoomStarted;
+            const s = _twoFingerState;
+            const pside = s.side;
+            const didZoom = s.zoomStarted;
+            const focusX = s.lastCX;
+            const focusY = s.lastCY;
+            const tx = s.lastTX;
+            const ty = s.lastTY;
             _twoFingerState = null;
-            // Only commit zoom if the user actually zoomed (not pure pan).
-            if (didZoom && typeof commitZoom === 'function') {
-                commitZoom(pside, focusX, focusY);
+
+            const wrapper = els[pside + 'Wrapper'];
+            const vp = els[pside + 'Viewport'];
+
+            if (didZoom) {
+                // Keep the full transform (translate + scale) so commitZoom can read 
+                // the exact visual bounding rect. commitZoom will handle updating the scroll.
+                wrapper.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + (state.zoomLive[pside]) + ')';
+                wrapper.style.transformOrigin = '0 0';
+                wrapper.style.willChange = '';
+                if (typeof commitZoom === 'function') {
+                    commitZoom(pside, focusX, focusY);
+                }
+            } else {
+                // Pure pan - no pinch detected.
+                // Atomically convert translate to scroll.
+                vp.scrollLeft -= tx;
+                vp.scrollTop -= ty;
+
+                var liveScale = state.zoomLive[pside];
+                if (liveScale && liveScale !== 1) {
+                    wrapper.style.transform = 'scale(' + liveScale + ')';
+                    wrapper.style.transformOrigin = '0 0';
+                } else {
+                    wrapper.style.transform = 'none';
+                    wrapper.style.transformOrigin = '';
+                    state.zoomLive[pside] = 1.0;
+                }
+                wrapper.style.zIndex = '';
+                wrapper.style.willChange = '';
             }
         }, { passive: false });
 
         // Also handle touchcancel (e.g. system gesture interrupts)
         viewport.addEventListener('touchcancel', (e) => {
             if (!_twoFingerState) return;
-            const pside = _twoFingerState.side;
-            const focusX = _twoFingerState.lastCenterX;
-            const focusY = _twoFingerState.lastCenterY;
-            const didZoom = _twoFingerState.zoomStarted;
+            const s = _twoFingerState;
+            const pside = s.side;
+            const didZoom = s.zoomStarted;
+            const focusX = s.lastCX;
+            const focusY = s.lastCY;
+            const tx = s.lastTX;
+            const ty = s.lastTY;
             _twoFingerState = null;
-            if (didZoom && typeof commitZoom === 'function') {
-                commitZoom(pside, focusX, focusY);
+
+            const wrapper = els[pside + 'Wrapper'];
+            const vp = els[pside + 'Viewport'];
+
+            if (didZoom) {
+                wrapper.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + (state.zoomLive[pside]) + ')';
+                wrapper.style.transformOrigin = '0 0';
+                wrapper.style.willChange = '';
+                if (typeof commitZoom === 'function') {
+                    commitZoom(pside, focusX, focusY);
+                }
+            } else {
+                vp.scrollLeft -= tx;
+                vp.scrollTop -= ty;
+
+                var liveScale2 = state.zoomLive[pside];
+                if (liveScale2 && liveScale2 !== 1) {
+                    wrapper.style.transform = 'scale(' + liveScale2 + ')';
+                    wrapper.style.transformOrigin = '0 0';
+                } else {
+                    wrapper.style.transform = 'none';
+                    wrapper.style.transformOrigin = '';
+                    state.zoomLive[pside] = 1.0;
+                }
+                wrapper.style.zIndex = '';
+                wrapper.style.willChange = '';
             }
         }, { passive: false });
     });
