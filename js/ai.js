@@ -252,7 +252,7 @@ async function indexDocuments(force = false) {
     updateAIStatus("Indexing PDFs...");
     
     // Use dynamically configured chunk size
-    const chunkSize = state.aiSettings.chunkSize || 500;
+    const chunkSize = state.aiSettings.chunkSize || 2000;
     const overlap = Math.floor(chunkSize * 0.1); // 10% overlap
 
     for (const docId of docIds) {

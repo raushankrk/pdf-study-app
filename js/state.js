@@ -90,6 +90,6 @@ const state = {
         similarityThreshold: 0.65,
         contextBudget: 4000,
         maxChunks: 8,
-        chunkSize: 500
+        chunkSize: 2000
     }
 };
