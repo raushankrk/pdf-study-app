@@ -325,12 +325,12 @@
                     <input type="range" id="left-page-slider" min="1" max="1" value="1" class="page-slider hidden" oninput="syncPageInput('left')" onchange="jumpToPageFromSlider('left')" title="Scroll through pages">
                 </div>
 
-                <div class="flex-1 overflow-auto relative p-4 bg-gray-500/10 pdf-canvas-container" id="left-viewport">
-                    <div id="left-canvas-wrapper" class="relative shadow-lg mx-auto">
-                        <canvas id="left-canvas" class="pdf-canvas bg-white block"></canvas>
-                        <div id="left-text-layer" class="textLayer"></div>
+                <div class="flex-1 overflow-auto relative p-4 bg-gray-500/10 pdf-canvas-container" id="left-viewport" oncontextmenu="return false;">
+                    <div id="left-canvas-wrapper" class="relative shadow-lg mx-auto" oncontextmenu="return false;" style="-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
+                        <canvas id="left-canvas" class="pdf-canvas bg-white block" oncontextmenu="return false;"></canvas>
+                        <div id="left-text-layer" class="textLayer" oncontextmenu="return false;" style="-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;"></div>
                         <div id="left-search-layer" class="search-highlight-layer"></div>
-                        <canvas id="left-anno-canvas" class="annotation-canvas"></canvas>
+                        <canvas id="left-anno-canvas" class="annotation-canvas" oncontextmenu="return false;"></canvas>
                         <div id="left-markers-layer" class="absolute inset-0 pointer-events-none"></div>
                     </div>
                 </div>
@@ -395,12 +395,12 @@
                     <input type="range" id="right-page-slider" min="1" max="1" value="1" class="page-slider hidden" oninput="syncPageInput('right')" onchange="jumpToPageFromSlider('right')" title="Scroll through pages">
                 </div>
 
-                <div class="flex-1 overflow-auto relative p-4 bg-gray-500/10 pdf-canvas-container" id="right-viewport">
-                    <div id="right-canvas-wrapper" class="relative shadow-lg mx-auto">
-                        <canvas id="right-canvas" class="pdf-canvas bg-white block"></canvas>
-                        <div id="right-text-layer" class="textLayer"></div>
+                <div class="flex-1 overflow-auto relative p-4 bg-gray-500/10 pdf-canvas-container" id="right-viewport" oncontextmenu="return false;">
+                    <div id="right-canvas-wrapper" class="relative shadow-lg mx-auto" oncontextmenu="return false;" style="-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;">
+                        <canvas id="right-canvas" class="pdf-canvas bg-white block" oncontextmenu="return false;"></canvas>
+                        <div id="right-text-layer" class="textLayer" oncontextmenu="return false;" style="-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;"></div>
                         <div id="right-search-layer" class="search-highlight-layer"></div>
-                        <canvas id="right-anno-canvas" class="annotation-canvas"></canvas>
+                        <canvas id="right-anno-canvas" class="annotation-canvas" oncontextmenu="return false;"></canvas>
                         <div id="right-markers-layer" class="absolute inset-0 pointer-events-none"></div>
                     </div>
                 </div>

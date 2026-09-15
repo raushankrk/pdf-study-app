@@ -34,16 +34,44 @@
 /* In Navigation mode, enable native text selection and pointer events */
 body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode):not(.snip-link-mode) .textLayer {
     user-select: text;
-    pointer-events: auto; /* Crucial: Allows text to capture events */
+    -webkit-user-select: text;
+    pointer-events: auto;
 }
 body:not(.linking-mode):not(.annotation-mode):not(.delete-link-mode):not(.snip-link-mode) .textLayer span {
-    pointer-events: auto; /* Ensure individual spans also capture events */
+    pointer-events: auto;
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
 }
 
-body.linking-mode .textLayer, body.annotation-mode .textLayer, body.delete-link-mode .textLayer, body.snip-link-mode .textLayer { user-select: none; pointer-events: none; }
+/* ---- CRITICAL: In annotation/linking/snip/delete modes, completely disable
+   the text layer and its spans. On iPad/iOS Safari, the text layer spans
+   (transparent <span> elements positioned over the PDF text) are the #1 cause
+   of the "whole page gets selected" problem. Even with pointer-events:none on
+   the parent .textLayer div, iOS Safari can still select the inner <span>
+   elements during a long-press. We must explicitly set pointer-events:none,
+   user-select:none, and -webkit-touch-callout:none on BOTH the container AND
+   every span inside it. */
+body.annotation-mode .textLayer,
+body.annotation-mode .textLayer > span,
+body.linking-mode .textLayer,
+body.linking-mode .textLayer > span,
+body.delete-link-mode .textLayer,
+body.delete-link-mode .textLayer > span,
+body.snip-link-mode .textLayer,
+body.snip-link-mode .textLayer > span {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    pointer-events: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    touch-action: none !important;
+}
+
 body.linking-mode .textLayer span { cursor: crosshair !important; }
-body.annotation-mode .textLayer { pointer-events: none; }
-body:not(.annotation-mode) .textLayer span { cursor: text; }
+body:not(.annotation-mode):not(.linking-mode):not(.snip-link-mode):not(.delete-link-mode) .textLayer span { cursor: text; }
 
 /* --- Search Highlights --- */
 .search-highlight-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 25; pointer-events: none; }

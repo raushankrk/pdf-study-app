@@ -269,19 +269,27 @@ async function init() {
     // selection, long-press callout menu, double-tap zoom) BEFORE the
     // pointerdown event fires. We need to intercept touchstart directly and
     // call preventDefault() in drawing/editing modes to stop the OS-level
-    // behavior. The CSS rules (touch-action: none, user-select: none,
-    // -webkit-touch-callout: none) handle most of this, but on some iOS
-    // versions the touchstart event still needs to be explicitly cancelled.
+    // behavior.
+    //
+    // The CSS rules (touch-action: none, user-select: none, etc.) handle most
+    // of this, but iOS Safari has a known bug where transparent <span> elements
+    // in the textLayer can still be selected even when pointer-events:none is set
+    // on their parent. The only reliable fix is to intercept touchstart in the
+    // capture phase and cancel it.
     //
     // We register this as a capture-phase listener on the document so it runs
-    // before any other handler. We only prevent default when we're in a
-    // drawing/editing mode AND the touch lands inside a viewport.
+    // before any other handler.
     document.addEventListener('touchstart', (e) => {
         // Only intercept in non-navigation modes
         if (state.appMode === 'navigation') return;
-        // Check if the touch is inside a viewport
+        // Check if any of the touches are inside a viewport
         const target = e.target;
         if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
+            e.preventDefault();
+        }
+        // Also catch touches on textLayer spans specifically — these are the
+        // transparent <span> elements that cause the "whole page selected" issue.
+        if (target.closest('.textLayer') || target.closest('.textLayer span')) {
             e.preventDefault();
         }
     }, { passive: false, capture: true });
@@ -291,6 +299,18 @@ async function init() {
     document.addEventListener('touchmove', (e) => {
         if (state.appMode === 'navigation') return;
         if (state.drawing && state.drawing.active) {
+            e.preventDefault();
+        }
+    }, { passive: false, capture: true });
+
+    // Prevent the contextmenu event (long-press callout) in drawing modes.
+    // On iPad, long-pressing fires a 'contextmenu' event that shows the iOS
+    // selection callout (Copy, Look Up, Share, etc.). We suppress it entirely
+    // in non-navigation modes.
+    document.addEventListener('contextmenu', (e) => {
+        if (state.appMode === 'navigation') return;
+        const target = e.target;
+        if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
             e.preventDefault();
         }
     }, { passive: false, capture: true });
