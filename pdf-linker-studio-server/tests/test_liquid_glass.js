@@ -40,8 +40,8 @@ assert.ok = assert;
 
 // Version chain — liquidglass-v18 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
-    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17'];
-const CURRENT_VERSION = 'liquidglass-v18';
+    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18'];
+const CURRENT_VERSION = 'floattools-v19';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -614,7 +614,92 @@ body.fs-mode-comments #fs-comment-pane { display: flex; }
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
     opacity: 0; transition: opacity 0.2s; display: flex; gap: 4px;
 }
-.chat-list-item:hover .chat-item-actions { opacity: 1; }                
+.chat-list-item:hover .chat-item-actions { opacity: 1; }
+
+/* ======================================================================== */
+/* --- Floating Annotation Toolbar (draggable liquid glass palette) -------- */
+/* ======================================================================== */
+/* The annotation + link tools (former header Groups 1-3: App Modes,
+   Annotation Draw Tools, Pen/Highlighter options) now live in a small
+   liquid glass palette floating over #workspace-main. Same contract as the
+   floating sidebar:
+     * position:absolute + JS-driven translate3d (js/floattools.js) — takes
+       NO flex space, so the PDF canvas never resizes or moves.
+     * pointer-events: auto — clicks / taps / wheel ON the bar are absorbed
+       by the bar and NEVER pass through to the PDF underneath. To scroll,
+       draw or annotate, aim outside the bar.
+     * Default resting spot: horizontally centered just below the top edge
+       (mirrors the old header position, clear of the minimize buttons);
+       after the first drag the position persists in the settings blob and
+       is restored on boot. Double-tap the grip re-docks to the default. */
+#float-toolbar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 6px;
+    max-width: calc(100vw - 24px);
+    flex-wrap: wrap;                /* very narrow screens: wrap, don't overflow */
+    border-radius: 14px;
+    /* ---- Liquid glass surface (same recipe as the floating sidebar) ---- */
+    background: linear-gradient(155deg,
+        rgba(255, 255, 255, 0.72) 0%,
+        rgba(255, 255, 255, 0.50) 34%,
+        rgba(241, 245, 255, 0.56) 60%,
+        rgba(255, 255, 255, 0.66) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    box-shadow:
+        0 12px 34px rgba(15, 23, 42, 0.20),
+        0 3px 10px rgba(15, 23, 42, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.80);
+    backdrop-filter: blur(18px) saturate(1.7);
+    -webkit-backdrop-filter: blur(18px) saturate(1.7);
+    overflow: hidden;               /* clip children to the rounded glass edge */
+    pointer-events: auto;           /* the bar ABSORBS clicks — no pass-through */
+    z-index: 1150;                  /* above canvas; below sidebar (1200) + min-btn (1250) */
+    transform: translate3d(0, 0, 0);/* real position set by floattools.js */
+    will-change: transform;         /* stay GPU-composited for smooth drags */
+    transition: transform 0.18s ease-out; /* glide on re-dock / re-clamp;
+                                             disabled while actually dragging */
+}
+/* Graceful degradation: no backdrop-filter → near-opaque surface, same
+   geometry and same click-absorbing behavior, just no frost. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #float-toolbar {
+        background: rgba(255, 255, 255, 0.96);
+    }
+}
+/* While a drag is in progress the transform must track the pointer 1:1 —
+   no transition lag. floattools.js toggles this class on <body>. */
+body.ft-dragging #float-toolbar { transition: none; }
+body.ft-dragging { user-select: none; -webkit-user-select: none; }
+
+/* Grip: the ONLY element that starts a toolbar drag (floattools.js binds
+   its pointerdown). Everything else in the bar is ordinary interactive UI.
+   Double-tap on the grip re-docks (see floattools.js). */
+#ft-drag-handle {
+    pointer-events: auto;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px dashed #9aa3b2;   /* dashed border = "grab me" affordance */
+    background: rgba(255, 255, 255, 0.85);
+    color: #6b7280;
+    font-size: 0.68rem;
+    cursor: grab;
+    touch-action: none;           /* JS owns touch drags — no pan/scroll/dbl-tap-zoom */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+#ft-drag-handle:hover { background: #ffffff; color: #4f46e5; }
+body.ft-dragging #ft-drag-handle { cursor: grabbing; color: #4f46e5; border-style: solid; }
+
 /* --- Tool Cursor Styles --- */
 #tool-cursor {
     font-size: 24px;
@@ -2087,6 +2172,12 @@ body > header > * {
     .fs-tab { padding: 8px 14px; font-size: 0.85rem; }
     #fs-header-actions button { width: 36px; height: 36px; font-size: 0.9rem; }
     #fs-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
+
+    /* Floating annotation toolbar: same treatment — bigger grip + roomier
+       padding (the tool buttons themselves already grow to 40px via the
+       .tool-btn touch rule above). */
+    #ft-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
+    #float-toolbar { gap: 8px; padding: 7px 8px; border-radius: 16px; }
 
     /* (Brand text + Dashboard label + PDF icon are already hidden on ALL
        devices — see the .header-* rules above.) */

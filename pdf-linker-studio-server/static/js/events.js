@@ -23,6 +23,11 @@ function handlePointerDown(e) {
     // synthetic events, or future DOM changes) and keeps annotation strokes
     // from ever starting inside the sidebar.
     if (e.target.closest('#float-sidebar') || e.target.closest('#comment-editor-panel')) return;
+    // Same for the floating annotation toolbar: its glass padding, grip and
+    // group containers are not buttons, so without this guard a pointerdown
+    // there could start a stroke on the PDF underneath. The bar absorbs all
+    // of its own interactions (buttons handle their own clicks).
+    if (e.target.closest('#float-toolbar')) return;
 
     // 2. Standard early-return guards — also includes TEXTAREA so that
     //    tapping the markdown editor on touch devices doesn't trigger

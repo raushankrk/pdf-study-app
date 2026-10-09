@@ -228,6 +228,10 @@ async function saveSettings() {
         // px). null = never dragged → the card docks top-right and follows
         // the workspace edge on resize.
         floatSidebarPos: state.floatSidebarPos || null,
+        // Where the user dragged the floating annotation toolbar ({x,y} in
+        // workspace CSS px). null = never dragged → the bar sits top-center
+        // and re-centers on resize until the first drag.
+        floatToolbarPos: state.floatToolbarPos || null,
         aiSettings: state.aiSettings,
         // File-explorer persistence
         currentFolderId: state.currentFolderId || ROOT_FOLDER_ID,

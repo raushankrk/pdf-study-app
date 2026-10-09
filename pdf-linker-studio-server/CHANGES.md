@@ -904,3 +904,116 @@ float_drag 44, position_resume 18, tag_rail 21, minimize_panel 30,
 active_pdf_toolbar 23, touch_slider_space 8, frontend_bugs 10,
 stroke_continuity 23, undo_yjs_rebuild 5 — 239 total. `node --check`
 clean on all edited JS; CSS braces balanced.
+
+---
+
+# Feature — Draggable liquid glass annotation toolbar (floattools-v19)
+
+## Request
+> "instead of fix annotation tool in header make it floating so that i can
+> freely move(smooth move) any where we want dont move all tool look image
+> only move those tool"
+
+The user's screenshot showed exactly two header groups: the App Modes row
+(Navigate / Draw Link / Snip & Link / Delete Link) and the Annotation Draw
+Tools row (Select / Pen / Highlighter / Add Comment / Pixel Eraser / Stroke
+Eraser / Add Image). Those — plus the Pen/Highlighter options group that
+follows them — had to become a freely movable floating palette. Everything
+else in the header (Active-PDF tabs + controls, Undo/Redo/Delete/Clear,
+Save/Open/AI) stays put.
+
+## What changed
+
+* **index.html** — the three groups moved OUT of the header into a new
+  `<aside id="float-toolbar">` inside `#workspace-main` (the same overlay
+  pattern as the floating sidebar). Markup is verbatim: every button keeps
+  its exact id (`mode-nav-btn`, `tool-pen`, `pen-customization`, …) and
+  onclick, so `setAppMode()` / `setAnnoTool()` / keyboard shortcuts work
+  unchanged. A dashed drag grip (`#ft-drag-handle`) sits first in the bar.
+  Header note comments document the move. Cache version → `floattools-v19`
+  on the CSS link, all 20 script tags and the header chip; new script tag
+  `js/floattools.js` loads before `app.js`.
+* **css/style.css** — new "Floating Annotation Toolbar" section: the same
+  liquid glass recipe as the sidebar (translucent gradient tint +
+  `backdrop-filter: blur(18px) saturate(1.7)`, hairline white border,
+  14px radius, layered shadow + inner highlight, `@supports` near-opaque
+  fallback), `position: absolute` + JS-driven `translate3d` (zero flex
+  space → the PDF canvas can never resize or move), `pointer-events: auto`
+  (every click/tap/wheel ON the bar is absorbed — nothing passes through
+  to the PDF), `flex-wrap` + max-width for narrow screens, `z-index: 1150`
+  (above canvas, below the sidebar 1200 and the minimize buttons 1250),
+  `body.ft-dragging` transition kill + user-select lock, touch media block
+  grows the grip to 34px.
+* **js/floattools.js (NEW)** — self-contained position engine (mirrors the
+  proven sidebar engine; tool BUSINESS LOGIC stays in ui.js):
+  - default spot = horizontally centered, 44px below the workspace top
+    (the closest floating equivalent of the old header position, clear of
+    the minimize buttons); a never-dragged bar re-centers on resize;
+  - smooth drag: grip-only `pointerdown` → `setPointerCapture` → rAF-
+    coalesced `translate3d` writes (1:1 pointer tracking, GPU-composited),
+    clamped fully inside `#workspace-main`, pointer-id filtered,
+    right/middle button ignored;
+  - ≥3px drag threshold before the position counts as "personalized";
+  - double-tap on the grip re-docks to the default spot;
+  - ResizeObserver on BOTH `#workspace-main` and the bar itself (file
+    sidebar collapse, split resizer, panel minimize, pen-customization
+    appearing, narrow-screen wrap) re-applies/re-clamps; window resize
+    fallback; position persisted in the settings blob (`floatToolbarPos`,
+    strict finite {x,y} validation on boot restore).
+
+## Files
+* static/index.html (groups moved, aside added, version bump, script tag)
+* static/css/style.css (toolbar glass section + touch overrides)
+* static/js/floattools.js (NEW — drag/position engine)
+* static/js/state.js (+floatToolbarPos), static/js/database.js (persist),
+  static/js/app.js (boot restore + guards + init call), static/js/events.js
+  (pointerdown guard)
+
+## Tests
+NEW tests/test_float_toolbar.js — 49 tests / 5 suites: HTML structure
+(aside inside workspace, all 11 buttons + inputs with identical ids and
+handlers, header keeps Groups 0+4), versioning (bump + full retirement of
+liquidglass-v18 + floattools.js load order), CSS contract (glass, pointer
+absorption, overlay geometry, z-order 1150 < 1200 < 1250, wrap, touch
+grip), 19 VM drag-engine tests (default top-center math, clamping,
+non-finite fallback, rAF coalescing, full-drag persistence, tap/jitter
+thresholds, edge clamps, pointer-id filter, double-tap re-dock vs new
+drag, button filter, init/RO wiring incl. toolbar self-observation),
+wiring & separation (events/app guards, persistence, boot validation,
+ui.js business logic untouched, floattools.js contains no tool logic).
+Version constants updated in test_liquid_glass.js, test_float_sidebar.js,
+test_float_drag.js (SHIPPED += liquidglass-v18).
+
+**Test battery** (all green): float_toolbar 49 (NEW), float_drag 44,
+float_sidebar 38, liquid_glass 19, position_resume 18, tag_rail 21,
+minimize_panel 30, active_pdf_toolbar 23, touch_slider_space 8,
+frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5 — 288 total.
+(test_e2e_stroke_race remains excluded: pre-existing missing yjs module in
+scripts/e2e-deps, unrelated.) `node --check` clean; CSS braces balanced.
+
+## Live verification (agent-browser, real server + test project)
+* Docked default `translate3d(230px, 44px, 0px)` on the 1228px workspace
+  (bar 769px wide with pen options visible → perfectly centered, below the
+  minimize buttons); glass computed styles live (blur 18px saturate 1.7,
+  pointer-events auto, z 1150).
+* Header verified slim: no mode/tool buttons in `body > header`; Groups 0
+  and 4 intact; version chip floattools-v19.
+* Tool switching from the bar: select/pen activate with correct pill
+  styling; pen options appear INSIDE the bar; app-mode auto-switch
+  semantics unchanged.
+* ABSORPTION: real pen drag ACROSS the bar → zero strokes (guard +
+  pointer-events); real drag on glass padding → no drawing AND the bar
+  does not move (only the grip drags); elementFromPoint on the glass hits
+  `#float-toolbar`, on the grip hits `#ft-drag-handle`.
+* REAL smooth drag: grip down + move (+150,+100) → `translate3d(380px,
+  144px, 0px)` — EXACT 1:1 delta — persisted to settings; left/right
+  panel rects + scrollTop pixel-identical before/after (canvas untouched).
+* Reload restored (380,144); accidental-drag persistence (310,54) also
+  confirmed earlier; double-tap re-dock → back to (230,44), savedPos null.
+* Dragged to the bottom edge → clamped flush inside the workspace
+  (212,457 on the 521px-tall workspace) — screenshots ft_final.png
+  (docked) + ft_dragged_bottom.png (bottom-left float).
+* Floating sidebar untouched: re-dock double-tap still works, its position
+  persistence intact; when the two layers overlap the sidebar (z 1200)
+  wins and both remain draggable.
+* Zero page errors (yjs CDN warning = pre-existing offline sandbox).

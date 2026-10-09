@@ -52,11 +52,10 @@ assert.deepStrictEqual = (a, b, msg) => {
     if (sa !== sbb) throw new Error(msg || `expected ${sbb}, got ${sa}`);
 };
 
-// Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
+// Version chain — floattools-v19 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
-    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18'];
+const CURRENT_VERSION = 'floattools-v19';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,34 +64,16 @@ function extractFunction(source, name) {
     const marker = `function ${name}(`;
     const start = source.indexOf(marker);
     if (start === -1) throw new Error(`function ${name} not found`);
-    // Walk the PARAMETER LIST first, then count body braces: the first `{`
-    // after the marker may be a default-value object literal (`opts = {}`),
-    // not the function body. String + comment states are tracked so an
-    // apostrophe inside a // comment (e.g. "the sidebar's default dock")
-    // cannot flip the scanner into string mode and desync the counting.
-    let i = start + marker.length - 1;   // positioned at the '(' of the params
-    let depth = 0, inStr = null, inParams = true;
+    let i = source.indexOf('{', start);
+    let depth = 0, inStr = null;
     for (; i < source.length; i++) {
         const c = source[i];
-        const next = source[i + 1];
-        if (inStr === '__line__') { if (c === '\n') inStr = null; continue; }
-        if (inStr === '__block__') {
-            if (c === '*' && next === '/') { i++; inStr = null; }
-            continue;
-        }
         if (inStr) {
             if (c === '\\') { i++; continue; }
             if (c === inStr) inStr = null;
             continue;
         }
-        if (c === '/' && next === '/') { inStr = '__line__'; continue; }
-        if (c === '/' && next === '*') { inStr = '__block__'; continue; }
         if (c === "'" || c === '"' || c === '`') { inStr = c; continue; }
-        if (inParams) {
-            if (c === '(') depth++;
-            else if (c === ')') { depth--; if (depth === 0) inParams = false; }
-            continue;
-        }
         if (c === '{') depth++;
         else if (c === '}') { depth--; if (depth === 0) return source.slice(start, i + 1); }
     }
@@ -136,7 +117,6 @@ function makeEl(rect) {
         rect,
         style: {},
         offsetWidth: 10,
-        classList: makeClassSet(),   // ft-vertical class + RO-driven layout
     };
     el.getBoundingClientRect = () => ({ left: 0, top: 0, ...el.rect });
     el.addEventListener = (t, f) => { (listeners[t] = listeners[t] || []).push(f); };
@@ -189,8 +169,7 @@ function makeToolbarSandbox(opts = {}) {
     const fns = ['floatToolbarDefaultPos', 'clampFloatToolbarPos', 'ftResolvePos',
         'ftWriteTransform', 'applyFloatToolbarPos', 'moveFloatToolbarTo',
         'beginFloatToolbarDrag', 'moveFloatToolbarDrag', 'endFloatToolbarDrag',
-        'resetFloatToolbarPos', 'handleFloatToolbarResize', 'initFloatToolbarDrag',
-        'setFloatToolbarOrientation', 'toggleFloatToolbarOrientation'];
+        'resetFloatToolbarPos', 'handleFloatToolbarResize', 'initFloatToolbarDrag'];
     fns.forEach(fn => vm.runInContext(extractFunction(src, fn), sb, { filename: `floattools.js#${fn}` }));
     sb.__els = els;
     sb.__grip = grip;
@@ -284,15 +263,12 @@ test('1.2 all 4 App-Mode buttons moved with IDENTICAL ids + onclick handlers', (
 test('1.3 all 7 Annotation Draw Tool buttons + file input moved with IDENTICAL ids', () => {
     const i = html.indexOf('id="float-toolbar"');
     const block = html.slice(i, html.indexOf('</aside>', i));
-    // ftsize-v21: the four size-adjustable tools dispatch through
-    // handleToolBtnTap (first tap selects, second tap opens the size menu);
-    // the rest keep calling setAnnoTool directly. IDs are unchanged.
     [['tool-select', "setAnnoTool('select')"],
-     ['tool-pen', "handleToolBtnTap('pen')"],
-     ['tool-highlighter', "handleToolBtnTap('highlighter')"],
+     ['tool-pen', "setAnnoTool('pen')"],
+     ['tool-highlighter', "setAnnoTool('highlighter')"],
      ['tool-text', "setAnnoTool('text')"],
-     ['tool-eraser-pixel', "handleToolBtnTap('eraser-pixel')"],
-     ['tool-eraser-stroke', "handleToolBtnTap('eraser-stroke')"],
+     ['tool-eraser-pixel', "setAnnoTool('eraser-pixel')"],
+     ['tool-eraser-stroke', "setAnnoTool('eraser-stroke')"],
      ['tool-image', "setAnnoTool('image')"]].forEach(([id, fn]) => {
         assert(block.includes(`id="${id}"`), `${id} missing from the toolbar`);
         assert(block.includes(`onclick="${fn}"`), `${id} lost its ${fn} handler`);
@@ -300,23 +276,15 @@ test('1.3 all 7 Annotation Draw Tool buttons + file input moved with IDENTICAL i
     assert(block.includes('id="image-upload"'), '#image-upload input must move with the image tool');
 });
 
-test('1.4 pen-customization moved into the toolbar; separators + native input GONE', () => {
+test('1.4 pen-customization + its separator moved into the toolbar', () => {
     const i = html.indexOf('id="float-toolbar"');
     const block = html.slice(i, html.indexOf('</aside>', i));
     assert(block.includes('id="pen-customization"'), '#pen-customization missing');
+    assert(block.includes('id="pen-customization-sep"'), '#pen-customization-sep missing');
     assert(block.includes('id="tool-line-mode"'), 'line-mode button missing');
-    // ftsize-v21: the thickness slider moved into the floating size menu
-    // (#tool-size-menu, body level) — only the color preview remains inline.
-    assert(!block.includes('id="thickness-picker"'), 'inline thickness slider must be gone');
+    assert(block.includes('id="thickness-picker"'), 'thickness slider missing');
     assert(block.includes('id="thickness-preview-canvas"'), 'color preview canvas missing');
-    // ipadcolor-v22: the hidden native <input type="color"> is GONE — iOS
-    // Safari never supported it, which is why color selection did nothing
-    // on iPad. The preview canvas now opens the custom #tool-color-menu.
-    assert(!block.includes('id="color-picker"'), 'hidden native color input must be gone');
-    // ipadcolor-v22: the tool separators are GONE (user request) — the
-    // groups' own rounded trays separate them and the bar gets narrower.
-    assert(!block.includes('class="w-px'), 'no w-px separator may remain inside the toolbar');
-    assert(!block.includes('pen-customization-sep'), 'pen-customization-sep must be gone');
+    assert(block.includes('id="color-picker"'), 'color picker missing');
 });
 
 test('1.5 grip #ft-drag-handle is the FIRST control of the toolbar', () => {
@@ -690,7 +658,7 @@ test('5.7 business logic untouched: setAnnoTool / setAppMode still target the sa
     const anno = extractFunction(uiSrc, 'setAnnoTool');
     ['tool-select', 'tool-pen', 'tool-highlighter', 'tool-text',
      'tool-eraser-pixel', 'tool-eraser-stroke', 'tool-image',
-     'pen-customization'].forEach(id => {
+     'pen-customization', 'pen-customization-sep'].forEach(id => {
         assert(anno.includes(`'${id}'`), `setAnnoTool lost its reference to ${id}`);
     });
     const mode = extractFunction(uiSrc, 'setAppMode');

@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=liquidglass-v18">
+    <link rel="stylesheet" href="/css/style.css?v=floattools-v19">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -73,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass AI Chat + Comments sidebar — draggable anywhere">liquidglass-v18</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable floating annotation toolbar">floattools-v19</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -208,95 +208,12 @@
 
             <div class="w-px h-6 bg-gray-300 mx-1"></div>
 
-            <!-- Group 1: App Modes -->
-            <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
-                <button id="mode-nav-btn" onclick="setAppMode('navigation')"
-                    class="tool-btn active-mode"
-                    title="Navigate (V)">
-                    <i class="fa-solid fa-arrow-pointer"></i>
-                </button>
-                <button id="mode-link-btn" onclick="setAppMode('linking')"
-                    class="tool-btn"
-                    title="Draw Link (L)">
-                    <i class="fa-solid fa-link"></i>
-                </button>
-                <button id="mode-snip-link-btn" onclick="setAppMode('snip-link')"
-                    class="tool-btn"
-                    title="Snip & Link (S)">
-                    <i class="fa-solid fa-scissors"></i>
-                </button>
-                <button id="mode-del-link-btn" onclick="setAppMode('delete-link')"
-                    class="tool-btn"
-                    title="Delete Link (X)">
-                    <i class="fa-solid fa-link-slash"></i>
-                </button>
-            </div>
-
-            <div class="w-px h-6 bg-gray-300 mx-1"></div>
-
-            <!-- Group 2: Annotation Draw Tools -->
-            <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
-                <button id="tool-select" onclick="setAnnoTool('select')"
-                    class="tool-btn"
-                    title="Select (Ctrl+S)">
-                    <i class="fa-solid fa-object-group"></i>
-                </button>
-                <button id="tool-pen" onclick="setAnnoTool('pen')"
-                    class="tool-btn"
-                    title="Pen (P)">
-                    <i class="fa-solid fa-pen-nib"></i>
-                </button>
-                <button id="tool-highlighter" onclick="setAnnoTool('highlighter')"
-                    class="tool-btn"
-                    title="Highlighter (H)">
-                    <i class="fa-solid fa-highlighter"></i>
-                </button>
-                <button id="tool-text" onclick="setAnnoTool('text')"
-                    class="tool-btn"
-                    title="Add Comment (T)">
-                    <i class="fa-solid fa-comment-medical"></i>
-                </button>
-                <button id="tool-eraser-pixel" onclick="setAnnoTool('eraser-pixel')"
-                    class="tool-btn"
-                    title="Pixel Eraser (E)">
-                    <i class="fa-solid fa-eraser"></i>
-                </button>
-                <button id="tool-eraser-stroke" onclick="setAnnoTool('eraser-stroke')"
-                    class="tool-btn"
-                    title="Stroke Eraser (D)">
-                    <i class="fa-solid fa-ban"></i>
-                </button>
-                <button id="tool-image" onclick="setAnnoTool('image')"
-                    class="tool-btn"
-                    title="Add Image (I)">
-                    <i class="fa-regular fa-image"></i>
-                </button>
-                <input type="file" id="image-upload" class="hidden" accept="image/*">
-            </div>
-
-            <div class="w-px h-6 bg-gray-300 mx-1"></div>
-
-            <!-- Group 3: Pen/Highlighter Options (shown only when pen/highlighter active) -->
-            <div id="pen-customization" class="hidden items-center bg-gray-100 rounded-lg p-1 gap-1">
-                <!-- Straight/Freehand toggle -->
-                <button id="tool-line-mode" onclick="toggleLineMode()"
-                    class="tool-btn"
-                    title="Freehand / Straight Line (F)">
-                    <i class="fa-solid fa-minus"></i>
-                </button>
-                <div class="w-px h-5 bg-gray-300 mx-0.5"></div>
-                <!-- Thickness slider -->
-                <input type="range" id="thickness-picker" min="1" max="20" value="5"
-                    class="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mx-1">
-                <!-- Color + size preview canvas (click to pick color) -->
-                <canvas id="thickness-preview-canvas" width="32" height="32"
-                    class="rounded cursor-pointer"
-                    title="Click to change color"></canvas>
-                <input type="color" id="color-picker" class="hidden" value="#ef4444">
-            </div>
-
-            <!-- Group 3 separator: only visible when pen-customization is showing -->
-            <div id="pen-customization-sep" class="hidden w-px h-6 bg-gray-300 mx-1"></div>
+            <!-- NOTE: Group 1 (App Modes), Group 2 (Annotation Draw Tools) and
+                 Group 3 (Pen/Highlighter Options) used to live HERE in the
+                 header. They were moved into the draggable floating annotation
+                 toolbar (#float-toolbar inside #workspace-main — see below),
+                 so the user can place the annotation tools anywhere over the
+                 PDFs. The header keeps the document-level tools only. -->
 
             <!-- Group 4: Actions -->
             <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
@@ -507,6 +424,124 @@
 
             <!-- Floating Snip Preview Layer -->
             <img id="snip-preview" class="hidden fixed pointer-events-none z-[9999] opacity-80 border-2 border-blue-500 border-dashed shadow-xl object-contain bg-white">
+
+            <!-- ================================================================
+                 FLOATING ANNOTATION TOOLBAR (draggable)
+                 ---------------------------------------------------------------
+                 The annotation/link tools that used to sit in the header
+                 (App Modes + Annotation Draw Tools + Pen/Highlighter options)
+                 are now a LIQUID GLASS floating palette:
+                   * The PDF canvas NEVER resizes or moves — this aside is
+                     absolutely positioned and takes NO flex space.
+                   * Frosted translucent surface, same material as the floating
+                     sidebar. pointer-events: auto — every click/tap/wheel ON
+                     the toolbar is ABSORBED and never reaches the PDF below;
+                     aim outside the bar to scroll/draw/annotate.
+                   * Drag the grip (#ft-drag-handle) to move it smoothly
+                     anywhere (translate3d + rAF, js/floattools.js); double-tap
+                     the grip to re-dock it. The position persists.
+                   * All button IDs are IDENTICAL to the old header ones, so
+                     setAppMode()/setAnnoTool()/keyboard shortcuts keep working
+                     unchanged (business logic lives in ui.js — untouched).
+                 ================================================================ -->
+            <aside id="float-toolbar" aria-label="Annotation and link tools">
+
+                <!-- Drag grip: the ONLY element that starts a toolbar drag
+                     (floattools.js binds its pointerdown). -->
+                <button id="ft-drag-handle"
+                        title="Drag to move the toolbar anywhere — double-tap to re-dock it"
+                        aria-label="Move annotation toolbar (drag; double-tap re-docks)">
+                    <i class="fa-solid fa-up-down-left-right"></i>
+                </button>
+
+                <!-- App Modes (moved from the header verbatim — same IDs) -->
+                <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                    <button id="mode-nav-btn" onclick="setAppMode('navigation')"
+                        class="tool-btn active-mode"
+                        title="Navigate (V)">
+                        <i class="fa-solid fa-arrow-pointer"></i>
+                    </button>
+                    <button id="mode-link-btn" onclick="setAppMode('linking')"
+                        class="tool-btn"
+                        title="Draw Link (L)">
+                        <i class="fa-solid fa-link"></i>
+                    </button>
+                    <button id="mode-snip-link-btn" onclick="setAppMode('snip-link')"
+                        class="tool-btn"
+                        title="Snip & Link (S)">
+                        <i class="fa-solid fa-scissors"></i>
+                    </button>
+                    <button id="mode-del-link-btn" onclick="setAppMode('delete-link')"
+                        class="tool-btn"
+                        title="Delete Link (X)">
+                        <i class="fa-solid fa-link-slash"></i>
+                    </button>
+                </div>
+
+                <div class="w-px h-6 bg-gray-300 mx-1"></div>
+
+                <!-- Annotation Draw Tools (moved from the header verbatim — same IDs) -->
+                <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                    <button id="tool-select" onclick="setAnnoTool('select')"
+                        class="tool-btn"
+                        title="Select (Ctrl+S)">
+                        <i class="fa-solid fa-object-group"></i>
+                    </button>
+                    <button id="tool-pen" onclick="setAnnoTool('pen')"
+                        class="tool-btn"
+                        title="Pen (P)">
+                        <i class="fa-solid fa-pen-nib"></i>
+                    </button>
+                    <button id="tool-highlighter" onclick="setAnnoTool('highlighter')"
+                        class="tool-btn"
+                        title="Highlighter (H)">
+                        <i class="fa-solid fa-highlighter"></i>
+                    </button>
+                    <button id="tool-text" onclick="setAnnoTool('text')"
+                        class="tool-btn"
+                        title="Add Comment (T)">
+                        <i class="fa-solid fa-comment-medical"></i>
+                    </button>
+                    <button id="tool-eraser-pixel" onclick="setAnnoTool('eraser-pixel')"
+                        class="tool-btn"
+                        title="Pixel Eraser (E)">
+                        <i class="fa-solid fa-eraser"></i>
+                    </button>
+                    <button id="tool-eraser-stroke" onclick="setAnnoTool('eraser-stroke')"
+                        class="tool-btn"
+                        title="Stroke Eraser (D)">
+                        <i class="fa-solid fa-ban"></i>
+                    </button>
+                    <button id="tool-image" onclick="setAnnoTool('image')"
+                        class="tool-btn"
+                        title="Add Image (I)">
+                        <i class="fa-regular fa-image"></i>
+                    </button>
+                    <input type="file" id="image-upload" class="hidden" accept="image/*">
+                </div>
+
+                <!-- Pen/Highlighter Options (moved from the header verbatim —
+                     shown only when pen/highlighter is active; the separator
+                     visibility is toggled by setAnnoTool in ui.js) -->
+                <div id="pen-customization-sep" class="hidden w-px h-6 bg-gray-300 mx-1"></div>
+                <div id="pen-customization" class="hidden items-center bg-gray-100 rounded-lg p-1 gap-1">
+                    <!-- Straight/Freehand toggle -->
+                    <button id="tool-line-mode" onclick="toggleLineMode()"
+                        class="tool-btn"
+                        title="Freehand / Straight Line (F)">
+                        <i class="fa-solid fa-minus"></i>
+                    </button>
+                    <div class="w-px h-5 bg-gray-300 mx-0.5"></div>
+                    <!-- Thickness slider -->
+                    <input type="range" id="thickness-picker" min="1" max="20" value="5"
+                        class="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mx-1">
+                    <!-- Color + size preview canvas (click to pick color) -->
+                    <canvas id="thickness-preview-canvas" width="32" height="32"
+                        class="rounded cursor-pointer"
+                        title="Click to change color"></canvas>
+                    <input type="color" id="color-picker" class="hidden" value="#ef4444">
+                </div>
+            </aside>
 
             <!-- ================================================================
                  FLOATING TOOL SIDEBAR — AI Chat + Comments, one at a time
@@ -830,27 +865,28 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=liquidglass-v18"></script>
-    <script src="/js/config.js?v=liquidglass-v18"></script>
-    <script src="/js/api.js?v=liquidglass-v18"></script>
-    <script src="/js/state.js?v=liquidglass-v18"></script>
-    <script src="/js/database.js?v=liquidglass-v18"></script>
-    <script src="/js/ui.js?v=liquidglass-v18"></script>
-    <script src="/js/ai.js?v=liquidglass-v18"></script>
-    <script src="/js/pdf.js?v=liquidglass-v18"></script>
-    <script src="/js/search.js?v=liquidglass-v18"></script>
-    <script src="/js/annotations.js?v=liquidglass-v18"></script>
-    <script src="/js/links.js?v=liquidglass-v18"></script>
+    <script src="/js/utils.js?v=floattools-v19"></script>
+    <script src="/js/config.js?v=floattools-v19"></script>
+    <script src="/js/api.js?v=floattools-v19"></script>
+    <script src="/js/state.js?v=floattools-v19"></script>
+    <script src="/js/database.js?v=floattools-v19"></script>
+    <script src="/js/ui.js?v=floattools-v19"></script>
+    <script src="/js/floattools.js?v=floattools-v19"></script>
+    <script src="/js/ai.js?v=floattools-v19"></script>
+    <script src="/js/pdf.js?v=floattools-v19"></script>
+    <script src="/js/search.js?v=floattools-v19"></script>
+    <script src="/js/annotations.js?v=floattools-v19"></script>
+    <script src="/js/links.js?v=floattools-v19"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=liquidglass-v18"></script>
-    <script src="/js/conflict.js?v=liquidglass-v18"></script>
+    <script src="/js/undo.js?v=floattools-v19"></script>
+    <script src="/js/conflict.js?v=floattools-v19"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=liquidglass-v18"></script>
+    <script src="/js/yjs-collab.js?v=floattools-v19"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=liquidglass-v18"></script>
-    <script src="/js/filemanager.js?v=liquidglass-v18"></script>
-    <script src="/js/events.js?v=liquidglass-v18"></script>
-    <script src="/js/app.js?v=liquidglass-v18"></script>
+    <script src="/js/folders.js?v=floattools-v19"></script>
+    <script src="/js/filemanager.js?v=floattools-v19"></script>
+    <script src="/js/events.js?v=floattools-v19"></script>
+    <script src="/js/app.js?v=floattools-v19"></script>
 
 </body>
 </html>

@@ -293,6 +293,18 @@ async function init() {
                 if (document.body.classList.contains('float-sidebar-open')) {
                     applyFloatSidebarPos();
                 }
+                // Restore where the user dragged the floating annotation
+                // toolbar. Same strict validation: only well-formed {x,y}
+                // numbers are accepted — anything else means "docked default"
+                // (top-center). Clamping happens in applyFloatToolbarPos().
+                const savedFtPos = savedData.settings.floatToolbarPos;
+                if (savedFtPos && typeof savedFtPos === 'object' &&
+                    typeof savedFtPos.x === 'number' && isFinite(savedFtPos.x) &&
+                    typeof savedFtPos.y === 'number' && isFinite(savedFtPos.y)) {
+                    state.floatToolbarPos = { x: savedFtPos.x, y: savedFtPos.y };
+                } else {
+                    state.floatToolbarPos = null;
+                }
                 // Restore AI settings
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
@@ -393,6 +405,10 @@ async function init() {
         // (scrolling, typing). Touches on the card never reach the PDF
         // anyway (the card is pointer-events:auto and absorbs them).
         if (e.target.closest('#float-sidebar')) return;
+        // Same for the floating annotation toolbar: the palette absorbs its
+        // own touches (buttons, slider, grip drag) — never forward them to
+        // the PDF handlers below.
+        if (e.target.closest('#float-toolbar')) return;
         // Check if any of the touches are inside a viewport
         const target = e.target;
         if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
@@ -413,6 +429,9 @@ async function init() {
         // Don't intercept touchmove inside the floating tool sidebar — the
         // textarea / chat list need normal scroll behavior.
         if (e.target.closest('#float-sidebar')) return;
+        // ...and inside the floating annotation toolbar (its own drag +
+        // slider gestures are managed by floattools.js / the controls).
+        if (e.target.closest('#float-toolbar')) return;
         // 2-finger touches are pan/zoom — let the gesture handler deal with them
         if (e.touches.length >= 2) return;
         if (state.drawing && state.drawing.active) {
@@ -529,6 +548,9 @@ async function init() {
     initResizer();
     // Draggable floating sidebar: grip pointerdown + window resize re-clamp.
     initFloatSidebarDrag();
+    // Draggable floating annotation toolbar: grip pointerdown + place at the
+    // default/restored spot + workspace & toolbar size observation.
+    initFloatToolbarDrag();
     updateViewportActiveVisuals();
 
     // ---- Header horizontal scroll for mouse-wheel users ----

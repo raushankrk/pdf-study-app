@@ -120,6 +120,12 @@ const state = {
     // null = not personalized: the card docks at its default top-right corner
     // (and follows the workspace edge on resize) until the first drag.
     floatSidebarPos: null,
+    // ---- Draggable floating annotation toolbar position ----
+    // Same contract as floatSidebarPos: { x, y } in #workspace-main CSS px,
+    // set by floattools.js when the user DRAGS the toolbar (persisted via
+    // settings). null = not personalized: the bar sits top-center (and
+    // re-centers on resize) until the first drag.
+    floatToolbarPos: null,
     drawing: {
         active: false,
         startSide: null,
