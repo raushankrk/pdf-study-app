@@ -202,6 +202,9 @@ async function saveSettings() {
         annoTool: state.annoTool,
         annoColor: state.annoColor,
         annoThickness: state.annoThickness,
+        // Which PDF (left = A / right = B) is currently active — restored on
+        // boot so the single header toolbar targets the same PDF again.
+        activeSide: state.lastActiveSide === 'right' ? 'right' : 'left',
         leftSidebarCollapsed: document.body.classList.contains('left-sidebar-collapsed'),
         aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed'),
         aiSettings: state.aiSettings,
@@ -286,6 +289,44 @@ async function loadStateFromDB() {
 }
 
 // ---- Fetch per-doc annotations (called by ensureDocLoaded in pdf.js) ----
+// ---- BUG FIX (Stroke continuity) ------------------------------------------
+// Helper: after ANY wholesale replacement of state.annotations[docId], make
+// sure the stroke the user is drawing RIGHT NOW survives. The fetched
+// snapshot can never contain the in-progress stroke (it was never saved —
+// with Yjs connected it lives only in the CRDT until pointerup), so without
+// this the active stroke was orphaned and strokes[len-1] became the PREVIOUS
+// stroke — the next pointermove then appended the new stroke's points into
+// it (the "new stroke connects to the previous stroke" bug).
+function _preserveInFlightStrokeInLoadedState(docId) {
+    if (!state.drawing || !state.drawing.active || !state.drawing.activeStrokeRef) return;
+    const ref = state.drawing.activeStrokeRef;
+    const side = state.drawing.startSide;
+    if (!side || !state.view[side] || state.view[side].docId !== docId) return;
+    const pageId = state.view[side].pageId;
+    if (!pageId) return;
+
+    if (!state.annotations[docId]) state.annotations[docId] = {};
+    if (!state.annotations[docId][pageId]) {
+        state.annotations[docId][pageId] = { strokes: [], images: [], textBoxes: [] };
+    }
+    const pageData = state.annotations[docId][pageId];
+    if (!pageData.strokes) pageData.strokes = [];
+
+    if (pageData.strokes.indexOf(ref) !== -1) return; // already canonical
+    if (ref.id) {
+        const idx = pageData.strokes.findIndex(s => s && s.id === ref.id);
+        if (idx !== -1) {
+            // The snapshot carried a stale clone — canonicalize to the live
+            // object (it holds the newest points).
+            pageData.strokes[idx] = ref;
+            return;
+        }
+    }
+    // Snapshot predates the stroke — re-append the live object (keeps the
+    // "active stroke is last" invariant).
+    pageData.strokes.push(ref);
+}
+
 async function loadAnnotationsFromServer(docId) {
     try {
         const data = await Api.getAnnotations(docId);
@@ -298,6 +339,9 @@ async function loadAnnotationsFromServer(docId) {
             revisions = data.revisions || {};
         }
         state.annotations[docId] = pages;
+        // ---- BUG FIX (Stroke continuity) ----
+        // Re-attach the stroke being drawn right now (see helper above).
+        _preserveInFlightStrokeInLoadedState(docId);
         // Record the per-page revisions so the editor can send
         // X-Expected-Revision on save.
         conflictState.annotationRevisions[docId] = {};
@@ -320,6 +364,10 @@ async function loadAnnotationsFromServer(docId) {
     } catch (err) {
         console.error(`Failed to load annotations for ${docId}:`, err);
         state.annotations[docId] = {};
+        // ---- BUG FIX (Stroke continuity) ----
+        // Same preservation on the error path — never orphan an in-progress
+        // stroke, even when the fetch fails.
+        _preserveInFlightStrokeInLoadedState(docId);
         return state.annotations[docId];
     }
 }

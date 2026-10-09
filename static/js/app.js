@@ -179,6 +179,17 @@ async function init() {
                     }
                 }
 
+                // ---- Restore Active PDF (single header toolbar) ----
+                // The saved activeSide wins if that viewport still has a doc;
+                // otherwise fall back sensibly: the side that has a doc, or left.
+                const savedActiveSide = savedData.settings.activeSide;
+                if ((savedActiveSide === 'left' || savedActiveSide === 'right') &&
+                    state.view[savedActiveSide] && state.view[savedActiveSide].docId) {
+                    state.lastActiveSide = savedActiveSide;
+                } else if (!state.view.left.docId && state.view.right.docId) {
+                    state.lastActiveSide = 'right';
+                }
+
                 if (savedData.settings.splitRatio) {
                     state.splitRatio = savedData.settings.splitRatio;
                     els.leftPanel.style.width = (state.splitRatio * 100) + '%';
@@ -270,6 +281,12 @@ async function init() {
     window.addEventListener('pointerdown', handlePointerDown, { passive: false });
     window.addEventListener('pointermove', handlePointerMove, { passive: false });
     window.addEventListener('pointerup', handlePointerUp, { passive: false });
+    // ---- BUG FIX (touch devices: pause/hold while drawing) ----
+    // iPadOS / Android fire pointercancel when the OS takes the pointer over
+    // (long-press after a pause, gesture detection, palm rejection, ...).
+    // Without this handler a cancelled stroke left state.drawing.active true,
+    // the active stroke in-flight and the next touch inherited stale state.
+    window.addEventListener('pointercancel', handlePointerCancel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
 
     // ---- CRITICAL for iPad / touch devices ----
@@ -440,6 +457,23 @@ async function init() {
 
     initResizer();
     updateViewportActiveVisuals();
+
+    // ---- Header horizontal scroll for mouse-wheel users ----
+    // The single Active-PDF toolbar makes the header wider than the window
+    // on smaller screens (it now also hosts the lock / find / zoom / page
+    // controls of the active PDF). Vertical wheel over the header scrolls
+    // it horizontally — but ONLY when the header actually overflows, so
+    // wide screens behave exactly as before.
+    const headerEl = document.querySelector('body > header');
+    if (headerEl) {
+        headerEl.addEventListener('wheel', (e) => {
+            if (headerEl.scrollWidth <= headerEl.clientWidth) return;
+            if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+                e.preventDefault();
+                headerEl.scrollLeft += e.deltaY;
+            }
+        }, { passive: false });
+    }
 
     // ---- File-explorer event listeners ----
     // Unified search input: behavior depends on state.searchMode ('files' or 'content').

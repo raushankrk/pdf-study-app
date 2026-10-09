@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=comment-v9">
+    <link rel="stylesheet" href="/css/style.css?v=activepdf-v11">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -44,7 +44,10 @@
         const { PDFDocument } = PDFLib;
     </script>
 </head>
-<body class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
+<!-- data-active-pdf drives the single-toolbar visibility: the header shows
+     the lock/find/zoom/page controls of the ACTIVE PDF only (see style.css).
+     ui.js updateViewportActiveVisuals() keeps this in sync at runtime. -->
+<body data-active-pdf="left" class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
 
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
@@ -67,11 +70,140 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Comment feature loaded">comment-v9</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Comment feature loaded">comment-v9</span>
         </div>
 
         <!-- Center: All Tools -->
         <div class="flex items-center gap-1">
+
+            <!-- ================================================================
+                 Group 0: ACTIVE PDF TOOLBAR (single toolbar for both PDFs)
+                 ---------------------------------------------------------------
+                 There is exactly ONE toolbar in the header. It always operates
+                 on the CURRENTLY ACTIVE PDF:
+                   * The A / B tabs select which PDF is active. Clicking a tab
+                     (or clicking/tapping the PDF itself in the workspace)
+                     makes that PDF active.
+                   * The tab shows each PDF's filename (the spans keep the
+                     historical IDs #left-view-title / #right-view-title —
+                     renderPage() writes the doc names into them).
+                   * The controls block after the tabs (lock, find, zoom,
+                     page navigation, page insert/delete) exists ONCE PER
+                     SIDE in the DOM (#pdf-controls-left / #pdf-controls-right)
+                     but only the ACTIVE side's block is visible (pure CSS via
+                     body[data-active-pdf], see style.css). This keeps every
+                     existing els[side + '...'] update path working unchanged
+                     while the user always sees a single toolbar.
+                 ================================================================ -->
+            <div class="flex items-center gap-1">
+
+                <!-- Active PDF switcher: PDF A | PDF B -->
+                <div id="pdf-switcher" class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5" role="tablist" aria-label="Active PDF">
+                    <button id="pdf-tab-left" onclick="setActivePdf('left')"
+                        class="pdf-tab" role="tab" aria-label="Activate PDF A"
+                        title="Activate PDF A (tools will operate on this PDF)">
+                        <span class="pdf-tab-badge pdf-tab-badge-a">A</span>
+                        <span id="left-view-title" class="pdf-tab-title">None</span>
+                    </button>
+                    <button id="pdf-tab-right" onclick="setActivePdf('right')"
+                        class="pdf-tab" role="tab" aria-label="Activate PDF B"
+                        title="Activate PDF B (tools will operate on this PDF)">
+                        <span class="pdf-tab-badge pdf-tab-badge-b">B</span>
+                        <span id="right-view-title" class="pdf-tab-title">None</span>
+                    </button>
+                </div>
+
+                <div class="w-px h-6 bg-gray-300 mx-1"></div>
+
+                <!-- Active-PDF controls: PDF A's set (visible when PDF A is active) -->
+                <div id="pdf-controls-left" class="pdf-controls flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                    <button id="lock-left-btn" onclick="toggleLock('left')" class="lock-btn" title="Lock PDF A Viewport">
+                        <i class="fa-solid fa-lock-open"></i>
+                    </button>
+
+                    <div class="relative group/search">
+                        <input type="text" id="left-search-input" placeholder="Find..." class="hidden pl-6 pr-2 py-0.5 text-[10px] border border-gray-300 rounded w-24 focus:w-32 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <button id="left-search-toggle" onclick="toggleViewportSearch('left')" class="tool-btn !w-7 !h-7 !text-[11px]" title="Find in PDF A">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
+                        <div id="left-search-nav" class="hidden absolute right-0 top-8 bg-white shadow-md border rounded flex p-1 z-50">
+                            <button onclick="navigateSearchResult('left', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-up"></i></button>
+                            <span id="left-search-count" class="text-[10px] self-center px-1 text-gray-500">0/0</span>
+                            <button onclick="navigateSearchResult('left', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-down"></i></button>
+                            <button onclick="closeViewportSearch('left')" class="ml-1 p-1 hover:bg-red-50 text-red-500 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+                    <button onclick="zoomViewport('left', -0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom Out PDF A"><i class="fa-solid fa-minus"></i></button>
+                    <span id="left-zoom-level" class="text-[10px] w-8 text-center font-mono text-gray-500">100%</span>
+                    <button onclick="zoomViewport('left', 0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom In PDF A"><i class="fa-solid fa-plus"></i></button>
+                    <button onclick="resetZoom('left')" class="tool-btn !w-7 !h-7 !text-[11px] !text-blue-600" title="Fit Width (PDF A)"><i class="fa-solid fa-expand"></i></button>
+
+                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+                    <button onclick="navigatePage('left', -1)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Previous Page (PDF A)"><i class="fa-solid fa-chevron-left"></i></button>
+                    <div class="flex items-center justify-center text-xs text-gray-500 font-mono">
+                        <input type="number" id="left-page-input" class="w-7 text-center border border-transparent hover:border-gray-300 focus:border-blue-500 rounded bg-transparent p-0 outline-none hide-arrows transition-colors" value="" placeholder="-" onchange="jumpToPage('left')" onkeydown="if(event.key==='Enter') this.blur();" title="Jump to page (PDF A)">
+                        <span class="mx-0.5">/</span>
+                        <span id="left-page-total" class="text-left">--</span>
+                    </div>
+                    <button onclick="navigatePage('left', 1)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Next Page (PDF A)"><i class="fa-solid fa-chevron-right"></i></button>
+
+                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+                    <button onclick="insertPage('left', 'blank')" class="tool-btn !w-7 !h-7 !text-[11px] !text-gray-400 hover:!text-indigo-600" title="Insert Blank Page After Current (PDF A)"><i class="fa-regular fa-file-circle-plus"></i></button>
+                    <button onclick="insertPage('left', 'duplicate')" class="tool-btn !w-7 !h-7 !text-[11px] !text-gray-400 hover:!text-indigo-600" title="Duplicate Current Page (PDF A)"><i class="fa-regular fa-clone"></i></button>
+                    <button onclick="deleteCurrentPage('left')" class="tool-btn !w-7 !h-7 !text-[11px] !text-gray-400 hover:!text-red-600" title="Delete Current Page (PDF A)"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+
+                <!-- Active-PDF controls: PDF B's set (visible when PDF B is active) -->
+                <div id="pdf-controls-right" class="pdf-controls flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
+                    <button id="lock-right-btn" onclick="toggleLock('right')" class="lock-btn" title="Lock PDF B Viewport">
+                        <i class="fa-solid fa-lock-open"></i>
+                    </button>
+
+                    <div class="relative group/search">
+                        <input type="text" id="right-search-input" placeholder="Find..." class="hidden pl-6 pr-2 py-0.5 text-[10px] border border-gray-300 rounded w-24 focus:w-32 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <button id="right-search-toggle" onclick="toggleViewportSearch('right')" class="tool-btn !w-7 !h-7 !text-[11px]" title="Find in PDF B">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </button>
+                        <div id="right-search-nav" class="hidden absolute right-0 top-8 bg-white shadow-md border rounded flex p-1 z-50">
+                            <button onclick="navigateSearchResult('right', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-up"></i></button>
+                            <span id="right-search-count" class="text-[10px] self-center px-1 text-gray-500">0/0</span>
+                            <button onclick="navigateSearchResult('right', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-down"></i></button>
+                            <button onclick="closeViewportSearch('right')" class="ml-1 p-1 hover:bg-red-50 text-red-500 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+                    <button onclick="zoomViewport('right', -0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom Out PDF B"><i class="fa-solid fa-minus"></i></button>
+                    <span id="right-zoom-level" class="text-[10px] w-8 text-center font-mono text-gray-500">100%</span>
+                    <button onclick="zoomViewport('right', 0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom In PDF B"><i class="fa-solid fa-plus"></i></button>
+                    <button onclick="resetZoom('right')" class="tool-btn !w-7 !h-7 !text-[11px] !text-blue-600" title="Fit Width (PDF B)"><i class="fa-solid fa-expand"></i></button>
+
+                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+                    <button onclick="navigatePage('right', -1)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Previous Page (PDF B)"><i class="fa-solid fa-chevron-left"></i></button>
+                    <div class="flex items-center justify-center text-xs text-gray-500 font-mono">
+                        <input type="number" id="right-page-input" class="w-7 text-center border border-transparent hover:border-gray-300 focus:border-blue-500 rounded bg-transparent p-0 outline-none hide-arrows transition-colors" value="" placeholder="-" onchange="jumpToPage('right')" onkeydown="if(event.key==='Enter') this.blur();" title="Jump to page (PDF B)">
+                        <span class="mx-0.5">/</span>
+                        <span id="right-page-total" class="text-left">--</span>
+                    </div>
+                    <button onclick="navigatePage('right', 1)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Next Page (PDF B)"><i class="fa-solid fa-chevron-right"></i></button>
+
+                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
+
+                    <button onclick="insertPage('right', 'blank')" class="tool-btn !w-7 !h-7 !text-[11px] !text-gray-400 hover:!text-indigo-600" title="Insert Blank Page After Current (PDF B)"><i class="fa-regular fa-file-circle-plus"></i></button>
+                    <button onclick="insertPage('right', 'duplicate')" class="tool-btn !w-7 !h-7 !text-[11px] !text-gray-400 hover:!text-indigo-600" title="Duplicate Current Page (PDF B)"><i class="fa-regular fa-clone"></i></button>
+                    <button onclick="deleteCurrentPage('right')" class="tool-btn !w-7 !h-7 !text-[11px] !text-gray-400 hover:!text-red-600" title="Delete Current Page (PDF B)"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+
+            </div>
+
+            <div class="w-px h-6 bg-gray-300 mx-1"></div>
 
             <!-- Group 1: App Modes -->
             <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
@@ -295,57 +427,13 @@
         <!-- Workspace (Split View) -->
         <main class="flex-1 flex bg-gray-200 overflow-hidden relative" id="workspace-main">
             
-            <!-- Left Viewport -->
+            <!-- Left Viewport
+                 NOTE: The old per-PDF h-10 toolbar (lock / title / find / zoom /
+                 page nav / page ops) that lived here was REMOVED — those tools
+                 now live in the single "Active PDF" toolbar in the main header
+                 and operate on the currently active PDF. Only the 4px page
+                 scrub slider remains (touch page scrubbing, negligible height). -->
             <div id="left-panel" class="flex flex-col border-r border-gray-300 relative min-w-0 group" style="width: 50%;">
-                <div class="h-10 bg-white border-b border-gray-300 flex items-center justify-between px-4 shrink-0 z-10">
-                    <div class="flex items-center gap-2">
-
-                    <button id="lock-left-btn" onclick="toggleLock('left')" class="lock-btn" title="Lock Left Viewport">
-                        <i class="fa-solid fa-lock-open"></i>
-                    </button>
-
-                        <span class="text-sm font-bold text-gray-600 truncate w-24" id="left-view-title">None</span>
-                        <div class="relative group/search">
-                            <input type="text" id="left-search-input" placeholder="Find..." class="hidden pl-6 pr-2 py-0.5 text-[10px] border border-gray-300 rounded w-24 focus:w-32 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500">
-                            <button id="left-search-toggle" onclick="toggleViewportSearch('left')" class="w-6 h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xs">
-                                <i class="fa-solid fa-magnifying-glass"></i>
-                            </button>
-                            <div id="left-search-nav" class="hidden absolute right-0 top-6 bg-white shadow-md border rounded flex p-1 z-50">
-                                <button onclick="navigateSearchResult('left', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-up"></i></button>
-                                <span id="left-search-count" class="text-[10px] self-center px-1 text-gray-500">0/0</span>
-                                <button onclick="navigateSearchResult('left', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-down"></i></button>
-                                <button onclick="closeViewportSearch('left')" class="ml-1 p-1 hover:bg-red-50 text-red-500 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center gap-2">
-                        <div class="flex items-center bg-gray-50 rounded border border-gray-200">
-                            <button onclick="zoomViewport('left', -0.25)" class="px-1.5 py-0.5 hover:bg-gray-200 rounded text-gray-600 text-xs"><i class="fa-solid fa-minus"></i></button>
-                            <span id="left-zoom-level" class="text-[10px] w-8 text-center font-mono text-gray-500">100%</span>
-                            <button onclick="zoomViewport('left', 0.25)" class="px-1.5 py-0.5 hover:bg-gray-200 rounded text-gray-600 text-xs"><i class="fa-solid fa-plus"></i></button>
-                            <div class="w-px h-3 bg-gray-300 mx-0.5"></div>
-                            <button onclick="resetZoom('left')" class="px-1.5 py-0.5 hover:bg-blue-100 text-blue-600 rounded text-xs" title="Fit Width"><i class="fa-solid fa-expand"></i></button>
-                        </div>
-
-                        <div class="w-px h-4 bg-gray-300 mx-1"></div>
-
-                        <button onclick="navigatePage('left', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
-                        <div class="flex items-center justify-center w-20 text-xs text-gray-500 font-mono">
-                            <input type="number" id="left-page-input" class="w-8 text-center border border-transparent hover:border-gray-300 focus:border-blue-500 rounded bg-transparent p-0 outline-none hide-arrows transition-colors" value="" placeholder="-" onchange="jumpToPage('left')" onkeydown="if(event.key==='Enter') this.blur();" title="Jump to page">
-                            <span class="mx-1">/</span>
-                            <span id="left-page-total" class="w-8 text-left">--</span>
-                        </div>
-                        <button onclick="navigatePage('left', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
-                        
-                        <div class="w-px h-4 bg-gray-300 mx-1"></div>
-
-                        <button onclick="insertPage('left', 'blank')" class="p-1 hover:text-indigo-600 hover:bg-indigo-50 text-gray-400 rounded transition-colors" title="Insert Blank Page After Current"><i class="fa-regular fa-file-circle-plus text-sm"></i></button>
-                        <button onclick="insertPage('left', 'duplicate')" class="p-1 hover:text-indigo-600 hover:bg-indigo-50 text-gray-400 rounded transition-colors" title="Duplicate Current Page"><i class="fa-regular fa-clone text-sm"></i></button>
-                        <button onclick="deleteCurrentPage('left')" class="p-1 hover:text-red-600 hover:bg-red-50 text-gray-400 rounded transition-colors" title="Delete Current Page"><i class="fa-solid fa-trash-can text-sm"></i></button>
-                    </div>
-                </div>
-                
                 <!-- Left Horizontal Page Slider -->
                 <div class="w-full shrink-0 bg-gray-200 relative z-[110] border-b border-gray-300" style="height: 4px;">
                     <input type="range" id="left-page-slider" min="1" max="1" value="1" class="page-slider hidden" oninput="syncPageInput('left')" onchange="jumpToPageFromSlider('left')" title="Scroll through pages">
@@ -365,57 +453,8 @@
             <!-- Vertical Resizer -->
             <div id="vertical-resizer" title="Drag to resize viewports"></div>
 
-            <!-- Right Viewport -->
+            <!-- Right Viewport (old per-PDF toolbar removed — see Left Viewport note) -->
             <div id="right-panel" class="flex flex-col relative min-w-0" style="width: 50%;">
-                <div class="h-10 bg-white border-b border-gray-300 flex items-center justify-between px-4 shrink-0 z-10">
-                    <div class="flex items-center gap-2">
-
-                    <button id="lock-right-btn" onclick="toggleLock('right')" class="lock-btn" title="Lock Right Viewport">
-                        <i class="fa-solid fa-lock-open"></i>
-                    </button>
-
-                        <span class="text-sm font-bold text-gray-600 truncate w-24" id="right-view-title">None</span>
-                        <div class="relative group/search">
-                            <input type="text" id="right-search-input" placeholder="Find..." class="hidden pl-6 pr-2 py-0.5 text-[10px] border border-gray-300 rounded w-24 focus:w-32 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500">
-                            <button id="right-search-toggle" onclick="toggleViewportSearch('right')" class="w-6 h-6 rounded hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xs">
-                                <i class="fa-solid fa-magnifying-glass"></i>
-                            </button>
-                            <div id="right-search-nav" class="hidden absolute right-0 top-6 bg-white shadow-md border rounded flex p-1 z-50">
-                                <button onclick="navigateSearchResult('right', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-up"></i></button>
-                                <span id="right-search-count" class="text-[10px] self-center px-1 text-gray-500">0/0</span>
-                                <button onclick="navigateSearchResult('right', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-down"></i></button>
-                                <button onclick="closeViewportSearch('right')" class="ml-1 p-1 hover:bg-red-50 text-red-500 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="flex items-center gap-2">
-                         <div class="flex items-center bg-gray-50 rounded border border-gray-200">
-                            <button onclick="zoomViewport('right', -0.25)" class="px-1.5 py-0.5 hover:bg-gray-200 rounded text-gray-600 text-xs"><i class="fa-solid fa-minus"></i></button>
-                            <span id="right-zoom-level" class="text-[10px] w-8 text-center font-mono text-gray-500">100%</span>
-                            <button onclick="zoomViewport('right', 0.25)" class="px-1.5 py-0.5 hover:bg-gray-200 rounded text-gray-600 text-xs"><i class="fa-solid fa-plus"></i></button>
-                            <div class="w-px h-3 bg-gray-300 mx-0.5"></div>
-                            <button onclick="resetZoom('right')" class="px-1.5 py-0.5 hover:bg-blue-100 text-blue-600 rounded text-xs" title="Fit Width"><i class="fa-solid fa-expand"></i></button>
-                        </div>
-
-                        <div class="w-px h-4 bg-gray-300 mx-1"></div>
-
-                        <button onclick="navigatePage('right', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-left"></i></button>
-                        <div class="flex items-center justify-center w-20 text-xs text-gray-500 font-mono">
-                            <input type="number" id="right-page-input" class="w-8 text-center border border-transparent hover:border-gray-300 focus:border-blue-500 rounded bg-transparent p-0 outline-none hide-arrows transition-colors" value="" placeholder="-" onchange="jumpToPage('right')" onkeydown="if(event.key==='Enter') this.blur();" title="Jump to page">
-                            <span class="mx-1">/</span>
-                            <span id="right-page-total" class="w-8 text-left">--</span>
-                        </div>
-                        <button onclick="navigatePage('right', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600"><i class="fa-solid fa-chevron-right"></i></button>
-                        
-                        <div class="w-px h-4 bg-gray-300 mx-1"></div>
-
-                        <button onclick="insertPage('right', 'blank')" class="p-1 hover:text-indigo-600 hover:bg-indigo-50 text-gray-400 rounded transition-colors" title="Insert Blank Page After Current"><i class="fa-regular fa-file-circle-plus text-sm"></i></button>
-                        <button onclick="insertPage('right', 'duplicate')" class="p-1 hover:text-indigo-600 hover:bg-indigo-50 text-gray-400 rounded transition-colors" title="Duplicate Current Page"><i class="fa-regular fa-clone text-sm"></i></button>
-                        <button onclick="deleteCurrentPage('right')" class="p-1 hover:text-red-600 hover:bg-red-50 text-gray-400 rounded transition-colors" title="Delete Current Page"><i class="fa-solid fa-trash-can text-sm"></i></button>
-                    </div>
-                </div>
-                
                 <!-- Right Horizontal Page Slider -->
                 <div class="w-full shrink-0 bg-gray-200 relative z-[110] border-b border-gray-300" style="height: 4px;">
                     <input type="range" id="right-page-slider" min="1" max="1" value="1" class="page-slider hidden" oninput="syncPageInput('right')" onchange="jumpToPageFromSlider('right')" title="Scroll through pages">
@@ -702,27 +741,27 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=comment-v9"></script>
-    <script src="/js/config.js?v=comment-v9"></script>
-    <script src="/js/api.js?v=comment-v9"></script>
-    <script src="/js/state.js?v=comment-v9"></script>
-    <script src="/js/database.js?v=comment-v9"></script>
-    <script src="/js/ui.js?v=comment-v9"></script>
-    <script src="/js/ai.js?v=comment-v9"></script>
-    <script src="/js/pdf.js?v=comment-v9"></script>
-    <script src="/js/search.js?v=comment-v9"></script>
-    <script src="/js/annotations.js?v=comment-v9"></script>
-    <script src="/js/links.js?v=comment-v9"></script>
+    <script src="/js/utils.js?v=activepdf-v10"></script>
+    <script src="/js/config.js?v=activepdf-v10"></script>
+    <script src="/js/api.js?v=activepdf-v10"></script>
+    <script src="/js/state.js?v=activepdf-v10"></script>
+    <script src="/js/database.js?v=activepdf-v10"></script>
+    <script src="/js/ui.js?v=activepdf-v10"></script>
+    <script src="/js/ai.js?v=activepdf-v10"></script>
+    <script src="/js/pdf.js?v=activepdf-v10"></script>
+    <script src="/js/search.js?v=activepdf-v10"></script>
+    <script src="/js/annotations.js?v=activepdf-v11"></script>
+    <script src="/js/links.js?v=activepdf-v10"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=comment-v9"></script>
-    <script src="/js/conflict.js?v=comment-v9"></script>
+    <script src="/js/undo.js?v=activepdf-v10"></script>
+    <script src="/js/conflict.js?v=activepdf-v10"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=comment-v9"></script>
+    <script src="/js/yjs-collab.js?v=activepdf-v10"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=comment-v9"></script>
-    <script src="/js/filemanager.js?v=comment-v9"></script>
-    <script src="/js/events.js?v=comment-v9"></script>
-    <script src="/js/app.js?v=comment-v9"></script>
+    <script src="/js/folders.js?v=activepdf-v10"></script>
+    <script src="/js/filemanager.js?v=activepdf-v10"></script>
+    <script src="/js/events.js?v=activepdf-v10"></script>
+    <script src="/js/app.js?v=activepdf-v11"></script>
 
 </body>
 </html>

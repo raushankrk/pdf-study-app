@@ -39,15 +39,67 @@ function updateLockVisuals() {
 function updateViewportActiveVisuals() {
     const leftViewport = document.getElementById('left-viewport');
     const rightViewport = document.getElementById('right-viewport');
+    const active = state.lastActiveSide === 'right' ? 'right' : 'left';
 
-    if (state.lastActiveSide === 'left') {
+    if (active === 'left') {
         leftViewport.classList.add('viewport-wrapper-active');
         rightViewport.classList.remove('viewport-wrapper-active');
     } else {
         leftViewport.classList.remove('viewport-wrapper-active');
         rightViewport.classList.add('viewport-wrapper-active');
     }
+
+    // ---- Single Active-PDF toolbar (main header) ----
+    // 1. body[data-active-pdf] drives the pure-CSS show/hide of the per-side
+    //    controls blocks (#pdf-controls-left / #pdf-controls-right) — only
+    //    the ACTIVE PDF's controls are visible.
+    // 2. The A / B tabs get the .pdf-tab-active highlight.
+    // The hidden side's controls still receive DOM updates from
+    // renderPage()/zoom paths (they write els[side + '...']), so switching
+    // tabs always shows fresh values with zero extra syncing logic.
+    document.body.dataset.activePdf = active;
+    ['left', 'right'].forEach(side => {
+        document.getElementById(`pdf-tab-${side}`)
+            ?.classList.toggle('pdf-tab-active', side === active);
+    });
 }
+
+/**
+ * Make the given PDF the ACTIVE PDF (single-toolbar concept).
+ *
+ * The active PDF is the one that:
+ *   - the header's lock / find / zoom / page-nav / page-ops controls
+ *     operate on,
+ *   - receives pasted images / comments when no explicit viewport was
+ *     clicked (state.lastActiveSide consumers),
+ *   - is highlighted in the header (A / B tab) and ringed in the workspace.
+ *
+ * Called from:
+ *   - the PDF A / PDF B tabs in the header,
+ *   - handlePointerDown (events.js) when the user clicks/taps a viewport
+ *     (mouse, touch, Apple Pencil — all emit pointerdown),
+ *   - setActiveDocument / navigatePage / jumpToPage / handleScroll, which
+ *     set state.lastActiveSide directly and then call
+ *     updateViewportActiveVisuals() or renderPage().
+ *
+ * NOTE: this only changes WHICH PDF is active — it never changes the
+ * current tool, mode, or drawing state, and it never re-renders the
+ * canvases (safe to call mid-gesture).
+ */
+function setActivePdf(side, save = true) {
+    if (side !== 'left' && side !== 'right') return;
+
+    const changed = state.lastActiveSide !== side;
+    state.lastActiveSide = side;
+    updateViewportActiveVisuals();
+
+    // Persist only on real switches (tab clicks). The canvas-tap path in
+    // handlePointerDown passes no args but is already debounced-noise-safe:
+    // it calls updateViewportActiveVisuals() directly, not this function,
+    // and the scroll handler's debounced saveSettings() persists the state.
+    if (changed && save) saveSettings();
+}
+window.setActivePdf = setActivePdf;
 
 function toggleLeftSidebar() {
     document.body.classList.toggle('left-sidebar-collapsed');
@@ -418,6 +470,7 @@ async function clearAllData() {
         state.view.left = { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false };
         state.view.right = { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false };
         state.lastActiveSide = 'left';
+        updateViewportActiveVisuals();
 
         await ensureRootFolder();
         await createNewChat();

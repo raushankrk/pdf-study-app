@@ -670,8 +670,19 @@ function handlePointerMove(e) {
                 const start = state.drawing.straightLineStart;
                 const docId = state.view[side].docId;
                 const pageId = state.view[side].pageId;
-                const strokes = state.annotations[docId][pageId].strokes;
-                const currentStroke = strokes[strokes.length - 1];
+                // ---- BUG FIX (Stroke continuity) ----
+                // Used to be strokes[strokes.length - 1] — a positional lookup
+                // that targeted the PREVIOUS stroke whenever an async state
+                // replacement (smartRefreshFromServer / conflict reload / Yjs
+                // rebuild) landed mid-stroke, so the straight-line preview
+                // overwrote the WRONG stroke's points. resolveActiveStroke()
+                // returns the stroke the user is actually drawing (tracked by
+                // reference in state.drawing.activeStrokeRef) and re-links it
+                // into the array if a replacement dropped it.
+                const currentStroke = (typeof resolveActiveStroke === 'function')
+                    ? resolveActiveStroke(docId, pageId)
+                    : state.annotations[docId]?.[pageId]?.strokes?.[state.annotations[docId]?.[pageId]?.strokes.length - 1];
+                if (!currentStroke) return;
                 // Reset points to just start + current, simulating a straight line preview
                 currentStroke.points = [start, { x: pos.x, y: pos.y }];
                 renderAnnotations(side);
@@ -915,9 +926,13 @@ async function handlePointerUp(e) {
                 if (state.lineMode === 'straight' && (state.annoTool === 'pen' || state.annoTool === 'highlighter')) {
                     const docId = state.view[side].docId;
                     const pageId = state.view[side].pageId;
-                    const strokes = state.annotations[docId]?.[pageId]?.strokes;
-                    if (strokes && strokes.length > 0) {
-                        const lastStroke = strokes[strokes.length - 1];
+                    // ---- BUG FIX (Stroke continuity) ----
+                    // Same reference-stable lookup as in handlePointerMove —
+                    // never assume the active stroke is strokes[len-1].
+                    const lastStroke = (typeof resolveActiveStroke === 'function')
+                        ? resolveActiveStroke(docId, pageId)
+                        : null;
+                    if (lastStroke) {
                         const endPos = getMousePosInViewport(e, side);
                         lastStroke.points = [state.drawing.straightLineStart, { x: endPos.x, y: endPos.y }];
                     }
@@ -926,7 +941,19 @@ async function handlePointerUp(e) {
             }
             else if (state.annoTool !== 'image') {
                 const docId = state.view[side].docId;
-                if(docId) saveAnnotationsToDB(docId, state.annotations[docId]);
+                // ---- BUG FIX (Stroke continuity / Yjs source of truth) ----
+                // The eraser-stroke path used to bulk-REST-save even while the
+                // Yjs room is connected. Per-stroke deletions are already
+                // pushed to Yjs inside deleteStrokeAt(); the extra REST bulk
+                // save both fights the Yjs-merged state (see the comment in
+                // finishAnnotationStroke) and bumps the project revision,
+                // which self-echoes a revision_changed → smartRefreshFromServer
+                // → stale snapshot replacement — the trigger chain behind the
+                // "new stroke connects to the previous stroke" bug.
+                if (docId && !(typeof yjsIsConnected === 'function' &&
+                               yjsIsConnected(getProjectId(), docId))) {
+                    saveAnnotationsToDB(docId, state.annotations[docId]);
+                }
             }
         }
         
@@ -937,6 +964,101 @@ async function handlePointerUp(e) {
     state.drawing.active = false;
     e.target.releasePointerCapture(e.pointerId);
 }
+
+// ---- BUG FIX (touch devices: pause/hold while drawing) ---------------------
+// iPadOS / Android fire pointercancel when the OS takes the pointer over
+// (long-press heuristics after a pause, gesture detection, edge swipes,
+// palm rejection, notification banners, ...). We had NO pointercancel
+// handler, so a cancelled stroke left the gesture state machine half-open:
+// state.drawing.active stayed true, activeStrokeRef stayed set, the Yjs
+// in-flight marker was never cleared and the pointerup cleanup never ran.
+// The next touch could then build on stale state.
+//
+// pointercancel is handled like a pointerup that finalizes (or, for tiny
+// accidental marks, cancels) the current gesture:
+function handlePointerCancel(e) {
+    // Only react to the pointer that owns the active gesture (mirrors the
+    // pointerId guards in handlePointerMove / handlePointerUp).
+    if (e && e.pointerId !== undefined && e.pointerId !== null &&
+        state.drawing.pointerId !== null &&
+        state.drawing.pointerId !== e.pointerId) {
+        return;
+    }
+    // Two-finger takeover already cleaned up (_cancelDrawingAndCleanStroke).
+    if (!state.drawing.active) return;
+
+    const side = state.drawing.startSide;
+
+    // Snip & link: abort the marquee.
+    if (state.appMode === 'snip-link' && state.snip && state.snip.phase === 'drawing') {
+        state.snip.phase = 'idle';
+        state.drawing.active = false;
+        if (side && typeof renderAnnotations === 'function') renderAnnotations(side);
+        return;
+    }
+
+    if (state.appMode === 'annotation') {
+        // Select tool: end any drag/resize/marquee without treating it as a
+        // completed edit. Release Yjs locks + in-flight markers so other
+        // devices are not blocked by a phantom editor.
+        if (state.annoTool === 'select') {
+            if (state.selection.active) {
+                state.selection.mode = 'idle';
+                ['selectedImages', 'selectedTextBoxes', 'selectedStrokes'].forEach(key => {
+                    (state.selection[key] || []).forEach(anno => {
+                        if (!anno || !anno.id) return;
+                        if (typeof yjsReleaseLock === 'function') yjsReleaseLock(anno.id);
+                        if (typeof yjsEndInFlight === 'function') yjsEndInFlight(anno.id);
+                    });
+                });
+                const docId = side && state.view[side] && state.view[side].docId;
+                if (docId && typeof saveAnnotationsToDB === 'function' &&
+                    !(typeof yjsIsConnected === 'function' &&
+                      yjsIsConnected(getProjectId(), docId))) {
+                    saveAnnotationsToDB(docId, state.annotations[docId]);
+                }
+            }
+            state.drawing.active = false;
+            if (side && typeof renderAnnotations === 'function') renderAnnotations(side);
+            return;
+        }
+
+        if (state.annoTool === 'image') {
+            state.drawing.active = false;
+            return;
+        }
+
+        if (state.annoTool === 'text') {
+            state.drawing.active = false;
+            state.drawing.mode = null;
+            return;
+        }
+
+        // pen / highlighter / eraser-pixel: a stroke is in progress.
+        const ref = state.drawing.activeStrokeRef;
+        const isTiny = ref && ref.points && ref.points.length <= 3;
+        if (isTiny) {
+            // The OS took the pointer before real drawing happened — remove
+            // the accidental dot, same semantics as the two-finger takeover.
+            _cancelDrawingAndCleanStroke();
+        } else if (side) {
+            // A real stroke was in progress — keep the partial work and
+            // finalize it exactly like a pointerup would (undo entry, final
+            // Yjs push, in-flight cleanup). This guarantees the NEXT stroke
+            // starts from a completely clean, independent state.
+            finishAnnotationStroke(side);
+            state.drawing.active = false;
+        } else {
+            state.drawing.active = false;
+        }
+        if (side && typeof renderAnnotations === 'function') renderAnnotations(side);
+        return;
+    }
+
+    // Linking / navigation / other modes: just close the gesture.
+    state.drawing.active = false;
+}
+window.handlePointerCancel = handlePointerCancel;
 
 function updatePathVisual() {
     const start = state.drawing.startPoint;
@@ -1069,7 +1191,14 @@ function handleKeyDown(e) {
 const handleScroll = debounce((side) => {
     const viewport = els[side + 'Viewport'];
     state.view[side].scrollTop = viewport.scrollTop;
-    state.lastActiveSide = side;
+    if (state.view[side].docId && state.lastActiveSide !== side) {
+        // Scrolling/panning a PDF makes it the active one — keep the
+        // single header toolbar (tabs + controls) in sync immediately.
+        state.lastActiveSide = side;
+        updateViewportActiveVisuals();
+    } else if (state.lastActiveSide === side) {
+        updateViewportActiveVisuals();
+    }
     saveSettings();
     renderMarkersForView(side);
 }, 200);
@@ -1078,6 +1207,14 @@ function handleViewportZoom(e, side) {
     if (e.ctrlKey) {
         e.preventDefault();
         e.stopPropagation();
+
+        // ---- Single Active-PDF toolbar: zooming a viewport with
+        // ctrl+wheel makes that viewport's PDF the active one, so the
+        // header's zoom % / page controls immediately reflect it. ----
+        if (state.lastActiveSide !== side && state.view[side].docId) {
+            state.lastActiveSide = side;
+            updateViewportActiveVisuals();
+        }
 
         const zoomSpeed = 0.009; 
         const delta = -e.deltaY * zoomSpeed;
@@ -1464,22 +1601,61 @@ function initTwoFingerGestures() {
 // no tiny stray marks are left on the page.
 function _cancelDrawingAndCleanStroke() {
     const side = state.drawing.startSide;
+    // ---- BUG FIX (Stroke continuity) ----
+    // The old code popped strokes[len-1] and leaked state:
+    //   - it could remove the WRONG stroke (positional lookup — the active
+    //     stroke is not guaranteed to be last after an async state
+    //     replacement);
+    //   - state.drawing.activeStrokeRef was left dangling;
+    //   - the Yjs in-flight marker was never ended (the stroke stayed
+    //     "protected" from remote updates forever);
+    //   - the removed stroke was never deleted from the Yjs room, so the
+    //     next page rebuild resurrected it as a ghost stroke.
+    const ref = state.drawing.activeStrokeRef;
     if (side && state.view[side] && state.view[side].docId) {
         const docId = state.view[side].docId;
         const pageId = state.view[side].pageId;
         const pageData = state.annotations[docId] && state.annotations[docId][pageId];
-        if (pageData && pageData.strokes && pageData.strokes.length > 0) {
+
+        // Decide WHICH stroke to remove: the active stroke BY REFERENCE when
+        // available (only if it is still a tiny accidental mark), otherwise
+        // fall back to the last stroke for legacy callers.
+        let removeStroke = null;
+        if (ref) {
+            if (ref.tool !== 'eraser-pixel' &&
+                ref.points && ref.points.length <= 3) {
+                removeStroke = ref;
+            }
+        } else if (pageData && pageData.strokes && pageData.strokes.length > 0) {
             const lastStroke = pageData.strokes[pageData.strokes.length - 1];
-            // Only remove short in-progress strokes (≤ 3 points), not eraser strokes
-            // or intentionally-drawn marks.
             if (lastStroke && lastStroke.tool !== 'eraser-pixel' &&
                 lastStroke.points && lastStroke.points.length <= 3) {
-                pageData.strokes.pop();
-                if (typeof renderAnnotations === 'function') renderAnnotations(side);
+                removeStroke = lastStroke;
             }
         }
+
+        if (removeStroke && pageData && pageData.strokes) {
+            const idx = pageData.strokes.indexOf(removeStroke);
+            if (idx !== -1) pageData.strokes.splice(idx, 1);
+            // Delete from the Yjs room too, or a rebuild will resurrect it.
+            if (removeStroke.id && typeof yjsSetAnnotation === 'function' &&
+                typeof yjsIsConnected === 'function' &&
+                yjsIsConnected(getProjectId(), docId)) {
+                yjsSetAnnotation(docId, pageId, removeStroke.id, null);
+            }
+            if (typeof renderAnnotations === 'function') renderAnnotations(side);
+        }
+        // A longer in-progress stroke (>3 points) is real work — keep it
+        // (same semantics as before), but the bookkeeping below still runs
+        // so the gesture ends cleanly.
     }
+    // End the in-flight marker and clear the drawing bookkeeping (the old
+    // code leaked all of these on the two-finger takeover path).
+    if (ref && ref.id && typeof yjsEndInFlight === 'function') yjsEndInFlight(ref.id);
     state.drawing.active = false;
+    state.drawing.activeStrokeRef = null;
+    state.drawing.activeStrokeTool = null;
+    state.drawing.pointerId = null;
     if (typeof clearSelection === 'function') clearSelection();
 }
 

@@ -1169,11 +1169,85 @@ function startAnnotationStroke(side, x, y) {
     }
 }
 
+/**
+ * ---- BUG FIX (Stroke continuity — "new stroke connects to the previous
+ * stroke") ----
+ * Return the stroke the user is CURRENTLY drawing, guaranteed to be an
+ * element of state.annotations[docId][pageId].strokes.
+ *
+ * The old call sites looked the active stroke up POSITIONALLY
+ * (strokes[strokes.length - 1]). That is only correct while the active
+ * stroke is the LAST element of the array — but several async paths can
+ * WHOLESALE-REPLACE state.annotations[docId] (or the per-page object)
+ * between pointerdown and the next pointermove:
+ *
+ *   - loadAnnotationsFromServer() via smartRefreshFromServer(), triggered
+ *     by revision_changed broadcasts (including the self-echo of our own
+ *     settings saves — see realtime_sync.py: every bump_project_revision
+ *     is broadcast to ALL connections). database.js:300
+ *   - the conflict-modal "reload" path. database.js:117
+ *   - Yjs page rebuilds in _yjsOnUpdate() (these DO carry the in-flight
+ *     stroke, but as a fresh array/object).
+ *
+ * When such a replacement landed mid-stroke, strokes[len-1] silently became
+ * the PREVIOUS stroke, and every subsequent pointermove appended the new
+ * stroke's points INTO it — drawing a straight connecting segment from the
+ * previous stroke's end point (worst on touch devices, where pan/zoom
+ * between strokes fires saveSettings → revision_changed → refresh storms,
+ and strokes are drawn slower with longer pauses).
+ *
+ * The active stroke is therefore tracked BY REFERENCE
+ * (state.drawing.activeStrokeRef, set in startAnnotationStroke). If a
+ * replacement dropped it from the array, it is re-linked BY ID (or
+ * re-appended) so the in-progress stroke can never be merged into another
+ * stroke, and always stays the canonical object the rest of the app sees.
+ */
+function resolveActiveStroke(docId, pageId) {
+    const pageData = state.annotations[docId] && state.annotations[docId][pageId];
+    if (!pageData) return null;
+    if (!pageData.strokes) pageData.strokes = [];
+    const strokes = pageData.strokes;
+
+    const ref = state.drawing.activeStrokeRef;
+    if (!ref) {
+        // No ref (defensive: paths that never set one). Fall back to the old
+        // positional lookup so behavior is unchanged for those paths.
+        return strokes[strokes.length - 1] || null;
+    }
+
+    // Fast path: the reference is still canonical.
+    if (strokes.indexOf(ref) !== -1) return ref;
+
+    // A replacement dropped our live object from the array. Re-link by ID.
+    if (ref.id) {
+        const idx = strokes.findIndex(s => s && s.id === ref.id);
+        if (idx !== -1) {
+            // The replacement carried a CLONE of our stroke (e.g. from the
+            // server snapshot). The live object holds the newest points
+            // (pointermove appends to it directly), so canonicalize back to
+            // the live object.
+            strokes[idx] = ref;
+            return ref;
+        }
+    }
+    // Not present at all (snapshot predates the stroke) — re-append the live
+    // object. This also preserves the "active stroke is last" invariant that
+    // other code paths rely on.
+    strokes.push(ref);
+    return ref;
+}
+
 function continueAnnotationStroke(side, x, y) {
     const docId = state.view[side].docId;
     const pageId = state.view[side].pageId;
-    const strokes = state.annotations[docId][pageId].strokes;
-    const currentStroke = strokes[strokes.length - 1];
+    // ---- BUG FIX (Stroke continuity) ----
+    // Used to be: strokes[strokes.length - 1] — a positional lookup that
+    // silently targeted the PREVIOUS stroke whenever an async state
+    // replacement (smartRefreshFromServer / conflict reload / Yjs rebuild)
+    // landed between pointerdown and this pointermove. See
+    // resolveActiveStroke() above for the full story.
+    const currentStroke = resolveActiveStroke(docId, pageId);
+    if (!currentStroke || !currentStroke.points) return;
 
     currentStroke.points.push({ x, y });
 
@@ -1299,17 +1373,28 @@ function finishAnnotationStroke(side) {
         const s = side;
         const dId = docId;
         const pId = pageId;
+        // ---- BUG FIX (Undo after Yjs rebuild) ----
+        // The Yjs observer rebuilds pages into FRESH objects
+        // ({ ...annoData, id: annoId }). The stroke object captured in this
+        // closure (strokeRef) may therefore no longer be the instance that
+        // lives in state.annotations — a pure `arr.indexOf(strokeRef)`
+        // returns -1, so UNDO silently did nothing and REDO pushed a
+        // duplicate. Look up by id first, fall back to identity.
         const findIdx = () => {
             const arr = (state.annotations[dId] && state.annotations[dId][pId] &&
                           state.annotations[dId][pId].strokes) || [];
-            return arr.indexOf(strokeRef);
+            let idx = arr.indexOf(strokeRef);
+            if (idx === -1 && strokeRef.id) {
+                idx = arr.findIndex(st => st && st.id === strokeRef.id);
+            }
+            return idx;
         };
         pushHistoryAction(`${strokeRef.tool || 'stroke'} add (${s})`,
             // undo
             () => {
                 const arr = (state.annotations[dId] && state.annotations[dId][pId] &&
                               state.annotations[dId][pId].strokes) || [];
-                const idx = arr.indexOf(strokeRef);
+                const idx = findIdx();
                 if (idx !== -1) arr.splice(idx, 1);
                 if (strokeRef.id && typeof yjsSetAnnotation === 'function' &&
                     typeof yjsIsConnected === 'function' &&

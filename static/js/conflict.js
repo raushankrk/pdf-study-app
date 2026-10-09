@@ -320,6 +320,27 @@ async function smartRefreshFromServer(silent = false) {
             docsToRefresh.delete(state.activeComment.docId);
         }
         for (const docId of docsToRefresh) {
+            // ---- BUG FIX (Stroke continuity / Yjs source of truth) ----
+            // When the Yjs collaboration room is connected for this doc, Yjs
+            // is the source of truth for annotations (see YJS_COLLAB.md) and
+            // the REST annotations table is intentionally stale (per-stroke
+            // REST saves are bypassed while Yjs is connected). Replacing the
+            // in-memory state with the stale REST snapshot used to:
+            //   (a) delete every stroke drawn since the Yjs session started
+            //       (they only exist in the CRDT), and
+            //   (b) orphan the stroke being drawn RIGHT NOW — the next
+            //       pointermove then appended its points into the previous
+            //       stroke: the "new stroke connects to the previous stroke"
+            //       bug (worst on touch devices, where pan/zoom between
+            //       strokes fires saveSettings → revision_changed
+            //       self-echoes → this refresh lands mid-stroke).
+            // Yjs keeps syncing through its own WebSocket; we simply stop
+            // clobbering it with legacy REST data. Non-Yjs (fallback) docs
+            // still refresh normally below.
+            if (typeof yjsIsConnected === 'function' &&
+                yjsIsConnected(getProjectId(), docId)) {
+                continue;
+            }
             try {
                 await loadAnnotationsFromServer(docId);
             } catch (err) {

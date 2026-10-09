@@ -282,6 +282,17 @@ async function renderPage(side) {
         renderMarkersForView(side);
         renderAnnotations(side);
         renderTextLayer(side);
+
+        // ---- Single Active-PDF toolbar: keep the header in sync ----
+        // renderPage() is reached by every doc-open / page-change path
+        // (setActiveDocument, navigatePage, jumpToPage, slider, insert/
+        // delete page) — some of them set state.lastActiveSide without any
+        // pointer interaction (e.g. opening a file from the explorer), so
+        // refresh the A/B tab highlight + controls visibility here.
+        // Idempotent + cheap; also fixes the previously stale viewport ring.
+        if (state.lastActiveSide === side) {
+            updateViewportActiveVisuals();
+        }
     } catch (err) {
         console.error("Error rendering page:", err);
     }
