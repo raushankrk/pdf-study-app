@@ -38,7 +38,7 @@ assert.deepStrictEqual = (a, b, msg) => {
 };
 
 // Previously shipped cache-busting strings — the version must keep moving.
-const SHIPPED_CSS_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14'];
+const SHIPPED_CSS_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'ftorient-v20'];
 
 // ---------------------------------------------------------------------------
 // DOM stubs

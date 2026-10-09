@@ -56,8 +56,8 @@ assert.deepStrictEqual = (a, b, msg) => {
 // Version chain — ftorient-v20 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19'];
-const CURRENT_VERSION = 'ftorient-v20';
+    'floattools-v19', 'ftorient-v20'];
+const CURRENT_VERSION = 'ftsize-v21';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as test_float_toolbar.js)
@@ -344,11 +344,14 @@ test('3.2 groups stand up: their buttons stack in a centered column', () => {
     assert(b.includes('align-items: center'), 'buttons center in the rail');
 });
 
-test('3.3 separators become horizontal hairlines; slider stretches to the rail', () => {
+test('3.3 separators become horizontal hairlines; no inline slider in the rail', () => {
     const sep = cssBlock(css, '#float-toolbar.ft-vertical .w-px');
     assert(sep.includes('height: 1px'), 'separator must be a horizontal hairline');
-    const slider = cssBlock(css, '#float-toolbar.ft-vertical #thickness-picker');
-    assert(slider.includes('min-width: 64px'), 'slider must stay usable in the rail');
+    // ftsize-v21: the thickness slider moved into the floating size menu —
+    // the rail must no longer carry (or style) an inline slider.
+    assert(!css.includes('#thickness-picker'), 'inline slider rule must be gone from the CSS');
+    assert(!html.includes('id="thickness-picker"'), 'slider input must be gone from the markup');
+    assert(html.includes('id="tool-size-menu"'), 'size flyout shell must exist');
 });
 
 test('3.4 grip + toggle center on the rail', () => {

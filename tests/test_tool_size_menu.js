@@ -74,8 +74,8 @@ const eventsSrc = fs.readFileSync(EVENTS_JS, 'utf8');
 // Version chain — ftsize-v21 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+    'floattools-v19', 'ftorient-v20'];
+const CURRENT_VERSION = 'ftsize-v21';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as the sibling suites)
@@ -257,7 +257,7 @@ function makeSizeMenuSandbox(opts = {}) {
     const ids = ['tool-size-menu', 'tsm-title', 'tsm-value', 'tsm-options', 'float-toolbar',
      'tool-pen', 'tool-highlighter', 'tool-eraser-pixel', 'tool-eraser-stroke',
      'tool-select', 'tool-text', 'tool-image',
-     'pen-customization', 'tool-line-mode'];
+     'pen-customization', 'pen-customization-sep', 'tool-line-mode'];
     const nodes = {};
     ids.forEach(id => {
         nodes[id] = makeNode('div', rects[id]);
@@ -304,10 +304,9 @@ function makeSizeMenuSandbox(opts = {}) {
         console,
     };
     // Extra DOM surface for the REAL setAnnoTool (loaded on demand by the
-    // integration tests): body classes + the image input. (The colorPicker
-    // element stub is gone with the native input itself — ipadcolor-v22.)
+    // integration tests): body classes + the color picker element.
     sb.document.body = { classList: makeClassSync() };
-    sb.els = { imageInput: makeNode('input') };
+    sb.els = { colorPicker: makeNode('input'), imageInput: makeNode('input') };
     vm.createContext(sb);
     // Load the REAL toolSettingsKeyFor helper from utils.js — in the browser
     // it is a prerequisite of sizemenu.js (script order) and the eraser
@@ -336,25 +335,24 @@ function dispatchPointerdown(sb, target) {
 }
 
 // ===============================================================
-console.log(`\nSuite 1 — cache versioning (${CURRENT_VERSION})`);
+console.log('\nSuite 1 — cache versioning (ftsize-v21)');
 // ===============================================================
 
-test(`1.1 CSS link carries ${CURRENT_VERSION}`, () => {
+test('1.1 CSS link carries ftsize-v21', () => {
     const m = html.match(/<link rel="stylesheet" href="\/css\/style\.css\?v=([^"]+)">/);
     assert(m, 'CSS link not found');
     assert.strictEqual(m[1], CURRENT_VERSION, `CSS version must be ${CURRENT_VERSION}`);
 });
 
-test(`1.2 every editor script tag carries ${CURRENT_VERSION}, incl. the NEW colormenu.js`, () => {
+test('1.2 every editor script tag carries ftsize-v21, incl. the NEW sizemenu.js', () => {
     const tags = html.match(/<script src="\/js\/[^"]+"><\/script>/g) || [];
     assert(tags.length >= 20, `expected >= 20 script tags, found ${tags.length}`);
     tags.forEach(t => assert(t.includes(`?v=${CURRENT_VERSION}`), `stale script tag: ${t}`));
     assert(tags.some(t => t.includes('/js/sizemenu.js?')), 'sizemenu.js must be tagged');
-    assert(tags.some(t => t.includes('/js/colormenu.js?')), 'colormenu.js must be tagged');
     assert(tags.some(t => t.includes('/js/floattools.js?')), 'floattools.js must still be tagged');
 });
 
-test(`1.3 header chip shows ${CURRENT_VERSION}`, () => {
+test('1.3 header chip shows ftsize-v21', () => {
     assert(html.includes(`>${CURRENT_VERSION}</span>`), 'version chip missing');
 });
 
@@ -427,7 +425,7 @@ test('3.1 #tool-size-menu: body-level fixed card, liquid glass, above toolbar / 
     const b = cssBlock(css, '#tool-size-menu');
     assert(b, 'flyout CSS block missing');
     assert(b.includes('position: fixed'), 'must be viewport-positioned');
-    assert(b.includes('z-index: 1210'), 'transient popover: above the toolbar (1150) AND the sidebar (1200); min-btn (1250) still wins');
+    assert(b.includes('z-index: 1160'), 'must sit above the toolbar (1150) and below the sidebar (1200)');
     assert(b.includes('backdrop-filter'), 'liquid glass needs backdrop-filter');
     assert(b.includes('pointer-events: auto'), 'must absorb its own clicks');
     assert(b.includes('overscroll-behavior: contain'), 'no scroll chaining to the PDF');
