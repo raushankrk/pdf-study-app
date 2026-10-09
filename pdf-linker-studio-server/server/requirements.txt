@@ -1,0 +1,23 @@
+# Server-side dependencies for PDF Linker Studio.
+# Install with: pip install -r requirements.txt
+
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+
+# Real-time collaboration (Yjs CRDT over WebSocket).
+# y-py is the Python port of the Yjs CRDT (NOTE: the PyPI package name is
+# `y-py` with a HYPHEN, not `ypy` — there's an unrelated abandoned package
+# called `ypy` on PyPI that only has versions 0.1 / 0.2). ypy-websocket is
+# the WebSocket server that y-websocket (frontend) talks to. Updates are
+# persisted into the main SQLite database via a custom SQLiteYStore subclass.
+y-py>=0.6.0
+ypy-websocket>=0.12.0
+aiosqlite>=0.19.0
+anyio>=4.0.0
+
+# Optional but strongly recommended: PyMuPDF for fast server-side PDF text
+# extraction + thumbnail generation during indexing. Without it, indexing will
+# be severely limited (text extraction will not work for AI/RAG search).
+PyMuPDF>=1.23.0
