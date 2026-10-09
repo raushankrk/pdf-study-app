@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=floattools-v19">
+    <link rel="stylesheet" href="/css/style.css?v=ftorient-v20">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -73,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable floating annotation toolbar">floattools-v19</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable floating annotation toolbar (horizontal / vertical)">ftorient-v20</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -440,6 +440,10 @@
                    * Drag the grip (#ft-drag-handle) to move it smoothly
                      anywhere (translate3d + rAF, js/floattools.js); double-tap
                      the grip to re-dock it. The position persists.
+                   * ORIENTATION: the palette is a horizontal ribbon by
+                     default; #ft-orient-toggle (next to the grip) stands it
+                     up as a vertical rail and back. The icon always shows
+                     the orientation you will GET; the choice persists.
                    * All button IDs are IDENTICAL to the old header ones, so
                      setAppMode()/setAnnoTool()/keyboard shortcuts keep working
                      unchanged (business logic lives in ui.js — untouched).
@@ -452,6 +456,16 @@
                         title="Drag to move the toolbar anywhere — double-tap to re-dock it"
                         aria-label="Move annotation toolbar (drag; double-tap re-docks)">
                     <i class="fa-solid fa-up-down-left-right"></i>
+                </button>
+
+                <!-- Orientation toggle: horizontal ribbon ⇄ vertical rail.
+                     floattools.js swaps the icon/title to advertise the
+                     orientation you will GET (default state = horizontal,
+                     so the button offers vertical: up-down arrows). -->
+                <button id="ft-orient-toggle"
+                        title="Switch toolbar to vertical"
+                        aria-label="Switch annotation toolbar to vertical">
+                    <i class="fa-solid fa-arrows-up-down"></i>
                 </button>
 
                 <!-- App Modes (moved from the header verbatim — same IDs) -->
@@ -865,28 +879,28 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=floattools-v19"></script>
-    <script src="/js/config.js?v=floattools-v19"></script>
-    <script src="/js/api.js?v=floattools-v19"></script>
-    <script src="/js/state.js?v=floattools-v19"></script>
-    <script src="/js/database.js?v=floattools-v19"></script>
-    <script src="/js/ui.js?v=floattools-v19"></script>
-    <script src="/js/floattools.js?v=floattools-v19"></script>
-    <script src="/js/ai.js?v=floattools-v19"></script>
-    <script src="/js/pdf.js?v=floattools-v19"></script>
-    <script src="/js/search.js?v=floattools-v19"></script>
-    <script src="/js/annotations.js?v=floattools-v19"></script>
-    <script src="/js/links.js?v=floattools-v19"></script>
+    <script src="/js/utils.js?v=ftorient-v20"></script>
+    <script src="/js/config.js?v=ftorient-v20"></script>
+    <script src="/js/api.js?v=ftorient-v20"></script>
+    <script src="/js/state.js?v=ftorient-v20"></script>
+    <script src="/js/database.js?v=ftorient-v20"></script>
+    <script src="/js/ui.js?v=ftorient-v20"></script>
+    <script src="/js/floattools.js?v=ftorient-v20"></script>
+    <script src="/js/ai.js?v=ftorient-v20"></script>
+    <script src="/js/pdf.js?v=ftorient-v20"></script>
+    <script src="/js/search.js?v=ftorient-v20"></script>
+    <script src="/js/annotations.js?v=ftorient-v20"></script>
+    <script src="/js/links.js?v=ftorient-v20"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=floattools-v19"></script>
-    <script src="/js/conflict.js?v=floattools-v19"></script>
+    <script src="/js/undo.js?v=ftorient-v20"></script>
+    <script src="/js/conflict.js?v=ftorient-v20"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=floattools-v19"></script>
+    <script src="/js/yjs-collab.js?v=ftorient-v20"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=floattools-v19"></script>
-    <script src="/js/filemanager.js?v=floattools-v19"></script>
-    <script src="/js/events.js?v=floattools-v19"></script>
-    <script src="/js/app.js?v=floattools-v19"></script>
+    <script src="/js/folders.js?v=ftorient-v20"></script>
+    <script src="/js/filemanager.js?v=ftorient-v20"></script>
+    <script src="/js/events.js?v=ftorient-v20"></script>
+    <script src="/js/app.js?v=ftorient-v20"></script>
 
 </body>
 </html>

@@ -700,6 +700,74 @@ body.ft-dragging { user-select: none; -webkit-user-select: none; }
 #ft-drag-handle:hover { background: #ffffff; color: #4f46e5; }
 body.ft-dragging #ft-drag-handle { cursor: grabbing; color: #4f46e5; border-style: solid; }
 
+/* Orientation toggle (#ft-orient-toggle): flips the palette between the
+   horizontal ribbon (default) and a vertical rail — js/floattools.js
+   setFloatToolbarOrientation(). Sits right after the grip; its icon ALWAYS
+   advertises the orientation you will GET by clicking it (up-down arrows in
+   the ribbon, left-right arrows in the rail). Solid border distinguishes it
+   from the dashed "grab me" grip. */
+#ft-orient-toggle {
+    pointer-events: auto;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid #c3cad6;
+    background: rgba(255, 255, 255, 0.85);
+    color: #6b7280;
+    font-size: 0.6rem;
+    cursor: pointer;
+    touch-action: manipulation;     /* taps toggle; the grip owns gestures */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+#ft-orient-toggle:hover { background: #ffffff; color: #4f46e5; }
+
+/* ---- Vertical orientation (#float-toolbar.ft-vertical) --------------------
+   The ribbon stands up as a slim single-column rail: the groups stack, every
+   group's buttons stack too, the separators turn into short horizontal
+   hairlines and the thickness slider stretches to the rail width so it stays
+   usable. The position engine (floattools.js) is orientation-agnostic: the
+   default spot is orientation-specific (ribbon = top-center, rail = flush
+   left-center like a classic toolbox) and a dragged position is re-clamped
+   the moment the class flips (measurement is synchronous) and afterwards by
+   the existing ResizeObserver (pen options / rail width changes). */
+#float-toolbar.ft-vertical {
+    flex-direction: column;
+    align-items: stretch;           /* groups span the full rail width */
+    flex-wrap: nowrap;
+    max-width: none;
+    max-height: calc(100% - 20px);  /* never taller than the workspace */
+    overflow-x: hidden;
+    overflow-y: auto;               /* extremely short screens scroll, not clip */
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
+}
+#float-toolbar.ft-vertical::-webkit-scrollbar { width: 6px; }
+#float-toolbar.ft-vertical::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.35);
+    border-radius: 9999px;
+}
+#float-toolbar.ft-vertical::-webkit-scrollbar-track { background: transparent; }
+/* Every tool group stands up: its buttons stack in one centered column
+   (mode group, draw-tools group AND the pen-options group, which ui.js
+   reveals by adding the flex class). */
+#float-toolbar.ft-vertical > div.flex { flex-direction: column; align-items: center; }
+/* Group separators (vertical 1px slivers in the ribbon) become short,
+   centered horizontal hairlines between the stacked sections. */
+#float-toolbar.ft-vertical .w-px { width: 1.5rem; height: 1px; margin: 3px auto; }
+/* Thickness slider: stretch to the rail width (64px min keeps it usable and
+   defines the rail width while the pen options are visible). */
+#float-toolbar.ft-vertical #thickness-picker { width: 100%; min-width: 64px; }
+/* The two round meta buttons (grip + orientation toggle) center on the rail
+   instead of hugging the left edge (they have a fixed width, so the bar's
+   align-items: stretch leaves them at cross-start without this). */
+#float-toolbar.ft-vertical > #ft-drag-handle,
+#float-toolbar.ft-vertical > #ft-orient-toggle { align-self: center; }
+
 /* --- Tool Cursor Styles --- */
 #tool-cursor {
     font-size: 24px;
@@ -2177,6 +2245,7 @@ body > header > * {
        padding (the tool buttons themselves already grow to 40px via the
        .tool-btn touch rule above). */
     #ft-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
+    #ft-orient-toggle { width: 34px; height: 34px; font-size: 0.78rem; }
     #float-toolbar { gap: 8px; padding: 7px 8px; border-radius: 16px; }
 
     /* (Brand text + Dashboard label + PDF icon are already hidden on ALL

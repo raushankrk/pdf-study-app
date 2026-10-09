@@ -232,6 +232,9 @@ async function saveSettings() {
         // workspace CSS px). null = never dragged → the bar sits top-center
         // and re-centers on resize until the first drag.
         floatToolbarPos: state.floatToolbarPos || null,
+        // Toolbar layout: 'horizontal' ribbon or 'vertical' rail (#ft-orient-
+        // toggle flips it). Normalized so only the two exact strings persist.
+        floatToolbarOrientation: state.floatToolbarOrientation === 'vertical' ? 'vertical' : 'horizontal',
         aiSettings: state.aiSettings,
         // File-explorer persistence
         currentFolderId: state.currentFolderId || ROOT_FOLDER_ID,

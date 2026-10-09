@@ -1017,3 +1017,132 @@ scripts/e2e-deps, unrelated.) `node --check` clean; CSS braces balanced.
   persistence intact; when the two layers overlap the sidebar (z 1200)
   wins and both remain draggable.
 * Zero page errors (yjs CDN warning = pre-existing offline sandbox).
+
+---
+
+# Feature — Toolbar orientation toggle: horizontal ribbon ⇄ vertical rail (ftorient-v20)
+
+## Request
+> "the orientation of annotation tool is horizontal better to have both
+> option vertical or horizontal so that user have flexibility"
+
+The floating annotation toolbar shipped as a horizontal ribbon only. The
+user wants BOTH orientations with a switch, so the palette can stand up as
+a slim vertical rail (classic toolbox, great along a page edge) or lie
+flat as the familiar ribbon.
+
+## What changed
+
+* **index.html** — new `#ft-orient-toggle` button sits in the bar right
+  after the drag grip (before the tool groups). Its initial icon
+  (`fa-arrows-up-down`) + title advertise the VERTICAL orientation the
+  first click produces; `js/floattools.js` swaps icon/title/aria-label on
+  every flip so the button always shows what the NEXT click yields.
+  Aside doc comment extended. Cache version → `ftorient-v20` on the CSS
+  link, all script tags and the header chip (chip title now mentions the
+  horizontal/vertical flexibility).
+* **css/style.css** — new `#float-toolbar.ft-vertical` block: the bar
+  becomes a single-column rail (`flex-direction: column`, no wrap, ribbon
+  max-width lifted). Every group stands up too (`> div.flex` → column,
+  buttons centered), the group separators become short centered horizontal
+  hairlines, the thickness slider stretches (`width: 100%`, min 64px) so
+  it stays usable, and the two round meta buttons (grip + toggle) center
+  on the rail. `max-height: calc(100% - 20px)` + `overflow-y: auto` keep a
+  rail that is taller than a short workspace scrollable instead of clipped
+  (thin translucent scrollbar styling included). New `#ft-orient-toggle`
+  rules mirror the grip's round button styling (solid border to
+  distinguish it from the dashed "grab me" grip; `touch-action:
+  manipulation` — the grip alone owns pointer gestures); the touch media
+  block grows both to 34px. The horizontal ribbon base rules are untouched.
+* **js/floattools.js** — orientation engine (still position-ONLY, zero
+  tool business logic):
+  - `setFloatToolbarOrientation(orient, opts)` — strict validation
+    ('horizontal' | 'vertical' only; anything else is rejected without
+    side effects), flips the `ft-vertical` class, updates
+    `state.floatToolbarOrientation`, syncs the toggle button
+    icon/title/aria, then RE-APPLIES the position: measurement right after
+    `classList.toggle` is synchronous, so the new footprint is what gets
+    clamped. Persists via `saveSettings()` unless `opts.skipSave` (boot).
+  - `toggleFloatToolbarOrientation()` — the button's flip helper.
+  - `floatToolbarDefaultPos()` is now orientation-aware: the ribbon still
+    docks top-center (y=44, below the minimize buttons); the rail docks
+    flush LEFT-CENTER like a classic toolbox (x=8, vertically centered —
+    left, not right, because the liquid-glass sidebar owns the top-right
+    corner). Double-tap re-dock uses the same default, so it re-docks
+    correctly in either orientation.
+  - `initFloatToolbarDrag()` binds the toggle's click and applies the
+    persisted orientation (skipSave) BEFORE wiring the ResizeObserver, so
+    the observer baseline is the restored footprint.
+  - Dragged positions are orientation-INDEPENDENT: flipping keeps the
+    personalized spot and re-clamps it to the new footprint; the saved
+    {x,y} itself is never overwritten by a clamp.
+* **js/state.js** — `floatToolbarOrientation: 'horizontal'` default.
+* **js/database.js** — persists it, normalized to the two exact strings.
+* **js/app.js** — boot restore with strict validation (only the exact
+  string 'vertical' opts into the rail; old settings blobs predate the key
+  → horizontal default). Applied by `initFloatToolbarDrag` (single
+  application point, no boot-time settings write).
+
+## Files
+* static/index.html (toggle button + aside comment + version bump)
+* static/css/style.css (#ft-orient-toggle rules + #float-toolbar.ft-vertical rail section + touch override)
+* static/js/floattools.js (orientation engine + orientation-aware default + init wiring)
+* static/js/state.js (+floatToolbarOrientation), static/js/database.js
+  (persist), static/js/app.js (boot restore)
+
+## Tests
+NEW tests/test_toolbar_orientation.js — 34 tests / 5 suites: versioning
+(bump + full retirement of floattools-v19 from shipped files), HTML
+structure (toggle once, grip → toggle → tools order, initial icon offers
+vertical), CSS contract (rail flip rules, stacked groups, hairline
+separators, slider stretch, meta-button centering, tap-safe toggle,
+touch-media growth, ribbon base untouched), 14 VM engine tests (class +
+state + save on flip, vertical default left-center math, horizontal
+default unchanged, invalid values rejected without side effects, both-way
+toggle persistence, dragged position survives the flip re-clamped,
+skipSave boot purity, next-orientation icon/title/aria advertising, init
+restore without saving + RO wiring, click binding, vertical drag
+persistence, vertical double-tap re-dock, RO re-apply after orientation-
+driven resize incl. short-workspace clamp), wiring & separation (state/
+database/app contracts, boot order, position-only engine, island guards).
+The shared harness in test_float_toolbar.js was upgraded: extractFunction
+now walks the parameter list before counting body braces (default-value
+`opts = {}` used to truncate extraction) and skips `//` comments
+(apostrophes in comments used to desync the scanner); makeEl grew a
+classList. Version constants updated in test_float_toolbar.js,
+test_float_sidebar.js, test_liquid_glass.js, test_float_drag.js
+(SHIPPED += floattools-v19).
+
+**Test battery** (all green): toolbar_orientation 34 (NEW), float_toolbar
+49, float_drag 44, float_sidebar 38, liquid_glass 19, position_resume 18,
+tag_rail 21, minimize_panel 30, active_pdf_toolbar 23, touch_slider_space
+8, frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5 — 322 total.
+(test_e2e_stroke_race remains excluded: pre-existing missing yjs module in
+scripts/e2e-deps, unrelated.) `node --check` clean; CSS braces balanced
+(486/486).
+
+## Live verification (agent-browser, real server + test project)
+* Docked default horizontal: `translate3d(209px, 44px, 0px)` on the 1228px
+  workspace (bar 811×64 → perfectly centered); chip ftorient-v20; toggle
+  icon `fa-arrows-up-down`, title "Switch toolbar to vertical".
+* Click toggle → `ft-vertical` class, footprint 163×501, rail placed at
+  `translate3d(8px, 10px, 0px)` — x=8 flush left, y=10 = (521−501)/2
+  exactly centered; icon flipped to `fa-arrows-left-right`, title "Switch
+  toolbar to horizontal"; state vertical; left viewport rect + scrollTop
+  pixel-identical before/after (canvas untouched).
+* Vertical rail works: tool clicks switch (`state.annoTool` follows), pen
+  options render inside the rail (rail content taller than the capped
+  max-height scrolls — overflow-y: auto), elementFromPoint mid-rail hits
+  toolbar buttons (click absorption intact), rail width driven by the
+  stretched thickness slider.
+* REAL mouse drag of the rail (+150,+5) → `translate3d(158px, 15px, 0px)`
+  — EXACT 1:1 — persisted; drag far down → y clamped flush to 20
+  (= 521−501) and still persisted; reload restored orientation vertical +
+  position (154,20) + icon/title state (and the document + scroll from the
+  position-resume feature, untouched).
+* Toggle back → horizontal ribbon at the kept position re-clamped for the
+  wider footprint; icon/title offer vertical again; double-tap re-dock
+  glides the ribbon back to the default top-center (209,44), savedPos null.
+* Zero page errors (yjs CDN warning = pre-existing offline sandbox).
+* Screenshots: scripts/ori_vertical_rail.png (vertical rail with pen
+  active), scripts/ori_horizontal_final.png (ribbon re-docked).

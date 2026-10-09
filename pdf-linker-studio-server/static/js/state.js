@@ -126,6 +126,10 @@ const state = {
     // settings). null = not personalized: the bar sits top-center (and
     // re-centers on resize) until the first drag.
     floatToolbarPos: null,
+    // Toolbar LAYOUT: 'horizontal' ribbon (default) or 'vertical' rail —
+    // flipped by the #ft-orient-toggle button (js/floattools.js) and
+    // persisted via settings so it survives reloads.
+    floatToolbarOrientation: 'horizontal',
     drawing: {
         active: false,
         startSide: null,

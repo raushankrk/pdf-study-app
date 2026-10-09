@@ -52,10 +52,11 @@ assert.deepStrictEqual = (a, b, msg) => {
     if (sa !== sbb) throw new Error(msg || `expected ${sbb}, got ${sa}`);
 };
 
-// Version chain — floattools-v19 must be new (never reuse a shipped string).
+// Version chain — ftorient-v20 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
-    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18'];
-const CURRENT_VERSION = 'floattools-v19';
+    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
+    'floattools-v19'];
+const CURRENT_VERSION = 'ftorient-v20';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -64,16 +65,34 @@ function extractFunction(source, name) {
     const marker = `function ${name}(`;
     const start = source.indexOf(marker);
     if (start === -1) throw new Error(`function ${name} not found`);
-    let i = source.indexOf('{', start);
-    let depth = 0, inStr = null;
+    // Walk the PARAMETER LIST first, then count body braces: the first `{`
+    // after the marker may be a default-value object literal (`opts = {}`),
+    // not the function body. String + comment states are tracked so an
+    // apostrophe inside a // comment (e.g. "the sidebar's default dock")
+    // cannot flip the scanner into string mode and desync the counting.
+    let i = start + marker.length - 1;   // positioned at the '(' of the params
+    let depth = 0, inStr = null, inParams = true;
     for (; i < source.length; i++) {
         const c = source[i];
+        const next = source[i + 1];
+        if (inStr === '__line__') { if (c === '\n') inStr = null; continue; }
+        if (inStr === '__block__') {
+            if (c === '*' && next === '/') { i++; inStr = null; }
+            continue;
+        }
         if (inStr) {
             if (c === '\\') { i++; continue; }
             if (c === inStr) inStr = null;
             continue;
         }
+        if (c === '/' && next === '/') { inStr = '__line__'; continue; }
+        if (c === '/' && next === '*') { inStr = '__block__'; continue; }
         if (c === "'" || c === '"' || c === '`') { inStr = c; continue; }
+        if (inParams) {
+            if (c === '(') depth++;
+            else if (c === ')') { depth--; if (depth === 0) inParams = false; }
+            continue;
+        }
         if (c === '{') depth++;
         else if (c === '}') { depth--; if (depth === 0) return source.slice(start, i + 1); }
     }
@@ -117,6 +136,7 @@ function makeEl(rect) {
         rect,
         style: {},
         offsetWidth: 10,
+        classList: makeClassSet(),   // ft-vertical class + RO-driven layout
     };
     el.getBoundingClientRect = () => ({ left: 0, top: 0, ...el.rect });
     el.addEventListener = (t, f) => { (listeners[t] = listeners[t] || []).push(f); };
@@ -169,7 +189,8 @@ function makeToolbarSandbox(opts = {}) {
     const fns = ['floatToolbarDefaultPos', 'clampFloatToolbarPos', 'ftResolvePos',
         'ftWriteTransform', 'applyFloatToolbarPos', 'moveFloatToolbarTo',
         'beginFloatToolbarDrag', 'moveFloatToolbarDrag', 'endFloatToolbarDrag',
-        'resetFloatToolbarPos', 'handleFloatToolbarResize', 'initFloatToolbarDrag'];
+        'resetFloatToolbarPos', 'handleFloatToolbarResize', 'initFloatToolbarDrag',
+        'setFloatToolbarOrientation', 'toggleFloatToolbarOrientation'];
     fns.forEach(fn => vm.runInContext(extractFunction(src, fn), sb, { filename: `floattools.js#${fn}` }));
     sb.__els = els;
     sb.__grip = grip;

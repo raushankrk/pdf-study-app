@@ -53,11 +53,11 @@ assert.deepStrictEqual = (a, b, msg) => {
     if (sa !== sbb) throw new Error(msg || `expected ${sbb}, got ${sa}`);
 };
 
-// Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
+// Version chain — ftorient-v20 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+    'floattools-v19'];
+const CURRENT_VERSION = 'ftorient-v20';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as test_float_toolbar.js)
@@ -344,21 +344,11 @@ test('3.2 groups stand up: their buttons stack in a centered column', () => {
     assert(b.includes('align-items: center'), 'buttons center in the rail');
 });
 
-test('3.3 no separators in the rail; no inline slider in the rail', () => {
-    // ipadcolor-v22: the tool separators are GONE (user request — they cost
-    // horizontal space in the ribbon and vertical height in the rail), so
-    // the vertical-mode hairline restyle rule must be gone too. cssBlock
-    // THROWS on a missing selector, so absence is asserted via try/catch.
-    let sepBlock = null;
-    try { sepBlock = cssBlock(css, '#float-toolbar.ft-vertical .w-px'); }
-    catch (_) { sepBlock = null; }
-    assert(sepBlock === null, 'vertical .w-px hairline rule must be gone from the CSS');
-    assert(!/#float-toolbar[^{]*\.w-px/.test(css), 'no toolbar separator styling may remain');
-    // ftsize-v21: the thickness slider moved into the floating size menu —
-    // the rail must no longer carry (or style) an inline slider.
-    assert(!css.includes('#thickness-picker'), 'inline slider rule must be gone from the CSS');
-    assert(!html.includes('id="thickness-picker"'), 'slider input must be gone from the markup');
-    assert(html.includes('id="tool-size-menu"'), 'size flyout shell must exist');
+test('3.3 separators become horizontal hairlines; slider stretches to the rail', () => {
+    const sep = cssBlock(css, '#float-toolbar.ft-vertical .w-px');
+    assert(sep.includes('height: 1px'), 'separator must be a horizontal hairline');
+    const slider = cssBlock(css, '#float-toolbar.ft-vertical #thickness-picker');
+    assert(slider.includes('min-width: 64px'), 'slider must stay usable in the rail');
 });
 
 test('3.4 grip + toggle center on the rail', () => {

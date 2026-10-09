@@ -45,8 +45,8 @@ assert.strictEqual = (a, b, msg) => { if (a !== b) throw new Error(msg || `expec
 assert.ok = assert;
 
 // Previously shipped cache-busting strings — the version must keep moving.
-const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18'];
-const CURRENT_VERSION = 'floattools-v19';
+const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18', 'floattools-v19'];
+const CURRENT_VERSION = 'ftorient-v20';
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -17,15 +17,29 @@
 //     transition OFF during a drag for zero lag.
 //
 // Positioning contract:
-//   * state.floatToolbarPos === null → docked at the DEFAULT spot: top-center
-//     of the workspace, just below the minimize-button row (the closest
-//     floating equivalent of the old header position). This stays "dock-like"
-//     — it re-centers on workspace/toolbar size changes — until the user
-//     drags the bar at least once.
+//   * state.floatToolbarPos === null → docked at the DEFAULT spot. The spot
+//     is ORIENTATION-SPECIFIC: the horizontal ribbon docks top-center (just
+//     below the minimize-button row — the closest floating equivalent of the
+//     old header position), the vertical rail docks flush left-center like a
+//     classic toolbox (the liquid-glass sidebar owns the top-right corner).
+//     Either default stays "dock-like" — it re-centers on workspace/toolbar
+//     size changes — until the user drags the bar at least once.
 //   * After a drag, state.floatToolbarPos = { x, y } is persisted via
-//     saveSettings() and restored (validated + re-clamped) on boot.
+//     saveSettings() and restored (validated + re-clamped) on boot. The
+//     position is orientation-independent: switching orientation keeps the
+//     personalized spot and re-clamps it to fit the new footprint.
 //   * The bar is always clamped fully inside #workspace-main, so the grip can
 //     never be lost off-screen.
+//
+// Orientation contract (state.floatToolbarOrientation 'horizontal'|'vertical'):
+//   * #ft-orient-toggle flips between the horizontal ribbon and the vertical
+//     rail (#float-toolbar.ft-vertical class). Its icon/title always advertise
+//     the orientation the NEXT click will produce.
+//   * The class flip is applied synchronously, then the position is
+//     re-applied (default → orientation-specific re-center; dragged →
+//     re-clamp) — measurement right after classList.toggle already sees the
+//     new layout. The choice persists via saveSettings() and is restored on
+//     boot by initFloatToolbarDrag() (skipSave: boot must not dirty settings).
 //
 // The toolbar is ALWAYS visible (it has no open/close toggle), so applying a
 // position never has to wait for a visibility class.
@@ -38,15 +52,25 @@ let ftRafPending = false;
 let ftLastGripTap = 0;          // double-tap-to-re-dock detection (works for touch too)
 let ftLastGripTapXY = { x: 0, y: 0 };
 
-// Default resting position: horizontally centered near the top of the
-// workspace. y=44 clears the floating minimize buttons (top:10px + 26px tall
-// + margin) so the palette never hides them in its docked spot.
+// Default resting position, per orientation: the horizontal ribbon centers
+// near the top of the workspace (y=44 clears the floating minimize buttons —
+// top:10px + 26px tall + margin — so the palette never hides them in its
+// docked spot); the vertical rail docks left-center (see below).
 function floatToolbarDefaultPos() {
     const ws = document.getElementById('workspace-main');
     const tb = document.getElementById('float-toolbar');
     if (!ws || !tb) return { x: 0, y: 0 };
     const wsRect = ws.getBoundingClientRect();
     const tbRect = tb.getBoundingClientRect();
+    // Vertical rail: dock flush left-center like a classic toolbox (small
+    // margin off the left edge; vertically centered). Left, not right — the
+    // floating sidebar's default dock occupies the top-right corner.
+    if (tb.classList && tb.classList.contains('ft-vertical')) {
+        return {
+            x: 8,
+            y: Math.max(0, Math.round((wsRect.height - tbRect.height) / 2)),
+        };
+    }
     return {
         x: Math.max(0, Math.round((wsRect.width - tbRect.width) / 2)),
         y: 44,
@@ -197,12 +221,62 @@ function endFloatToolbarDrag() {
 }
 
 // Double-tap on the grip: forget the dragged position — the bar glides back
-// to its default top-center spot and, being un-personalized again, follows
-// the workspace on resize.
+// to its default spot (top-center ribbon / left-center rail) and, being
+// un-personalized again, follows the workspace on resize.
 function resetFloatToolbarPos() {
     state.floatToolbarPos = null;
     applyFloatToolbarPos();
     saveSettings();
+}
+
+// ---------------------------------------------------------------------------
+// Orientation: horizontal ribbon (default) ⇄ vertical rail. The palette's
+// #ft-orient-toggle button flips between them; the choice persists in the
+// settings blob and is re-applied on boot.
+// ---------------------------------------------------------------------------
+
+// Apply an orientation to the toolbar ('horizontal' | 'vertical'). Unknown
+// values are rejected: boot only ever passes validated input, but a stray
+// call must never corrupt the layout. After flipping the class the position
+// is re-applied — the DEFAULT spot is orientation-specific and a DRAGGED
+// position is re-clamped to fit the new footprint (classList.toggle and
+// getBoundingClientRect are synchronous, so the measurement below already
+// sees the new orientation's layout). opts.skipSave keeps boot-time
+// re-application from dirtying the settings blob.
+function setFloatToolbarOrientation(orient, opts = {}) {
+    if (orient !== 'horizontal' && orient !== 'vertical') return false;
+    const tb = document.getElementById('float-toolbar');
+    if (!tb) return false;
+    tb.classList.toggle('ft-vertical', orient === 'vertical');
+    state.floatToolbarOrientation = orient;
+    // The toggle always advertises the orientation the NEXT click produces:
+    // in the ribbon it offers vertical (up-down arrows), in the rail it
+    // offers horizontal (left-right arrows).
+    const btn = document.getElementById('ft-orient-toggle');
+    if (btn) {
+        const toVertical = orient === 'horizontal';
+        const icon = btn.querySelector ? btn.querySelector('i') : null;
+        if (icon) icon.className = toVertical
+            ? 'fa-solid fa-arrows-up-down'
+            : 'fa-solid fa-arrows-left-right';
+        btn.title = toVertical
+            ? 'Switch toolbar to vertical'
+            : 'Switch toolbar to horizontal';
+        if (btn.setAttribute) {
+            btn.setAttribute('aria-label', toVertical
+                ? 'Switch annotation toolbar to vertical'
+                : 'Switch annotation toolbar to horizontal');
+        }
+    }
+    applyFloatToolbarPos();          // re-center (default) / re-clamp (dragged)
+    if (!opts.skipSave) saveSettings();
+    return true;
+}
+
+// Click handler of #ft-orient-toggle: flip between the two orientations.
+function toggleFloatToolbarOrientation() {
+    return setFloatToolbarOrientation(
+        state.floatToolbarOrientation === 'vertical' ? 'horizontal' : 'vertical');
 }
 
 // Workspace size changes (file sidebar collapse/expand, split resizer, panel
@@ -214,11 +288,19 @@ function handleFloatToolbarResize() {
     applyFloatToolbarPos();
 }
 
-// Bind the grip + size observation. Called once from app.js boot.
+// Bind the grip + orientation toggle + size observation. Called once from
+// app.js boot. The persisted orientation is applied here (state was already
+// validated by app.js; skipSave — boot must not dirty the settings blob),
+// which also places the bar for that orientation BEFORE the observers are
+// wired, so the ResizeObserver baseline is the restored footprint.
 function initFloatToolbarDrag() {
     const grip = document.getElementById('ft-drag-handle');
     if (grip) grip.addEventListener('pointerdown', beginFloatToolbarDrag);
-    applyFloatToolbarPos();   // the toolbar is always visible — place it now
+    const orientBtn = document.getElementById('ft-orient-toggle');
+    if (orientBtn) orientBtn.addEventListener('click', toggleFloatToolbarOrientation);
+    setFloatToolbarOrientation(
+        state.floatToolbarOrientation === 'vertical' ? 'vertical' : 'horizontal',
+        { skipSave: true });
     const ws = document.getElementById('workspace-main');
     const tb = document.getElementById('float-toolbar');
     if (typeof ResizeObserver !== 'undefined' && ws && ws.addEventListener) {

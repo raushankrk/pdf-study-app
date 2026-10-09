@@ -305,6 +305,14 @@ async function init() {
                 } else {
                     state.floatToolbarPos = null;
                 }
+                // Restore the toolbar ORIENTATION ('horizontal' | 'vertical').
+                // Old settings blobs predate this key → the horizontal ribbon
+                // default; only the exact string 'vertical' opts into the
+                // rail. The class + toggle button are applied (without saving)
+                // by initFloatToolbarDrag — the single application point.
+                const savedFtOrient = savedData.settings.floatToolbarOrientation;
+                state.floatToolbarOrientation =
+                    savedFtOrient === 'vertical' ? 'vertical' : 'horizontal';
                 // Restore AI settings
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
