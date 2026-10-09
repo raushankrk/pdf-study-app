@@ -216,6 +216,9 @@ async function saveSettings() {
         // Per-document reading positions (resume on reopen). One small entry
         // per doc; only docs that still exist are restored on boot.
         lastPositions: state.lastPositions || {},
+        // Tagged PDFs (quick-switch rail): keep only docs that still exist.
+        taggedDocIds: (Array.isArray(state.taggedDocIds) ? state.taggedDocIds : [])
+            .filter(id => state.documents[id]),
         leftSidebarCollapsed: document.body.classList.contains('left-sidebar-collapsed'),
         aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed'),
         aiSettings: state.aiSettings,

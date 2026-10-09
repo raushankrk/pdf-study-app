@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=posresume-v14">
+    <link rel="stylesheet" href="/css/style.css?v=tagrail-v15">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -423,6 +423,12 @@
                 </button>
             </div>
         </aside>
+
+        <!-- Tag rail (quick-switch mini sidebar): visible ONLY while the left
+             sidebar is collapsed. Shows one small colored chip per TAGGED PDF
+             (first 3 letters of the name) — one tap switches between the
+             most-used PDFs. Filled by renderTagRail() (filemanager.js). -->
+        <aside id="tag-rail" class="shrink-0" aria-label="Tagged PDFs quick switch"></aside>
 
         <!-- Workspace (Split View) -->
         <main class="flex-1 flex bg-gray-200 overflow-hidden relative" id="workspace-main">

@@ -288,6 +288,10 @@ async function init() {
                     // Filter out any IDs that no longer exist.
                     state.recentDocIds = savedData.settings.recentDocIds.filter(id => state.documents[id]);
                 }
+                if (Array.isArray(savedData.settings.taggedDocIds)) {
+                    // Tagged PDFs (quick-switch rail): drop entries for deleted docs.
+                    state.taggedDocIds = savedData.settings.taggedDocIds.filter(id => state.documents[id]);
+                }
                 if (Array.isArray(savedData.settings.collapsedFolderIds)) {
                     const collapsedSet = new Set(savedData.settings.collapsedFolderIds);
                     Object.values(state.folders).forEach(f => {

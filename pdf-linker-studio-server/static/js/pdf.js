@@ -130,6 +130,9 @@ function renderDocList() {
     if (typeof _renderBreadcrumbs === 'function') _renderBreadcrumbs();
     if (typeof _renderFileList === 'function') _renderFileList();
     if (typeof renderRecentFiles === 'function') renderRecentFiles();
+    // Tagged-PDF quick-switch rail: refresh chips (active ring follows the
+    // viewports, deleted docs disappear, renames update the letters).
+    if (typeof renderTagRail === 'function') renderTagRail();
 }
 
 // ---- Per-document reading position (resume on reopen) ----

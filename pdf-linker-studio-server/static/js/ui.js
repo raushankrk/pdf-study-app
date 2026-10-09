@@ -593,6 +593,8 @@ async function clearAllData() {
         applyPanelMinimizeVisuals(null);
         // Fresh workspace: forget all resume-on-reopen reading positions.
         state.lastPositions = {};
+        // Fresh workspace: no tagged PDFs (quick-switch rail) either.
+        state.taggedDocIds = [];
         updateViewportActiveVisuals();
 
         await ensureRootFolder();

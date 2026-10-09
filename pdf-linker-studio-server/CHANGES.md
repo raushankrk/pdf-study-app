@@ -516,3 +516,74 @@ same-pane reopen, boot restore hardening). Full battery re-run green:
 minimize_panel 30, active_pdf_toolbar 23, touch_slider_space 8,
 frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5,
 realtime_sync 7, annotation_movement 4.
+
+---
+
+## Feature — PDF tags + quick-switch rail (mini sidebar when explorer is collapsed)
+
+**Requested**: "in each pdf add tag option so that even when left side bar
+minimise a very small side bar will appear and in this side bar show all
+the tagged pdf, show the first 3 letter of pdf name with different
+background color for each pdf — user can easily switch between most useful
+pdf easily and frequently."
+
+**What was built**:
+- **Tag option per PDF** — the file ⋮ context menu gained a "Tag / Untag"
+  item (tag icon), and tagged rows show a small blue tag badge next to the
+  favorite star (click the badge to untag).
+- **Quick-switch tag rail** — a narrow 44px rail (`#tag-rail`) sits next to
+  the file explorer and appears ONLY while the left sidebar is collapsed
+  (`body.left-sidebar-collapsed`). It shows one small rounded chip per
+  tagged PDF with the **first 3 letters of the name** (uppercase) on a
+  **per-PDF background color**. A tiny pin icon heads the rail (with a
+  teaching tooltip when nothing is tagged yet).
+- **Per-PDF colors** — derived deterministically from the doc id (FNV-1a
+  hash into a 12-color, white-text-safe palette), so each PDF keeps its own
+  color across sessions. A per-render collision resolver shifts any hash
+  collision to the next free palette slot, guaranteeing every VISIBLE chip
+  is a different color (caught live during verification: two similar doc
+  ids hashed to the same slot with the first hash draft).
+- **One-tap switching** — tapping a chip calls `openDocumentSmart()`, so it
+  routes to a usable viewport (respects minimized/locked panes) and — with
+  the previous improvement — **resumes the PDF at its last reading
+  position**. Chips of PDFs currently open in a viewport get an active ring
+  (dark border + amber halo) that follows the viewports.
+- **Persistence** — `state.taggedDocIds` is saved in the project settings,
+  restored on boot (entries for deleted docs dropped), untagged
+  automatically when a doc is deleted, and reset by Clear-All-Data. The
+  rail refreshes on every doc event via the `renderDocList()` chain.
+- **Touch friendly** — on touch devices the rail widens to 52px and chips
+  grow to 40px tap targets.
+
+**Files changed**:
+- `static/js/state.js` — `state.taggedDocIds`.
+- `static/js/filemanager.js` — `TAG_CHIP_COLORS` palette, `isDocTagged()`,
+  `docTagColor()` (FNV-1a), `docTagShort()`, `toggleDocTag()`,
+  `renderTagRail()` (chips + collision resolution + active ring + empty
+  hint), context-menu Tag/Untag item + handler, tag badge on doc rows,
+  `window.toggleDocTag` export, untag-on-delete in `_deleteDocumentRecord`.
+- `static/js/pdf.js` — `renderDocList()` re-renders the tag rail.
+- `static/js/database.js` — settings persist `taggedDocIds` (existing docs
+  only).
+- `static/js/app.js` — boot restores `taggedDocIds` (filtered).
+- `static/js/ui.js` — `clearAllData()` resets tags.
+- `static/index.html` — `#tag-rail` aside (between sidebar and workspace);
+  cache version → `tagrail-v15`.
+- `static/css/style.css` — rail (hidden by default, flex when collapsed),
+  chip styles + active ring, touch media block (52px rail / 40px chips).
+
+**Live verification** (headless Chromium, real server + project):
+tagged 2 PDFs via the real ⋮ menu → collapsed the sidebar → rail appeared
+(52px) with "RES" (amber) + "TES" (teal) chips; tapping TES opened
+test-upload.pdf in the active pane; tapping RES switched back AND resumed
+page 5 / scroll 331; active ring followed the open doc; reload kept tags,
+colors, collapse state and ring; untagging via the row badge removed the
+chip; zero page errors. Screenshot: tag_rail_final.png.
+
+**Test**: `tests/test_tag_rail.js` — 21 tests across 5 suites (HTML
+structure + version, state/persistence wiring, tag helpers, chip rendering
+incl. collision resolution + routing, context menu/badge/CSS wiring).
+Full battery re-run green: position_resume 18, minimize_panel 30,
+active_pdf_toolbar 23, touch_slider_space 8, frontend_bugs 10,
+stroke_continuity 23, undo_yjs_rebuild 5, realtime_sync 7,
+annotation_movement 4.

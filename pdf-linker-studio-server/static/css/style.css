@@ -260,6 +260,72 @@ body.left-sidebar-collapsed #left-sidebar {
 }
 body.left-sidebar-collapsed .toggle-left-btn i { transform: rotate(180deg); }
 
+/* --- Tag rail: quick-switch mini sidebar (visible when explorer collapsed) ---
+ * Shows one colored chip per TAGGED PDF (first 3 letters of the name) so the
+ * user can switch between frequently used PDFs with one tap even while the
+ * file explorer is hidden. Filled by renderTagRail() in filemanager.js. */
+#tag-rail {
+    display: none;                 /* hidden while the explorer is expanded */
+    width: 44px;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0 10px;
+    background: #ffffff;
+    border-right: 1px solid #e5e7eb;
+    overflow-y: auto;
+    scrollbar-width: none;         /* few chips — keep the strip clean */
+}
+#tag-rail::-webkit-scrollbar { display: none; }
+body.left-sidebar-collapsed #tag-rail { display: flex; }
+.tag-rail-head {
+    color: #9ca3af;
+    font-size: 10px;
+    line-height: 1;
+    margin-bottom: 2px;
+    flex-shrink: 0;
+}
+.tag-chip {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 9px;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    flex-shrink: 0;
+}
+.tag-chip:hover { transform: scale(1.1); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28); }
+.tag-chip:active { transform: scale(0.96); }
+/* Chip of a PDF currently open in a viewport: dark border + amber halo */
+.tag-chip-active {
+    border-color: #111827;
+    box-shadow: 0 0 0 2px #fbbf24, 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+/* Tag badge on explorer rows (next to the favorite star) */
+.tree-tag { color: #2563eb; }
+
+/* Touch devices: bigger chips + wider rail (finger-friendly) */
+@media (hover: none), (pointer: coarse) {
+    #tag-rail { width: 52px; }
+    .tag-chip {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        font-size: 11px;
+        border-radius: 10px;
+    }
+}
+
 /* --- AI Sidebar Styles --- */
 #ai-sidebar {
     width: 320px;

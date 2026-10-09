@@ -108,6 +108,12 @@ const state = {
     // list) resumes where the user left off instead of restarting at page 1.
     // Persisted via settings (saveSettings) and restored on boot.
     lastPositions: {},
+    // ---- Tagged PDFs (quick-switch rail) ----
+    // docIds the user TAGGED as most-useful. Tagged PDFs appear as small
+    // colored chips (first 3 letters of the name) in a narrow rail that
+    // shows when the left sidebar is collapsed — one tap switches between
+    // frequently used PDFs. Order = tag order; persisted in settings.
+    taggedDocIds: [],
     drawing: {
         active: false,
         startSide: null,
