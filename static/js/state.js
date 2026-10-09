@@ -1,12 +1,37 @@
 // ==========================================
 // 📁 3. state.js
 // ==========================================
-let db;
-let SqlDb; 
+// NOTE: The `db` and `SqlDb` globals below are kept for backward-compatibility
+// (some old call sites reference `db` for transactions). They're unused now —
+// all persistence goes through the REST API in `js/api.js` + `js/database.js`.
+let db = null;
+let SqlDb = null;
 let modalResolve = null;
+
+// Special root-folder ID. Always exists. Cannot be deleted, renamed, or moved.
+const ROOT_FOLDER_ID = 'root';
+const MAX_RECENT_DOCS = 10;
 
 const state = {
     documents: {}, 
+    // ---- Folder hierarchy ----
+    // Map of folderId -> { id, name, parentId (null|folderId), createdAt, expanded }
+    folders: {},
+    // Currently-selected folder in the file explorer (files inside this folder are listed).
+    // Defaults to ROOT_FOLDER_ID.
+    currentFolderId: ROOT_FOLDER_ID,
+    // Multi-select state for files/folders in the explorer.
+    fileSelection: { docIds: new Set(), folderIds: new Set() },
+    // Sort state.
+    fileSort: { by: 'name', order: 'asc' }, // by: 'name' | 'date' | 'size' | 'type'
+    // Recent files (most-recently-opened first).
+    recentDocIds: [],
+    // Lazy-render cursor for the file list (avoids rendering 500 rows at once).
+    fileExplorerRender: { renderedCount: 0, batchSize: 40, allItems: [] },
+    // Search/filter string for the file explorer (separate from global doc-search across PDF content).
+    fileExplorerQuery: '',
+    // Unified search mode: 'files' (filter file tree by name) or 'content' (search PDF text content).
+    searchMode: 'files',
     view: {
         left: { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false }, 
         right: { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false } 

@@ -1,0 +1,12 @@
+# Server-side dependencies for PDF Linker Studio.
+# Install with: pip install -r requirements.txt
+
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+
+# Optional but strongly recommended: PyMuPDF for fast server-side PDF text
+# extraction + thumbnail generation during indexing. Without it, indexing will
+# be severely limited (text extraction will not work for AI/RAG search).
+PyMuPDF>=1.23.0

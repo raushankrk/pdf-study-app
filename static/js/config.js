@@ -2,7 +2,7 @@
 // 📁 2. config.js
 // ==========================================
 const DB_NAME = 'PDFLinkerStudioDB';
-const DB_VERSION = 16; 
+const DB_VERSION = 17;
 const dbSaveDebounceMap = { left: null, right: null };
 
 // Ensure DOM is parsed before running this block if separating files!
@@ -66,7 +66,7 @@ const els = {
     
     leftZoomLevel: document.getElementById('left-zoom-level'),
     rightZoomLevel: document.getElementById('right-zoom-level'),
-    globalSearchInput: document.getElementById('global-search-input'),
+    globalSearchInput: document.getElementById('unified-search-input'),
     globalSearchResults: document.getElementById('global-search-results'),
     chatHistory: document.getElementById('chat-history'),
     chatList: document.getElementById('chat-list'),

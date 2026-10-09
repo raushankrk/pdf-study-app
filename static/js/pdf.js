@@ -1,113 +1,109 @@
 // ==========================================
 // 📁 7. pdf.js
 // ==========================================
+
+// ---- Lazy document loading ----
+// On app boot, state.documents[id] contains metadata only — no PDF bytes.
+// We fetch the PDF + annotations on demand when a document is first opened
+// in a viewport. This keeps memory low for 100+ PDF libraries and makes
+// the app responsive on iPad/phone.
+async function ensureDocLoaded(docId) {
+    if (!state.documents[docId]) return;
+    const doc = state.documents[docId];
+    if (doc.pdfDoc) return;  // already loaded
+
+    try {
+        // Fetch the PDF bytes from the server.
+        const blob = await Api.fetchDocumentBlob(docId);
+        doc.file = blob;
+        const arrayBuffer = await blob.arrayBuffer();
+        doc.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+
+        // If pageIds are missing (e.g. legacy import), generate them now.
+        if (!doc.pageIds || doc.pageIds.length !== doc.pdfDoc.numPages) {
+            doc.pageIds = Array.from({ length: doc.pdfDoc.numPages }, () => generateId());
+            // Persist the pageIds back to the server.
+            _saveDocById(docId);
+        }
+
+        // Lazy-load annotations for this doc (if not already loaded).
+        if (!state.annotations[docId]) {
+            await loadAnnotationsFromServer(docId);
+        }
+    } catch (err) {
+        console.error('Failed to load document:', docId, err);
+        showModal('Load Error', `Could not load PDF: ${escapeHtml(String(err))}`);
+    }
+}
+
 async function handleFileUpload(e) {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    for (const file of files) {
-        const id = 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        try {
-            const arrayBuffer = await file.arrayBuffer();
-            const pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
-            const page = await pdfDoc.getPage(1);
-            const viewport = page.getViewport({ scale: 0.2 }); 
-            const canvas = document.createElement('canvas');
-            const context = canvas.getContext('2d');
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            await page.render({ canvasContext: context, viewport: viewport }).promise;
-            const thumbData = canvas.toDataURL();
+    // Place imports into the currently selected folder (or Root if none).
+    const targetFolderId = state.currentFolderId || ROOT_FOLDER_ID;
 
-            const pageIds = Array.from({ length: pdfDoc.numPages }, () => generateId());
-            const docObj = { id, file, pdfDoc, name: file.name, pageCount: pdfDoc.numPages, thumbnail: thumbData, pageIds };
-            state.documents[id] = docObj;
-            await saveDocumentToDB({ id: docObj.id, name: docObj.name, pageCount: docObj.pageCount, thumbnail: docObj.thumbnail, fileBlob: file, pageIds });
+    els.loadingSpinner.classList.remove('hidden');
+    els.loadingSpinner.querySelector('span').innerText = `Uploading ${files.length} file(s)...`;
 
-            if (!state.view.left.docId) setActiveDocument('left', id);
-            else if (!state.view.right.docId) setActiveDocument('right', id);
+    try {
+        // Upload all files to the server in one request.
+        const result = await Api.uploadDocuments(files, targetFolderId);
+        const uploaded = result.uploaded || [];
 
-        } catch (err) {
-            console.error("Error loading PDF:", err);
-            showModal("Error", `Could not load ${file.name}`);
+        // For each uploaded doc, fetch its full metadata and add to state.
+        for (const item of uploaded) {
+            if (item.error) {
+                console.error('Upload failed for', item.filename, item.error);
+                continue;
+            }
+            const fullDoc = await Api.getDocument(item.id);
+            state.documents[item.id] = {
+                id: fullDoc.id,
+                name: fullDoc.name,
+                file: null,           // Lazy-loaded later via ensureDocLoaded()
+                pdfDoc: null,
+                pageCount: fullDoc.pageCount,
+                thumbnail: fullDoc.thumbnail,
+                pageIds: fullDoc.pageIds || [],
+                folderId: fullDoc.folderId || 'root',
+                fileSize: fullDoc.fileSize || 0,
+                createdAt: fullDoc.createdAt,
+                modifiedAt: fullDoc.modifiedAt,
+                favorite: !!fullDoc.favorite,
+                fileHash: fullDoc.fileHash,
+            };
+
+            // Open the first uploaded doc in a viewport
+            if (!state.view.left.docId) setActiveDocument('left', item.id);
+            else if (!state.view.right.docId) setActiveDocument('right', item.id);
+            pushRecentDoc(item.id);
         }
+
+        if (uploaded.length > 0) {
+            // Trigger server-side indexing for the new docs.
+            indexDocuments(false);
+        }
+    } catch (err) {
+        console.error('Upload failed:', err);
+        showModal('Upload Error', `Could not upload files: ${escapeHtml(String(err))}`);
+    } finally {
+        renderDocList();
+        els.loadingSpinner.classList.add('hidden');
+        els.uploadInput.value = '';
     }
-    
-    indexDocuments();
-    renderDocList();
-    els.uploadInput.value = ''; 
 }
 
+// renderDocList now delegates to the file-explorer renderer (filemanager.js).
+// The same name is kept for backward compatibility — every existing call site
+// (deleteDocument, handleFileUpload, app.js boot, project import, etc.) keeps working.
 function renderDocList() {
-    els.docList.innerHTML = '';
-    const docIds = Object.keys(state.documents);
-    
-    if (docIds.length === 0) {
-        els.emptyMsg.style.display = 'block';
-        return;
-    }
-    els.emptyMsg.style.display = 'none';
-
-    docIds.forEach(id => {
-        const doc = state.documents[id];
-        const isActiveLeft = state.view.left.docId === id;
-        const isActiveRight = state.view.right.docId === id;
-
-        const item = document.createElement('div');
-        item.className = `group relative p-2 rounded-lg cursor-pointer border transition-all flex items-center gap-3 ${
-            (isActiveLeft || isActiveRight) ? 'bg-blue-50 border-blue-200' : 'hover:bg-gray-50 border-transparent bg-white'
-        }`;
-        
-        let badges = '';
-        if (isActiveLeft) badges += `<span class="text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded ml-auto">L</span>`;
-        if (isActiveRight) badges += `<span class="text-[10px] bg-green-500 text-white px-1.5 py-0.5 rounded ml-auto">R</span>`;
-
-        item.innerHTML = `
-            <img src="${doc.thumbnail}" class="w-10 h-12 object-cover rounded border border-gray-200 bg-gray-100">
-            <div class="flex-1 min-w-0 overflow-hidden">
-                <div id="doc-name-${id}" class="text-sm font-medium text-gray-800 truncate select-none" title="${doc.name}">${doc.name}</div>
-                <div class="text-xs text-gray-500">${doc.pageCount} pages</div>
-            </div>
-            ${badges}
-            
-            <div class="doc-item-actions ml-2">
-                <div class="action-btn action-rename" onclick="event.stopPropagation(); enableRename('${id}')" title="Rename">
-                    <i class="fa-solid fa-pen"></i>
-                </div>
-                <div class="action-btn action-delete" onclick="event.stopPropagation(); deleteDocument('${id}')" title="Delete Document">
-                    <i class="fa-solid fa-trash"></i>
-                </div>
-            </div>
-        `;
-
-        item.onclick = (e) => {
-            if(e.target.tagName === 'INPUT') return;
-            
-            let targetSide = null;
-            
-            if (isActiveLeft) targetSide = 'right';
-            else if (isActiveRight) targetSide = 'left';
-            else {
-                if (!state.view.left.docId) targetSide = 'left';
-                else targetSide = 'right';
-            }
-
-            if (state.view[targetSide].locked) {
-                const otherSide = targetSide === 'left' ? 'right' : 'left';
-                if (!state.view[otherSide].locked) {
-                    targetSide = otherSide;
-                } else {
-                    showModal("Viewport Locked", "Cannot open document: Both viewports are locked.");
-                    return;
-                }
-            }
-
-            setActiveDocument(targetSide, id);
-            updateViewportActiveVisuals();
-            renderDocList();
-        };
-        els.docList.appendChild(item);
-    });
+    // Build the unified file-explorer view: folder tree + breadcrumb + file list.
+    // The DOM containers (#folder-tree, #file-breadcrumbs, #file-list) live in index.html.
+    if (typeof _renderFolderTree === 'function') _renderFolderTree();
+    if (typeof _renderBreadcrumbs === 'function') _renderBreadcrumbs();
+    if (typeof _renderFileList === 'function') _renderFileList();
+    if (typeof renderRecentFiles === 'function') renderRecentFiles();
 }
 
 function setActiveDocument(side, docId, render = true) {
@@ -115,11 +111,13 @@ function setActiveDocument(side, docId, render = true) {
     state.view[side].docId = docId;
     state.view[side].pageNum = 1;
     state.view[side].pageId = pageIdFromNum(doc, 1);
-    state.view[side].scrollTop = 0; 
+    state.view[side].scrollTop = 0;
     state.lastActiveSide = side;
     clearSelection();
-    closeViewportSearch(side); 
-    saveSettings(); 
+    closeViewportSearch(side);
+    saveSettings();
+    // Track this doc as recently opened (silently — no UI re-render of explorer list itself).
+    if (typeof pushRecentDoc === 'function') pushRecentDoc(docId);
     if (render) {
         renderPage(side);
         renderDocList();
@@ -130,19 +128,10 @@ async function renderPage(side) {
     const viewState = state.view[side];
     const docId = viewState.docId;
 
-    // pageId is the source of truth; keep pageNum in sync for display/back-compat
-    if (docId && state.documents[docId] && viewState.pageId) {
-        const resolvedNum = pageNumFromId(state.documents[docId], viewState.pageId);
-        if (resolvedNum) viewState.pageNum = resolvedNum;
-    }
-
-    const canvas = els[side + 'Canvas'];
-    const ctx = canvas.getContext('2d');
-    const annoCanvas = els[side + 'AnnoCanvas'];
-    const annoCtx = annoCanvas.getContext('2d');
-    const textLayer = els[side + 'TextLayer'];
-
     if (!docId || !state.documents[docId]) {
+        const canvas = els[side + 'Canvas'];
+        const annoCanvas = els[side + 'AnnoCanvas'];
+        const textLayer = els[side + 'TextLayer'];
         canvas.width = 0; canvas.height = 0;
         annoCanvas.width = 0; annoCanvas.height = 0;
         textLayer.innerHTML = '';
@@ -154,22 +143,42 @@ async function renderPage(side) {
         els[side + 'PageSlider'].classList.add('hidden');
         return;
     }
+
+    // LAZY LOAD: fetch PDF bytes from server the first time this doc is rendered.
+    await ensureDocLoaded(docId);
+
+    const doc = state.documents[docId];
+    if (!doc.pdfDoc) {
+        // Failed to load — ensureDocLoaded already showed an error modal.
+        return;
+    }
+
+    // pageId is the source of truth; keep pageNum in sync for display/back-compat
+    if (viewState.pageId) {
+        const resolvedNum = pageNumFromId(doc, viewState.pageId);
+        if (resolvedNum) viewState.pageNum = resolvedNum;
+    }
+
+    const canvas = els[side + 'Canvas'];
+    const annoCanvas = els[side + 'AnnoCanvas'];
+    const textLayer = els[side + 'TextLayer'];
+
     if (state.zoomLive[side] !== 1.0) {
         const multiplier = state.zoomLive[side];
         viewState.scale = viewState.scale * multiplier;
-        state.zoomLive[side] = 1.0; 
-        
+        state.zoomLive[side] = 1.0;
+
         const wrapper = els[side + 'Wrapper'];
         wrapper.style.transform = 'none';
+        wrapper.style.transformOrigin = '';
         wrapper.style.zIndex = '';
     }
-    
-    const doc = state.documents[docId];
+
     els[side + 'Title'].innerText = doc.name;
     els[side + 'PageInput'].value = viewState.pageNum;
     els[side + 'PageTotal'].innerText = doc.pageCount;
 
-    // Update Slider 
+    // Update Slider
     els[side + 'PageSlider'].classList.remove('hidden');
     els[side + 'PageSlider'].max = doc.pageCount;
     els[side + 'PageSlider'].value = viewState.pageNum;
@@ -179,15 +188,37 @@ async function renderPage(side) {
         const scale = viewState.scale || 1.5;
         const viewport = page.getViewport({ scale: scale }); 
 
-        canvas.width = viewport.width; canvas.height = viewport.height;
-        annoCanvas.width = viewport.width; annoCanvas.height = viewport.height;
+        // When a zoom commit is in progress, render the PDF to an
+        // offscreen canvas so the visible canvas is never blank.
+        const isCommitRender = state._commitFocus && state._commitFocus.side === side;
+        const pdfCanvas = isCommitRender ? document.createElement('canvas') : canvas;
+        const pdfCtx = pdfCanvas.getContext('2d');
+
+        pdfCanvas.width = viewport.width; pdfCanvas.height = viewport.height;
+
+        // Only resize the annotation canvas directly in non-commit mode.
+        // In commit mode the annoCanvas already has upscaled content from
+        // commitZoom's atomic swap — renderAnnotations() will redraw it.
+        if (!isCommitRender) {
+            annoCanvas.width = viewport.width; annoCanvas.height = viewport.height;
+        }
 
         const wrapper = els[side + 'Wrapper'];
         wrapper.style.width = `${viewport.width}px`;
         wrapper.style.height = `${viewport.height}px`;
 
-        const renderContext = { canvasContext: ctx, viewport: viewport };
+        const renderContext = { canvasContext: pdfCtx, viewport: viewport };
         await page.render(renderContext).promise;
+
+        // If we rendered offscreen, copy to the visible canvas now.
+        // This swap is synchronous — the user never sees a blank frame.
+        if (isCommitRender) {
+            canvas.width = viewport.width; canvas.height = viewport.height;
+            canvas.getContext('2d').drawImage(pdfCanvas, 0, 0);
+            // Resize annoCanvas to match so renderAnnotations() draws
+            // at the correct scale. It clears and redraws moments later.
+            annoCanvas.width = viewport.width; annoCanvas.height = viewport.height;
+        }
 
         const textContent = await page.getTextContent();
         renderTextLayerCustom(textContent, textLayer, viewport);
@@ -216,7 +247,11 @@ async function renderPage(side) {
         // ----------------------------------
 
         const viewportEl = els[side + 'Viewport'];
-        if (viewState.scrollTop) viewportEl.scrollTop = viewState.scrollTop;
+        // If a zoom-commit focus is pending, commitZoom will set the scroll
+        // after this render completes — don't snap back to the old scrollTop.
+        if (viewState.scrollTop && !state._commitFocus) {
+            viewportEl.scrollTop = viewState.scrollTop;
+        }
 
         renderMarkersForView(side);
         renderAnnotations(side);
@@ -337,23 +372,12 @@ window.jumpToPageFromSlider = function(side) {
 
 
 async function deleteDocument(id) {
-    if(!confirm("Are you sure you want to delete this PDF and all its annotations/links?")) return;
+    const doc = state.documents[id];
+    const docName = doc ? doc.name : 'this PDF';
+    if(!confirm(`Are you sure you want to delete "${docName}" and all its annotations/links? This cannot be undone.`)) return;
 
-    delete state.documents[id];
-    delete state.annotations[id];
-
-    const updatedLinks = state.links.filter(l => l.source.docId !== id && l.target.docId !== id);
-    
-    const tx = db.transaction(['documents', 'links', 'annotations'], 'readwrite');
-    tx.objectStore('documents').delete(id);
-    tx.objectStore('annotations').delete(id);
-    
-    const linkStore = tx.objectStore('links');
-    linkStore.clear();
-    updatedLinks.forEach(l => linkStore.put(l));
-    state.links = updatedLinks;
-
-    state.embeddings = state.embeddings.filter(e => e.docId !== id);
+    // Use the shared internal deleter (keeps recent/embeddings/links/annotations in sync).
+    await _deleteDocumentRecord(id);
 
     if(state.view.left.docId === id) {
         state.view.left.docId = null;
@@ -363,6 +387,9 @@ async function deleteDocument(id) {
         state.view.right.docId = null;
         renderPage('right');
     }
+
+    // Remove from file selection if present.
+    state.fileSelection.docIds.delete(id);
 
     renderDocList();
     renderMarkersForView('left');
@@ -394,9 +421,28 @@ function enableRename(id) {
 }
 
 async function saveRename(id, newName) {
-    if(!newName.trim()) { renderDocList(); return; }
-    state.documents[id].name = newName;
-    await saveDocumentToDB(state.documents[id]);
+    newName = (newName || '').trim();
+    if(!newName) { renderDocList(); return; }
+    const doc = state.documents[id];
+    if (!doc) return;
+    // If name is unchanged, no-op.
+    if (doc.name === newName) { renderDocList(); return; }
+    // Avoid duplicate names inside the same folder.
+    const conflicting = Object.values(state.documents).some(d =>
+        d.id !== id &&
+        d.folderId === doc.folderId &&
+        d.name.toLowerCase() === newName.toLowerCase()
+    );
+    if (conflicting) {
+        showModal("Duplicate Name", `A file named "${newName}" already exists in this folder.`);
+        renderDocList();
+        return;
+    }
+    doc.name = newName;
+    doc.modifiedAt = Date.now();
+    // Persist asynchronously — but re-render immediately so the UI reflects the new name
+    // without waiting for the IndexedDB write to complete.
+    if (typeof _saveDocById === 'function') _saveDocById(id);
     renderDocList();
 }
 
@@ -610,22 +656,103 @@ function resetZoom(side) {
     saveSettings();
 }
 
-function commitZoom(side) {
+function commitZoom(side, focusScreenX, focusScreenY) {
+    const viewport = els[side + 'Viewport'];
+    const wrapper = els[side + 'Wrapper'];
+    const canvas = els[side + 'Canvas'];
+    const annoCanvas = els[side + 'AnnoCanvas'];
+    const textLayer = els[side + 'TextLayer'];
     const liveScale = state.zoomLive[side];
-    const baseScale = state.view[side].scale;
-    const finalScale = baseScale * liveScale;
 
+    // If liveScale is 1.0, nothing to commit.
+    if (liveScale === 1.0 || !liveScale) {
+        wrapper.style.transform = 'none';
+        wrapper.style.transformOrigin = '';
+        wrapper.style.zIndex = '';
+        return;
+    }
+
+    const baseScale = state.view[side].scale;
+    let finalScale = baseScale * liveScale;
+    finalScale = Math.max(0.25, Math.min(5.0, finalScale));
+
+    // ---- Capture focus info BEFORE any visual changes ----
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const viewportRect = viewport.getBoundingClientRect();
+    const fracX = wrapperRect.width > 0
+        ? Math.max(0, Math.min(1, (focusScreenX - wrapperRect.left) / wrapperRect.width))
+        : 0.5;
+    const fracY = wrapperRect.height > 0
+        ? Math.max(0, Math.min(1, (focusScreenY - wrapperRect.top) / wrapperRect.height))
+        : 0.5;
+    const vpX = focusScreenX - viewportRect.left;
+    const vpY = focusScreenY - viewportRect.top;
+
+    // ---- Step 1: Upscale existing canvas to new size (synchronous) ----
+    // This gives us a full-size placeholder that looks identical to the
+    // CSS-transformed version, so the visual never blanks out.
+    const newW = Math.round(canvas.width * liveScale);
+    const newH = Math.round(canvas.height * liveScale);
+
+    const tmpPdf = document.createElement('canvas');
+    tmpPdf.width = newW; tmpPdf.height = newH;
+    tmpPdf.getContext('2d').drawImage(canvas, 0, 0, newW, newH);
+
+    const tmpAnno = document.createElement('canvas');
+    tmpAnno.width = newW; tmpAnno.height = newH;
+    tmpAnno.getContext('2d').drawImage(annoCanvas, 0, 0, newW, newH);
+
+    // ---- Step 2: Update state ----
+    state.view[side].scale = finalScale;
     state.zoomLive[side] = 1.0;
 
-    if (finalScale < 0.25) state.view[side].scale = 0.25;
-    else if (finalScale > 5.0) state.view[side].scale = 5.0;
-    else state.view[side].scale = finalScale;
+    // Tell renderPage to render PDF to an offscreen canvas (no blank frame).
+    state._commitFocus = { side, fracX, fracY, vpX, vpY };
 
-    const wrapper = els[side + 'Wrapper'];
-    wrapper.style.transform = 'none';
-    wrapper.style.zIndex = ''; 
+    // Hide text layer and text-box overlays — they are at the old scale
+    // and will be recreated at the correct scale by renderPage.
+    textLayer.style.visibility = 'hidden';
+    wrapper.querySelectorAll('.text-box').forEach(el => el.style.visibility = 'hidden');
 
-    updateZoomIndicator(side);
-    renderPage(side);
-    saveSettings();
+    // ---- Step 3: Atomic swap in a single animation frame ----
+    // Resize wrapper, swap canvas content, clear transform, set scroll —
+    // all synchronously so there is zero visible gap.
+    requestAnimationFrame(() => {
+        wrapper.style.width = newW + 'px';
+        wrapper.style.height = newH + 'px';
+
+        canvas.width = newW; canvas.height = newH;
+        canvas.getContext('2d').drawImage(tmpPdf, 0, 0);
+
+        annoCanvas.width = newW; annoCanvas.height = newH;
+        annoCanvas.getContext('2d').drawImage(tmpAnno, 0, 0);
+
+        wrapper.style.transform = 'none';
+        wrapper.style.transformOrigin = '';
+        wrapper.style.zIndex = '';
+
+        // Scroll so the focus point stays at the same screen position.
+        // Must include wrapper.offsetLeft/offsetTop for correct positioning.
+        viewport.scrollLeft = wrapper.offsetLeft + fracX * newW - vpX;
+        viewport.scrollTop = wrapper.offsetTop + fracY * newH - vpY;
+        state.view[side].scrollTop = viewport.scrollTop;
+
+        updateZoomIndicator(side);
+        saveSettings();
+
+        // ---- Step 4: Background sharp re-render ----
+        // renderPage will render to an offscreen canvas (because _commitFocus
+        // is set), then copy to the visible canvas — no blank frame.
+        renderPage(side).then(() => {
+            if (state._commitFocus && state._commitFocus.side === side) {
+                const f = state._commitFocus;
+                // Re-adjust scroll for potentially slightly different
+                // dimensions from the PDF.js viewport calculation.
+                viewport.scrollLeft = wrapper.offsetLeft + f.fracX * wrapper.offsetWidth - f.vpX;
+                viewport.scrollTop = wrapper.offsetTop + f.fracY * wrapper.offsetHeight - f.vpY;
+                state.view[side].scrollTop = viewport.scrollTop;
+                state._commitFocus = null;
+            }
+        });
+    });
 }

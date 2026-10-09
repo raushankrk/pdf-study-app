@@ -374,12 +374,25 @@ async function clearAllData() {
         state.imageCache = {};
         state.embeddings = [];
         state.chats = [];
+        // Reset folder state to just root.
+        state.folders = {};
+        state.folders[ROOT_FOLDER_ID] = {
+            id: ROOT_FOLDER_ID, name: 'Root', parentId: null,
+            createdAt: Date.now(), expanded: true
+        };
+        state.currentFolderId = ROOT_FOLDER_ID;
+        state.fileSelection.docIds.clear();
+        state.fileSelection.folderIds.clear();
+        state.recentDocIds = [];
+        state.fileExplorerQuery = '';
+        state.fileSort = { by: 'name', order: 'asc' };
         state.view.left = { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false };
         state.view.right = { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false };
         state.lastActiveSide = 'left';
-        
+
+        await ensureRootFolder();
         await createNewChat();
-        
+
         renderDocList();
         renderPage('left');
         renderPage('right');

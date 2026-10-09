@@ -12,6 +12,11 @@ function getMousePosInViewport(evt, side) {
 function handlePointerDown(e) {
     if (e.target.closest('#vertical-resizer') || e.target.closest('button') || e.target.closest('input')) return;
 
+    // Two-finger gesture (pan/zoom) is active — don't start any drawing/annotation.
+    // The touch-based two-finger handler sets _twoFingerState before the second
+    // pointerdown fires (touchstart fires before pointerdown per spec).
+    if (_twoFingerState) return;
+
     const leftPanelRect = els.leftPanel.getBoundingClientRect();
     const rightPanelRect = els.rightPanel.getBoundingClientRect();
     let clickedSide = null;
@@ -27,7 +32,27 @@ function handlePointerDown(e) {
 
     if (clickedSide && state.view[clickedSide].docId) {
         state.lastActiveSide = clickedSide;
-        updateViewportActiveVisuals(); 
+        updateViewportActiveVisuals();
+    }
+
+    // ---- CRITICAL for iPad/touch devices ----
+    // In annotation, linking, snip-link, or delete-link modes, we MUST call
+    // preventDefault() on the pointer event BEFORE the browser starts its
+    // default touch behavior (text selection, long-press callout menu, double-
+    // tap zoom, etc.). Without this, iPad Safari/Chrome will select the PDF
+    // page text or show the iOS callout menu when the user touches and holds.
+    //
+    // We only do this when the pointer is inside a viewport AND we're in a
+    // drawing/editing mode — in navigation mode we want the browser's default
+    // scroll/pan behavior.
+    if (clickedSide && state.appMode !== 'navigation') {
+        e.preventDefault();
+    }
+    // Also prevent default for touch events in navigation mode if the target
+    // is the PDF canvas (not the text layer or viewport scroll area).
+    // This stops the iPad from selecting the canvas element itself.
+    if (e.pointerType === 'touch' && e.target.classList.contains('pdf-canvas')) {
+        e.preventDefault();
     }
 
     if (e.target.closest('.link-marker')) {
@@ -805,6 +830,23 @@ function handleKeyDown(e) {
         if (e.key === '=' || e.key === '+') { e.preventDefault(); zoomAtMouse(0.25); }
         if (e.key === '-') { e.preventDefault(); zoomAtMouse(-0.25); }
         if (e.key === '0') { e.preventDefault(); resetZoomAtMouse(); }
+        // New: file-explorer shortcuts (only when not typing in an input)
+        if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+            e.preventDefault();
+            if (typeof promptForNewFolder === 'function') promptForNewFolder(state.currentFolderId || 'root');
+        }
+        if (e.key === 'a' || e.key === 'A') {
+            e.preventDefault();
+            if (typeof selectAllFiles === 'function') selectAllFiles();
+        }
+        if (e.key === 'c' || e.key === 'C') {
+            // Copy selected files to internal clipboard.
+            if (typeof copySelectedFiles === 'function') copySelectedFiles();
+        }
+        if (e.key === 'v' || e.key === 'V') {
+            // Paste (duplicate into current folder).
+            if (typeof pasteClipboardFiles === 'function') pasteClipboardFiles();
+        }
         return;
     }
 
@@ -822,6 +864,39 @@ function handleKeyDown(e) {
         'i': () => setAnnoTool('image'),
         'f': () => toggleLineMode(),
     };
+
+    // File-explorer single-key shortcuts (only when not in an input).
+    if (e.key === 'F2') {
+        e.preventDefault();
+        // Rename the first selected doc, else the first selected folder.
+        const selDoc = Array.from(state.fileSelection.docIds)[0];
+        const selFolder = Array.from(state.fileSelection.folderIds)[0];
+        if (selDoc) { enableRename(selDoc); return; }
+        if (selFolder) { promptForFolderRename(selFolder); return; }
+    }
+    if (e.key === 'Delete') {
+        if (state.fileSelection.docIds.size > 0 || state.fileSelection.folderIds.size > 0) {
+            e.preventDefault();
+            showBulkDeleteDialog();
+            return;
+        }
+    }
+    if (e.key === 'Escape') {
+        if (typeof clearFileSelection === 'function') {
+            clearFileSelection();
+            _closeAllMenus();
+            return;
+        }
+    }
+    if (e.key === 'Enter') {
+        // Open the first selected doc in the next available viewport.
+        const selDoc = Array.from(state.fileSelection.docIds)[0];
+        if (selDoc) {
+            e.preventDefault();
+            if (typeof openDocumentSmart === 'function') openDocumentSmart(selDoc);
+            return;
+        }
+    }
 
     if (shortcuts[e.key.toLowerCase()]) {
         shortcuts[e.key.toLowerCase()]();
@@ -844,23 +919,45 @@ function handleViewportZoom(e, side) {
         const zoomSpeed = 0.009; 
         const delta = -e.deltaY * zoomSpeed;
         
-        let currentLiveScale = state.zoomLive[side];
-        let newLiveScale = currentLiveScale * (1 + delta);
+        const viewport = els[side + 'Viewport'];
+        const wrapper = els[side + 'Wrapper'];
+        const oldLiveScale = state.zoomLive[side];
+        let newLiveScale = oldLiveScale * (1 + delta);
 
         if (newLiveScale < 0.1) newLiveScale = 0.1;
         if (newLiveScale > 5.0) newLiveScale = 5.0;
 
+        // --- Zoom toward mouse cursor position ---
+        // With transformOrigin at 0 0, the wrapper's visual top-left stays fixed.
+        // A content point (cx, cy) in wrapper CSS-pixels appears at:
+        //   screenX = wrapperRect.left + cx * liveScale
+        // To keep the point under the mouse stable after changing liveScale:
+        //   scrollLeft_new = scrollLeft + cx * (newLiveScale - oldLiveScale)
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const cx = (e.clientX - wrapperRect.left) / oldLiveScale;
+        const cy = (e.clientY - wrapperRect.top) / oldLiveScale;
+
         state.zoomLive[side] = newLiveScale;
 
-        const wrapper = els[side + 'Wrapper'];
+        wrapper.style.transformOrigin = '0 0';
         wrapper.style.transform = `scale(${newLiveScale})`;
-        wrapper.style.transformOrigin = 'top left'; 
         wrapper.style.zIndex = '10'; 
+
+        // Adjust scroll to keep the content point under the mouse cursor
+        viewport.scrollLeft += cx * (newLiveScale - oldLiveScale);
+        viewport.scrollTop += cy * (newLiveScale - oldLiveScale);
 
         const currentBaseScale = state.view[side].scale;
         const effectiveScale = currentBaseScale * newLiveScale;
         
         els[side + 'ZoomLevel'].innerText = Math.round(effectiveScale * 100) + '%';
+
+        // Debounce commit: after 350ms of no wheel events, re-render at final scale
+        if (state.zoomTimer[side]) clearTimeout(state.zoomTimer[side]);
+        state.zoomTimer[side] = setTimeout(() => {
+            state.zoomTimer[side] = null;
+            commitZoom(side, state.globalMouse.x, state.globalMouse.y);
+        }, 350);
     }
 }
 
@@ -928,9 +1025,11 @@ function scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY) {
     const newPointX = fracX * newCanvasWidth;
     const newPointY = fracY * newCanvasHeight;
 
-    // Scroll so that point aligns back under the mouse
-    viewport.scrollLeft = newPointX - mouseX;
-    viewport.scrollTop = newPointY - mouseY;
+    // Scroll so that point aligns back under the mouse.
+    // Must include wrapper.offsetLeft/offsetTop for correct positioning
+    // (accounts for viewport padding and wrapper centering).
+    viewport.scrollLeft = wrapper.offsetLeft + newPointX - mouseX;
+    viewport.scrollTop = wrapper.offsetTop + newPointY - mouseY;
 }
 
 function resetZoomAtMouse() {
@@ -950,3 +1049,278 @@ function resetZoomAtMouse() {
     setTimeout(() => scrollToKeepPoint(side, fracX, fracY, mouseX, mouseY), 50);
     saveSettings();
 }
+
+// ---- Two-finger gestures for touch devices (iPad / phone) ----
+// Two-finger touch handles BOTH pan (drag to scroll) AND pinch-zoom.
+// Works in ALL modes — annotation, navigation, linking, etc.
+// Two fingers always means "pan/zoom", never "draw", matching the
+// behavior of apps like Goodnotes.
+//
+// Pan: tracks the center point of two fingers and scrolls the viewport
+// by the delta each frame. Zoom: tracks the distance between fingers
+// and applies a CSS scale transform, committed to a re-render when
+// fingers lift. Both can happen simultaneously — the math keeps the
+// content point under the gesture center stable.
+//
+// When a user starts drawing with one finger/stylus and puts down a
+// second finger, the in-progress stroke is cancelled (and cleaned up)
+// so no annotation artifacts remain, and the two-finger gesture takes over.
+
+let _twoFingerState = null;
+
+function initTwoFingerGestures() {
+    // Register touchstart/touchmove/touchend on BOTH viewports.
+    // These are registered as non-capture listeners (bubble phase) so they
+    // run AFTER the capture-phase touchstart handler that suppresses text
+    // selection in annotation mode.
+    //
+    // ---- Architecture: translate+scale (GPU-composited, zero reflow) ----
+    // During the gesture, pan is handled by CSS translate() and zoom by
+    // CSS scale().  Both run entirely on the GPU compositor — NO scroll
+    // changes and NO layout reads happen between frames, which eliminates:
+    //   - Layout thrashing  (no getBoundingClientRect mid-frame)
+    //   - Integer scroll snapping jitter (scrollLeft/scrollTop are ints)
+    //   - Transform + scroll interaction glitches
+    //
+    // On finger lift (touchend), the accumulated translate is atomically
+    // converted to a viewport scroll offset, the CSS transform is reduced
+    // to just scale() (or none), and commitZoom re-renders at the new
+    // resolution if the user actually pinched.
+    ['left', 'right'].forEach(side => {
+        const viewport = els[side + 'Viewport'];
+        if (!viewport) return;
+
+        viewport.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 2) return;
+
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+
+            // If the user was drawing with one finger/stylus, cancel the drawing
+            // and clean up the partial stroke so no annotation artifacts remain.
+            if (state.drawing && state.drawing.active) {
+                _cancelDrawingAndCleanStroke();
+            }
+
+            // Commit any pending wheel-zoom before starting a gesture
+            if (state.zoomTimer[side]) {
+                clearTimeout(state.zoomTimer[side]);
+                state.zoomTimer[side] = null;
+            }
+
+            // Read wrapper screen position ONCE at gesture start.
+            // Because we use translate() for panning (not scroll), this
+            // value stays valid for the entire gesture - no re-reads needed.
+            const wrapper = els[side + 'Wrapper'];
+            const wrapperRect = wrapper.getBoundingClientRect();
+
+            _twoFingerState = {
+                side: side,
+                startDist: dist,
+                startScale: state.zoomLive[side] || 1.0,
+                startCX: cx,
+                startCY: cy,
+                // Wrapper's screen position at gesture start (constant).
+                // Used to compute translate so the content point under the
+                // start center stays under the current center every frame.
+                wrapperLeft: wrapperRect.left,
+                wrapperTop: wrapperRect.top,
+                zoomStarted: false,  // becomes true once pinch intent is confirmed
+                lastTX: 0,
+                lastTY: 0,
+                lastCX: cx,
+                lastCY: cy,
+            };
+
+            // Promote wrapper to its own GPU layer for the duration of the
+            // gesture so translate+scale changes are compositor-only.
+            wrapper.style.willChange = 'transform';
+            e.preventDefault();
+        }, { passive: false });
+
+        viewport.addEventListener('touchmove', (e) => {
+            if (!_twoFingerState || _twoFingerState.side !== side) return;
+            if (e.touches.length !== 2) return;
+            e.preventDefault();
+
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            const cx = (t1.clientX + t2.clientX) / 2;
+            const cy = (t1.clientY + t2.clientY) / 2;
+            const s = _twoFingerState;
+
+            // ---- ZOOM: dead-zone gated ----
+            // During pure pan the finger distance naturally wobbles by a few
+            // px.  We only enter zoom mode once the change exceeds a dead
+            // zone, and once entered we stay in zoom mode for the rest of
+            // the gesture so the transition is smooth.
+            const ZOOM_DEAD_ZONE = Math.max(12, s.startDist * 0.10);
+            const distDelta = Math.abs(dist - s.startDist);
+            if (!s.zoomStarted && distDelta >= ZOOM_DEAD_ZONE) {
+                s.zoomStarted = true;
+            }
+
+            let newScale = s.startScale;
+            if (s.zoomStarted) {
+                const scaleFactor = dist / s.startDist;
+                newScale = s.startScale * scaleFactor;
+                // Clamp effective scale
+                const baseScale = state.view[side].scale;
+                const effective = baseScale * newScale;
+                if (effective < 0.25) newScale = 0.25 / baseScale;
+                if (effective > 5.0) newScale = 5.0 / baseScale;
+                // Quantize to 0.1% to avoid sub-pixel raster jitter
+                newScale = Math.round(newScale * 1000) / 1000;
+            }
+
+            // ---- TRANSLATE: keep content point under start center
+            //              pinned to the current gesture center ----
+            // With transform-origin 0 0 the math is:
+            //   visual_x = wrapperLeft + tx + contentX * newScale
+            // We want visual_x = cx, and contentX = (startCX - wrapperLeft)/startScale,
+            // so: tx = (cx - wrapperLeft) - (startCX - wrapperLeft) * (newScale / startScale)
+            const ratio = newScale / s.startScale;
+            const tx = (cx - s.wrapperLeft) - (s.startCX - s.wrapperLeft) * ratio;
+            const ty = (cy - s.wrapperTop) - (s.startCY - s.wrapperTop) * ratio;
+
+            // ---- Single DOM write - no layout reads, no scroll changes ----
+            const wrapper = els[side + 'Wrapper'];
+            state.zoomLive[side] = newScale;
+            wrapper.style.transformOrigin = '0 0';
+            wrapper.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + newScale + ')';
+            wrapper.style.zIndex = '10';
+
+            // Remember for touchend scroll conversion
+            s.lastTX = tx;
+            s.lastTY = ty;
+            s.lastCX = cx;
+            s.lastCY = cy;
+
+            // Update zoom indicator
+            if (s.zoomStarted) {
+                const finalScale = state.view[side].scale * newScale;
+                els[side + 'ZoomLevel'].innerText = Math.round(finalScale * 100) + '%';
+            }
+        }, { passive: false });
+
+        viewport.addEventListener('touchend', (e) => {
+            if (!_twoFingerState) return;
+            // Only finalize when going from 2 touches to fewer
+            if (e.touches.length >= 2) return;
+
+            const s = _twoFingerState;
+            const pside = s.side;
+            const didZoom = s.zoomStarted;
+            const focusX = s.lastCX;
+            const focusY = s.lastCY;
+            const tx = s.lastTX;
+            const ty = s.lastTY;
+            _twoFingerState = null;
+
+            const wrapper = els[pside + 'Wrapper'];
+            const vp = els[pside + 'Viewport'];
+
+            if (didZoom) {
+                // Keep the full transform (translate + scale) so commitZoom can read 
+                // the exact visual bounding rect. commitZoom will handle updating the scroll.
+                wrapper.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + (state.zoomLive[pside]) + ')';
+                wrapper.style.transformOrigin = '0 0';
+                wrapper.style.willChange = '';
+                if (typeof commitZoom === 'function') {
+                    commitZoom(pside, focusX, focusY);
+                }
+            } else {
+                // Pure pan - no pinch detected.
+                // Atomically convert translate to scroll.
+                vp.scrollLeft -= tx;
+                vp.scrollTop -= ty;
+
+                var liveScale = state.zoomLive[pside];
+                if (liveScale && liveScale !== 1) {
+                    wrapper.style.transform = 'scale(' + liveScale + ')';
+                    wrapper.style.transformOrigin = '0 0';
+                } else {
+                    wrapper.style.transform = 'none';
+                    wrapper.style.transformOrigin = '';
+                    state.zoomLive[pside] = 1.0;
+                }
+                wrapper.style.zIndex = '';
+                wrapper.style.willChange = '';
+            }
+        }, { passive: false });
+
+        // Also handle touchcancel (e.g. system gesture interrupts)
+        viewport.addEventListener('touchcancel', (e) => {
+            if (!_twoFingerState) return;
+            const s = _twoFingerState;
+            const pside = s.side;
+            const didZoom = s.zoomStarted;
+            const focusX = s.lastCX;
+            const focusY = s.lastCY;
+            const tx = s.lastTX;
+            const ty = s.lastTY;
+            _twoFingerState = null;
+
+            const wrapper = els[pside + 'Wrapper'];
+            const vp = els[pside + 'Viewport'];
+
+            if (didZoom) {
+                wrapper.style.transform = 'translate(' + tx + 'px,' + ty + 'px) scale(' + (state.zoomLive[pside]) + ')';
+                wrapper.style.transformOrigin = '0 0';
+                wrapper.style.willChange = '';
+                if (typeof commitZoom === 'function') {
+                    commitZoom(pside, focusX, focusY);
+                }
+            } else {
+                vp.scrollLeft -= tx;
+                vp.scrollTop -= ty;
+
+                var liveScale2 = state.zoomLive[pside];
+                if (liveScale2 && liveScale2 !== 1) {
+                    wrapper.style.transform = 'scale(' + liveScale2 + ')';
+                    wrapper.style.transformOrigin = '0 0';
+                } else {
+                    wrapper.style.transform = 'none';
+                    wrapper.style.transformOrigin = '';
+                    state.zoomLive[pside] = 1.0;
+                }
+                wrapper.style.zIndex = '';
+                wrapper.style.willChange = '';
+            }
+        }, { passive: false });
+    });
+}
+
+// Helper: cancel in-progress drawing and remove the partial stroke artifact.
+// When the user transitions from 1-finger draw to 2-finger pan/zoom, the
+// first finger may have started a stroke with 1-2 points. We remove it so
+// no tiny stray marks are left on the page.
+function _cancelDrawingAndCleanStroke() {
+    const side = state.drawing.startSide;
+    if (side && state.view[side] && state.view[side].docId) {
+        const docId = state.view[side].docId;
+        const pageId = state.view[side].pageId;
+        const pageData = state.annotations[docId] && state.annotations[docId][pageId];
+        if (pageData && pageData.strokes && pageData.strokes.length > 0) {
+            const lastStroke = pageData.strokes[pageData.strokes.length - 1];
+            // Only remove short in-progress strokes (≤ 3 points), not eraser strokes
+            // or intentionally-drawn marks.
+            if (lastStroke && lastStroke.tool !== 'eraser-pixel' &&
+                lastStroke.points && lastStroke.points.length <= 3) {
+                pageData.strokes.pop();
+                if (typeof renderAnnotations === 'function') renderAnnotations(side);
+            }
+        }
+    }
+    state.drawing.active = false;
+    if (typeof clearSelection === 'function') clearSelection();
+}
+
+// Expose for app.js to call
+window.initTwoFingerGestures = initTwoFingerGestures;
+// Backward-compat alias so existing call sites still work
+window.initPinchZoom = initTwoFingerGestures;
