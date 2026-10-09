@@ -154,10 +154,6 @@ function beginFloatToolbarDrag(e) {
     if (e.button !== undefined && e.button !== 0) return;
     const tb = document.getElementById('float-toolbar');
     if (!tb) return;
-    // Moving the toolbar moves the size-menu anchor — always close the flyout
-    // when a drag (or a double-tap re-dock) starts. (js/sizemenu.js owns the
-    // flyout; typeof-guarded so this engine also runs without it.)
-    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
     // Double-tap / double-click on the grip (works for mouse AND touch)
     // re-docks the toolbar to its default spot.
     const now = Date.now();
@@ -251,10 +247,6 @@ function setFloatToolbarOrientation(orient, opts = {}) {
     if (orient !== 'horizontal' && orient !== 'vertical') return false;
     const tb = document.getElementById('float-toolbar');
     if (!tb) return false;
-    // The flip re-places the whole palette (orientation-specific default spot
-    // or re-clamped dragged spot) — the size menu's anchor would move with it,
-    // so the flyout closes instead of following (js/sizemenu.js owns it).
-    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
     tb.classList.toggle('ft-vertical', orient === 'vertical');
     state.floatToolbarOrientation = orient;
     // The toggle always advertises the orientation the NEXT click produces:
@@ -293,10 +285,6 @@ function toggleFloatToolbarOrientation() {
 // a dragged bar is re-clamped, a never-dragged bar re-centers. Writing the
 // transform changes no layout, so the observers can never loop.
 function handleFloatToolbarResize() {
-    // A resize can move the toolbar under an open size menu — closing keeps
-    // the flyout always visually anchored to its tool button (js/sizemenu.js
-    // owns the flyout; typeof-guarded so this engine also runs without it).
-    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
     applyFloatToolbarPos();
 }
 

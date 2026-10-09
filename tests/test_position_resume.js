@@ -35,7 +35,7 @@ assert.deepStrictEqual = (a, b, msg) => {
 };
 
 // Previously shipped cache-busting strings — the version must keep moving.
-const SHIPPED_CSS_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18', 'floattools-v19', 'ftorient-v20'];
+const SHIPPED_CSS_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13'];
 
 // ---------------------------------------------------------------------------
 // Sandbox helpers

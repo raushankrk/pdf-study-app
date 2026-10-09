@@ -117,6 +117,9 @@ function openToolSizeMenu(tool) {
     const menu = toolSizeMenuEl();
     const btn = document.getElementById(ftSizeToolBtnId(tool));
     if (!menu || !btn) return;
+    // The two flyouts are mutually exclusive: opening the size flyout
+    // dismisses the color palette (js/colormenu.js does the same in reverse).
+    if (typeof closeToolColorMenu === 'function') closeToolColorMenu();
     tsmOpen = true;
     tsmOwnerTool = tool;
     tsmOwnerBtn = btn;

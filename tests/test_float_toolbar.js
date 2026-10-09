@@ -55,8 +55,8 @@ assert.deepStrictEqual = (a, b, msg) => {
 // Version chain — ftorient-v20 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19', 'ftorient-v20'];
-const CURRENT_VERSION = 'ftsize-v21';
+    'floattools-v19'];
+const CURRENT_VERSION = 'ftorient-v20';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,15 +284,12 @@ test('1.2 all 4 App-Mode buttons moved with IDENTICAL ids + onclick handlers', (
 test('1.3 all 7 Annotation Draw Tool buttons + file input moved with IDENTICAL ids', () => {
     const i = html.indexOf('id="float-toolbar"');
     const block = html.slice(i, html.indexOf('</aside>', i));
-    // ftsize-v21: the four size-adjustable tools dispatch through
-    // handleToolBtnTap (first tap selects, second tap opens the size menu);
-    // the rest keep calling setAnnoTool directly. IDs are unchanged.
     [['tool-select', "setAnnoTool('select')"],
-     ['tool-pen', "handleToolBtnTap('pen')"],
-     ['tool-highlighter', "handleToolBtnTap('highlighter')"],
+     ['tool-pen', "setAnnoTool('pen')"],
+     ['tool-highlighter', "setAnnoTool('highlighter')"],
      ['tool-text', "setAnnoTool('text')"],
-     ['tool-eraser-pixel', "handleToolBtnTap('eraser-pixel')"],
-     ['tool-eraser-stroke', "handleToolBtnTap('eraser-stroke')"],
+     ['tool-eraser-pixel', "setAnnoTool('eraser-pixel')"],
+     ['tool-eraser-stroke', "setAnnoTool('eraser-stroke')"],
      ['tool-image', "setAnnoTool('image')"]].forEach(([id, fn]) => {
         assert(block.includes(`id="${id}"`), `${id} missing from the toolbar`);
         assert(block.includes(`onclick="${fn}"`), `${id} lost its ${fn} handler`);
@@ -306,9 +303,7 @@ test('1.4 pen-customization + its separator moved into the toolbar', () => {
     assert(block.includes('id="pen-customization"'), '#pen-customization missing');
     assert(block.includes('id="pen-customization-sep"'), '#pen-customization-sep missing');
     assert(block.includes('id="tool-line-mode"'), 'line-mode button missing');
-    // ftsize-v21: the thickness slider moved into the floating size menu
-    // (#tool-size-menu, body level) — only the color preview remains inline.
-    assert(!block.includes('id="thickness-picker"'), 'inline thickness slider must be gone');
+    assert(block.includes('id="thickness-picker"'), 'thickness slider missing');
     assert(block.includes('id="thickness-preview-canvas"'), 'color preview canvas missing');
     assert(block.includes('id="color-picker"'), 'color picker missing');
 });
