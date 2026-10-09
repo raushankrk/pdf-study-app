@@ -808,3 +808,99 @@ contract). `test_float_sidebar.js` updated for the version bump (+1
 sandbox stub). Full battery re-run green: float_sidebar 38, position_resume
 18, tag_rail 21, minimize_panel 30, active_pdf_toolbar 23, touch_slider_space
 8, frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5.
+
+## Feature — Liquid glass floating sidebar (frosted card, clicks blocked)
+
+**Request**: "i think better to not make 100 % transparent give them a liquid
+effect also make sure click and other action/effect not get pass over this" —
+the draggable floating sidebar (floatdrag-v17) had a 100% transparent
+background and let clicks/taps/draws fall through its empty areas to the PDF.
+It is now a LIQUID GLASS card: a frosted translucent surface, and it ABSORBS
+every interaction — nothing passes through to the PDF underneath.
+
+**Design** (PDF stays the main workspace; the card is a floating tool layer):
+- Liquid glass surface on `#float-sidebar`: translucent white
+  `linear-gradient` tint (rgba 0.44–0.68 stops), `backdrop-filter:
+  blur(20px) saturate(1.75)` (+ `-webkit-` variant), hairline light border
+  (`rgba(255,255,255,0.72)`), 18px rounded corners, layered floating shadow
+  (ambient + key + inner top highlight). The PDF glows softly through the
+  card, but the card reads as a real object hovering above the page.
+- Pointer blocking: `pointer-events: auto` on the container. ALL old
+  pass-through islands are gone — `pointer-events: none` removed from
+  `#fs-header`, `#fs-body`, `#fs-chat-pane`/`#fs-comment-pane`,
+  `#chat-history` (+ its `> *` island rule), `#fs-composer`,
+  `#fs-comments-empty`. Clicks / taps / wheel / pen gestures ON the card
+  never reach the PDF; to scroll, zoom, draw or annotate, aim OUTSIDE the
+  card. The `events.js` handlePointerDown + `app.js` touch guards for
+  `#float-sidebar` remain as a second line of defense.
+- Wheel over the card scrolls the CHAT list (normal overflow-y behavior),
+  never the PDF; text selection / typing in the composer and comment editor
+  behave like any normal window.
+- Translucent inner cards so the glass shows through: composer card 0.78,
+  hint cards 0.72, comment editor 0.88, assistant bubbles 0.88 (were solid
+  white). User bubbles stay solid blue.
+- `@supports not (backdrop-filter...)` fallback: engines without backdrop
+  filtering (older Firefox) get a near-opaque `rgba(255,255,255,0.95)`
+  surface — readable, same blocking behavior, no frost.
+- Minimize buttons stay king: `.panel-min-btn` z-index 115 → 1250 (above
+  the card's 1200, below modals at 9999). The card's default dock covers
+  the top-right corner, so the right panel's minimize button now floats
+  ABOVE the glass and stays visible + clickable (previously it sat in the
+  transparent 44px padding zone).
+- Drag engine untouched: grip is still the only drag starter, position
+  still transform-driven (`translate3d` + rAF coalescing), clamping,
+  double-tap re-dock, ResizeObserver re-positioning, persistence — all as
+  shipped in floatdrag-v17.
+- Geometry preserved: same padding (44px top / 46px touch), same width
+  caps, same `height: min(620px, 100%)` — the layout of the docked card is
+  pixel-identical to v17; only the surface material changed.
+
+**Files changed**:
+- `static/css/style.css` — liquid glass container block (+ `@supports`
+  fallback), removed all pass-through `pointer-events: none` rules inside
+  the card, translucent inner cards, `.panel-min-btn` z-index 1250,
+  updated section documentation.
+- `static/index.html` — aside/header/pane doc comments rewritten for the
+  liquid glass + blocking semantics; cache version → `liquidglass-v18`
+  (CSS + all scripts + header chip; chip title now says "Liquid glass").
+- `static/js/ui.js`, `static/js/events.js`, `static/js/app.js` — comment
+  updates only (the guards and drag engine logic are unchanged).
+- `tests/test_float_sidebar.js` — suite 7 rewritten (glass contract +
+  blocking contract), version constants bumped.
+- `tests/test_float_drag.js` — suite 2 CSS contract inverted (glass +
+  blocking instead of transparency + pass-through), version constants
+  bumped, floatdrag-v17 added to the shipped/retired list.
+- `tests/test_liquid_glass.js` — NEW regression suite (19 tests).
+
+**Behavior verification** (headless Chromium, real server + project):
+- Computed styles live: `backdrop-filter: blur(20px) saturate(1.75)`,
+  gradient background, 18px radius, light border, layered shadow,
+  `pointer-events: auto`, z-order 1200 vs `.panel-min-btn` 1250.
+- Pen stroke drawn ACROSS the card (mouse down/move/up over the glass):
+  ZERO strokes recorded — the card absorbs the pointer.
+- Pen stroke on the canvas OUTSIDE the card: recorded (5th stroke, 3
+  points) — the PDF is fully interactive around the card.
+- `elementFromPoint` inside the card hits card elements (glass padding →
+  `#float-sidebar` itself, chat area → hint card, header → buttons);
+  outside → `left-viewport`.
+- Wheel over the card: left/right viewport scrollTops unchanged (0 / 331).
+- Real click on the minimize button THROUGH/ABOVE the docked glass:
+  right panel minimized, sidebar stayed open; panel restored via header
+  tab. `elementFromPoint` at the button center resolves to the button
+  even though the docked card geometrically covers it.
+- Real mouse drag of the grip: position updated smoothly
+  (`translate3d(342px, 0px, 0px)`; y clamps on the 521px-tall test
+  workspace where the card is full-height — by design, same as v17).
+- Reload restored: sidebar open, comments mode (as set pre-reload),
+  position (342, 0), glass styles. Composer typing works; comments pill
+  switches panes; version chip shows `liquidglass-v18`; zero page errors
+  (yjs CDN warning is the pre-existing offline-sandbox condition).
+- Screenshots: lg_docked.png, lg_nocard.png (PDF behind), 
+  lg_dragged_comments.png (dragged card over both panels, comments mode,
+  minimize button floating above the glass).
+
+**Test battery** (all green): liquid_glass 19 (NEW), float_sidebar 38,
+float_drag 44, position_resume 18, tag_rail 21, minimize_panel 30,
+active_pdf_toolbar 23, touch_slider_space 8, frontend_bugs 10,
+stroke_continuity 23, undo_yjs_rebuild 5 — 239 total. `node --check`
+clean on all edited JS; CSS braces balanced.

@@ -388,11 +388,10 @@ async function init() {
     document.addEventListener('touchstart', (e) => {
         // Only intercept in non-navigation modes
         if (state.appMode === 'navigation') return;
-        // Don't intercept touches inside the floating tool sidebar — the
-        // composer, chat bubbles and comment editor need normal touch
-        // behavior. (The sidebar container itself is pointer-events:none, so
-        // touches on the transparent gaps fall through to the PDF on purpose
-        // — annotate-while-open must keep working on touch devices too.)
+        // Don't intercept touches inside the floating glass sidebar — the
+        // composer, chat list and comment editor need normal touch behavior
+        // (scrolling, typing). Touches on the card never reach the PDF
+        // anyway (the card is pointer-events:auto and absorbs them).
         if (e.target.closest('#float-sidebar')) return;
         // Check if any of the touches are inside a viewport
         const target = e.target;

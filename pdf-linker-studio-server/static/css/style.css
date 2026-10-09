@@ -329,17 +329,20 @@ body.left-sidebar-collapsed #tag-rail { display: flex; }
 /* ======================================================================== */
 /* --- Floating Tool Sidebar (AI Chat + Comments) -------------------------- */
 /* ======================================================================== */
-/* ONE fully transparent overlay hosting both the AI chat and the comment
+/* ONE floating LIQUID GLASS card hosting both the AI chat and the comment
    editor (mode switcher shows exactly one pane at a time). Core rules:
      * The PDF canvas NEVER resizes or moves — the sidebar is absolutely
        positioned inside #workspace-main and takes NO flex space.
-     * The container background is 100% TRANSPARENT: no blur, no tint, no
-       glass. Only the real UI elements (mode pills, chat bubbles, composer
-       card, comment card) are visible.
-     * pointer-events: none on the container, pointer-events: auto on the
-       real UI elements → taps on transparent gaps fall straight through to
-       the PDF: scroll / zoom / draw / annotate keep working while the
-       sidebar is open.
+     * LIQUID GLASS surface (not plain transparent): a frosted translucent
+       card — soft white gradient tint + backdrop blur + saturation, a
+       hairline light border, rounded corners and a floating shadow. The
+       PDF glows softly through the card, but the card itself reads as a
+       real object hovering above the page.
+     * The card ABSORBS the pointer: pointer-events: auto on the container,
+       so clicks / taps / wheel / pen gestures on the card NEVER reach the
+       PDF underneath. Interacting with the PDF = aim outside the card.
+       (events.js + app.js keep their #float-sidebar guards as a second
+       line of defense.)
      * The sidebar is a compact CARD the user can DRAG anywhere inside the
        workspace via the grip handle (#fs-drag-handle). Position is applied
        ONLY through transform: translate3d(...) (GPU-composited → smooth
@@ -355,23 +358,41 @@ body.left-sidebar-collapsed #tag-rail { display: flex; }
     height: min(620px, 100%);
     max-height: 100%;
     /* Start below the right panel's floating minimize button (top-right
-       corner, 26px + margins) so both controls stay visible and clickable
-       through the transparent padding. */
+       corner, 26px + margins). The button's z-index sits ABOVE the card, so
+       it stays visible + clickable even in the docked corner. */
     padding: 44px 10px 10px;
     width: min(380px, calc(100vw - 60px));
     display: none;                /* shown only with body.float-sidebar-open */
     flex-direction: column;
-    background: transparent;      /* 100% transparent — by design */
-    border: none;
-    box-shadow: none;
-    backdrop-filter: none;        /* explicitly NO glass effect */
-    -webkit-backdrop-filter: none;
-    pointer-events: none;         /* the container never captures the pointer */
+    /* ---- Liquid glass surface ---- */
+    background: linear-gradient(155deg,
+        rgba(255, 255, 255, 0.68) 0%,
+        rgba(255, 255, 255, 0.44) 34%,
+        rgba(241, 245, 255, 0.50) 60%,
+        rgba(255, 255, 255, 0.62) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    border-radius: 18px;
+    box-shadow:
+        0 18px 48px rgba(15, 23, 42, 0.22),
+        0 4px 14px rgba(15, 23, 42, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.80);
+    backdrop-filter: blur(20px) saturate(1.75);
+    -webkit-backdrop-filter: blur(20px) saturate(1.75);
+    overflow: hidden;             /* clip children to the rounded glass edge */
+    pointer-events: auto;         /* the card ABSORBS clicks — nothing passes through */
     z-index: 1200;                /* above canvas content; below modals (9999) */
     transform: translate3d(0, 0, 0);  /* real position set by ui.js */
     will-change: transform;       /* keep the layer GPU-composited for smooth drags */
     transition: transform 0.18s ease-out;  /* glide on re-dock / resize re-clamp;
                                               disabled while actually dragging */
+}
+/* Graceful degradation: browsers without backdrop-filter would show a card
+   that is too see-through to read. Give them a near-opaque surface instead —
+   same geometry, same blocking behavior, just no frost. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #float-sidebar {
+        background: rgba(255, 255, 255, 0.95);
+    }
 }
 body.float-sidebar-open #float-sidebar { display: flex; }
 /* While a drag is in progress the transform must track the pointer 1:1 —
@@ -381,9 +402,10 @@ body.fs-dragging { user-select: none; -webkit-user-select: none; }
 /* Header AI toggle affordance: dimmed while the floating sidebar is closed. */
 body:not(.float-sidebar-open) .toggle-ai-btn { opacity: 0.7; }
 
-/* Drag grip: the ONLY element that starts a sidebar drag. A small island in
-   the transparent header (pointer-events: auto) — dragging it never steals
-   gestures from the PDF underneath. Double-tap re-docks (see ui.js). */
+/* Drag grip: the ONLY element that starts a sidebar drag (ui.js binds its
+   pointerdown). Everything else in the card is ordinary interactive UI;
+   the whole card blocks the PDF anyway, so no island juggling is needed.
+   Double-tap on the grip re-docks (see ui.js). */
 #fs-drag-handle {
     pointer-events: auto;
     width: 26px;
@@ -393,9 +415,9 @@ body:not(.float-sidebar-open) .toggle-ai-btn { opacity: 0.7; }
     align-items: center;
     justify-content: center;
     border-radius: 9999px;
-    border: 1px dashed #b9c0cb;   /* dashed border = "grab me" affordance */
-    background: rgba(255, 255, 255, 0.92);
-    color: #9ca3af;
+    border: 1px dashed #9aa3b2;   /* dashed border = "grab me" affordance */
+    background: rgba(255, 255, 255, 0.85);
+    color: #6b7280;
     font-size: 0.68rem;
     cursor: grab;
     touch-action: none;           /* JS owns touch drags — no pan/scroll/dbl-tap-zoom */
@@ -405,8 +427,8 @@ body:not(.float-sidebar-open) .toggle-ai-btn { opacity: 0.7; }
 #fs-drag-handle:hover { background: #ffffff; color: #4f46e5; }
 body.fs-dragging #fs-drag-handle { cursor: grabbing; color: #4f46e5; border-style: solid; }
 
-/* Header strip: mode switcher + contextual actions. The strip itself is
-   transparent — only the pills / buttons capture the pointer. */
+/* Header strip: mode switcher + contextual actions — an ordinary part of
+   the glass card (clicks here hit the card, never the PDF). */
 #fs-header {
     display: flex;
     align-items: center;
@@ -414,13 +436,11 @@ body.fs-dragging #fs-drag-handle { cursor: grabbing; color: #4f46e5; border-styl
     gap: 8px;
     margin-bottom: 8px;
     flex-shrink: 0;
-    pointer-events: none;
 }
 #fs-mode-switch {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    pointer-events: auto;
 }
 .fs-tab {
     display: inline-flex;
@@ -428,8 +448,8 @@ body.fs-dragging #fs-drag-handle { cursor: grabbing; color: #4f46e5; border-styl
     gap: 6px;
     padding: 6px 12px;
     border-radius: 9999px;
-    border: 1px solid #d1d5db;
-    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.80);
     color: #4b5563;
     font-size: 0.78rem;
     font-weight: 600;
@@ -450,7 +470,6 @@ body.fs-mode-comments #fs-tab-comments {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    pointer-events: auto;
 }
 #fs-header-actions button {
     width: 30px;
@@ -459,8 +478,8 @@ body.fs-mode-comments #fs-tab-comments {
     align-items: center;
     justify-content: center;
     border-radius: 9999px;
-    border: 1px solid #d1d5db;
-    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.80);
     color: #4b5563;
     font-size: 0.75rem;
     cursor: pointer;
@@ -472,14 +491,13 @@ body.fs-mode-comments #fs-tab-comments {
 /* Chat-only quick actions disappear while the comments pane is shown. */
 body.fs-mode-comments #fs-chat-actions { display: none; }
 
-/* Body: the two panes stack in the same transparent column; exactly one is
-   displayed, driven by the body mode classes. */
+/* Body: the two panes stack inside the glass card; exactly one is displayed,
+   driven by the body mode classes. */
 #fs-body {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    pointer-events: none;
 }
 #fs-chat-pane,
 #fs-comment-pane {
@@ -488,60 +506,53 @@ body.fs-mode-comments #fs-chat-actions { display: none; }
     display: none;
     flex-direction: column;
     position: relative;
-    pointer-events: none;
     /* Clip at the pane edge: the chat-history drawer slides in from the
-       left via translateX(-100%) — without this it would leak out over the
-       PDF while "closed" (the old flex sidebar clipped it via its own
-       overflow rule). */
+       left via translateX(-100%) — without this it would leak out of the
+       card while "closed". */
     overflow: hidden;
 }
 body.fs-mode-chat #fs-chat-pane { display: flex; }
 body.fs-mode-comments #fs-comment-pane { display: flex; }
 
 /* --- Chat pane --- */
-/* The message list itself is a pass-through: only its direct children
-   (bubbles / hint cards) capture the pointer, so wheel & touch gestures
-   between messages scroll / zoom the PDF underneath. */
-#chat-history { scroll-behavior: smooth; flex: 1; overflow-y: auto; pointer-events: none; }
-#chat-history > * { pointer-events: auto; }
+/* The message list is a normal scroll area of the card: wheel / touch
+   gestures over it scroll the CHAT — the PDF underneath stays still. */
+#chat-history { scroll-behavior: smooth; flex: 1; overflow-y: auto; }
 .ai-message { display: flex; flex-direction: column; max-width: 90%; animation: fadeIn 0.3s ease; margin-bottom: 12px; }
 .ai-message.user { align-self: flex-end; align-items: flex-end; }
 .ai-message.assistant { align-self: flex-start; align-items: flex-start; }
 .ai-bubble { padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; }
 .ai-message.user .ai-bubble { background-color: #3b82f6; color: white; border-bottom-right-radius: 0; }
-.ai-message.assistant .ai-bubble { background-color: #f3f4f6; color: #1f2937; border-bottom-left-radius: 0; border: 1px solid #e5e7eb; }
+.ai-message.assistant .ai-bubble { background-color: rgba(255, 255, 255, 0.88); color: #1f2937; border-bottom-left-radius: 0; border: 1px solid rgba(229, 231, 235, 0.9); }
 
 /* Floating hint / empty-state card (chat empty state, comments empty state).
-   White-ish so text stays readable over the PDF, but it is a CONTENT card —
-   the sidebar background itself stays fully transparent. */
+   Translucent white so it melts into the glass surface. */
 .fs-hint-card {
     display: block;
-    background: rgba(255, 255, 255, 0.94);
-    border: 1px solid #e5e7eb;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.85);
     border-radius: 10px;
     padding: 14px 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     line-height: 1.55;
-    pointer-events: auto;
 }
 
 /* Floating composer card at the bottom of the chat pane. */
-#fs-composer { flex-shrink: 0; pointer-events: none; }
+#fs-composer { flex-shrink: 0; }
 .fs-composer-card {
-    background: rgba(255, 255, 255, 0.96);
-    border: 1px solid #e5e7eb;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(255, 255, 255, 0.9);
     border-radius: 12px;
     padding: 8px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
-    pointer-events: auto;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
 }
 
-/* Chat history drawer: floating white card sliding over the chat pane. */
-#chat-history-drawer { pointer-events: auto; border-radius: 12px; }
+/* Chat history drawer: floating card sliding over the chat pane. */
+#chat-history-drawer { border-radius: 12px; }
 
 /* --- Comments pane --- */
-/* The comment editor is reused as-is (#comment-editor-panel) but now lives
-   inside the transparent sidebar as a floating white card. When no comment
+/* The comment editor is reused as-is (#comment-editor-panel) and lives
+   inside the glass card as a near-opaque editor surface. When no comment
    is active the panel keeps its `hidden` class and the empty-state hint
    shows instead (sibling selector below). */
 #comment-editor-panel {
@@ -549,31 +560,28 @@ body.fs-mode-comments #fs-comment-pane { display: flex; }
     flex-direction: column;
     flex: 1;
     min-height: 0;
-    background: rgba(255, 255, 255, 0.97);
-    border: 1px solid #e5e7eb;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.9);
     border-radius: 12px;
-    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.12);
     overflow: hidden;
-    pointer-events: auto;
 }
 /* Real hide (ID specificity beats both Tailwind's .hidden and the flex
    rule above). openCommentSidebar sets inline display:flex to show it. */
 #comment-editor-panel.hidden { display: none; }
 
-/* Empty state: shown only while the editor panel is hidden. It is
-   pointer-events:none so taps pass through — the user can immediately click
-   a comment icon on the PDF (even one sitting behind this hint). */
+/* Empty state: shown only while the editor panel is hidden. It is part of
+   the glass card, so taps on it are absorbed by the card — click a comment
+   icon on the PDF OUTSIDE the card to open one. */
 #fs-comments-empty {
     flex: 1;
     display: none;
     align-items: center;
     justify-content: center;
     padding: 16px;
-    pointer-events: none;
 }
 #comment-editor-panel.hidden ~ #fs-comments-empty { display: flex; }
 #fs-comments-empty .fs-hint-card {
-    pointer-events: none;
     max-width: 260px;
     text-align: center;
     color: #4b5563;
@@ -2335,7 +2343,9 @@ body > header > * {
     position: absolute;
     top: 8px;
     right: 10px;
-    z-index: 115;               /* above canvas content + slider bar */
+    z-index: 1250;              /* ABOVE the floating glass sidebar (1200) so the
+                                   button stays visible + clickable even when the
+                                   card is docked/drugged over it; below modals */
     width: 26px;
     height: 26px;
     border-radius: 6px;

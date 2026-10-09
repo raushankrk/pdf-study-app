@@ -15,13 +15,13 @@ function getMousePosInViewport(evt, side) {
 
 function handlePointerDown(e) {
     // ---- Floating tool sidebar guard (CRITICAL) ----
-    // If the pointer landed on an actual UI element of the floating sidebar
-    // (mode pills, chat bubble, composer, comment card, ...) bail out — those
-    // elements have their own handlers. NOTE: the sidebar CONTAINER itself is
-    // pointer-events:none with a fully transparent background, so taps on the
-    // transparent gaps NEVER land here — they fall through to the PDF
-    // underneath on purpose: the user can scroll, zoom, draw and annotate the
-    // PDF normally while the sidebar is open.
+    // If the pointer landed on the liquid glass sidebar card (or the comment
+    // card inside it), bail out — those elements have their own handlers.
+    // NOTE: the card is pointer-events:auto with a frosted glass surface, so
+    // clicks ON the card are absorbed by the card itself and usually never
+    // even reach the page; this guard is the second line of defense (e.g.
+    // synthetic events, or future DOM changes) and keeps annotation strokes
+    // from ever starting inside the sidebar.
     if (e.target.closest('#float-sidebar') || e.target.closest('#comment-editor-panel')) return;
 
     // 2. Standard early-return guards — also includes TEXTAREA so that

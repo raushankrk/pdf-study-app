@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=floatdrag-v17">
+    <link rel="stylesheet" href="/css/style.css?v=liquidglass-v18">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -73,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Floating AI Chat + Comments sidebar — draggable anywhere">floatdrag-v17</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass AI Chat + Comments sidebar — draggable anywhere">liquidglass-v18</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -511,16 +511,17 @@
             <!-- ================================================================
                  FLOATING TOOL SIDEBAR — AI Chat + Comments, one at a time
                  ---------------------------------------------------------------
-                 This is a FULLY TRANSPARENT overlay:
+                 This is a LIQUID GLASS floating card:
                    * The PDF canvas NEVER resizes or moves — this aside is
                      absolutely positioned and takes NO flex space.
-                   * The container has NO background (no blur / tint / glass)
-                     and pointer-events: none, so only the actual UI elements
-                     (mode pills, chat bubbles, composer card, comment card)
-                     capture the pointer. Everything else passes straight
-                     through to the PDF underneath — the user can scroll,
-                     zoom, draw and annotate the PDF while the sidebar is
-                     open.
+                   * The card has a frosted translucent surface (soft white
+                     tint + backdrop blur + saturation, light border, rounded
+                     corners, floating shadow). The PDF glows softly through
+                     it, but the card reads as a real object above the page.
+                   * pointer-events: auto on the whole card — every click,
+                     tap, wheel or pen gesture ON the card is ABSORBED by it
+                     and NEVER reaches the PDF underneath. To scroll, zoom,
+                     draw or annotate the PDF, aim outside the card.
                  Mode switcher shows AI Chat OR Comments (never both).
                  Business logic stays completely separate:
                    * AI Chat  → js/ai.js           (chats, RAG, streaming)
@@ -529,9 +530,9 @@
             <aside id="float-sidebar" aria-label="AI Chat and Comments">
 
                 <!-- Header: drag handle + mode switcher + contextual actions.
-                     The grip is the ONLY drag affordance: it is a small
-                     pointer-events island, so dragging the sidebar never
-                     steals gestures from the PDF underneath. -->
+                     The grip is the ONLY drag affordance (ui.js binds its
+                     pointerdown) — dragging the card never conflicts with
+                     clicks on the rest of the UI. -->
                 <div id="fs-header">
                     <button id="fs-drag-handle"
                             title="Drag to move the sidebar anywhere — double-tap to re-dock it"
@@ -587,9 +588,9 @@
                             </div>
                         </div>
 
-                        <!-- Chat Area (Middle): transparent scroll list — only the
-                             bubbles themselves capture the pointer, so the user can
-                             still scroll / zoom / draw the PDF "between" messages. -->
+                        <!-- Chat Area (Middle): ordinary scroll list inside the
+                             glass card — wheel & touch gestures over it scroll
+                             the CHAT, never the PDF underneath. -->
                         <div id="chat-history" class="p-3 space-y-3 overflow-y-auto flex-1 relative">
                             <div class="fs-hint-card text-center text-xs text-gray-500">
                                 Ask a question about the loaded PDFs.
@@ -659,9 +660,9 @@
                             </div>
                         </div>
 
-                        <!-- Empty state (pointer-events: none — taps pass through to
-                             the PDF so the user can immediately click a comment icon
-                             or place a new one with the T tool). -->
+                        <!-- Empty state: part of the glass card, so taps on it
+                             are absorbed. Click a comment icon on the PDF
+                             OUTSIDE the card to open one. -->
                         <div id="fs-comments-empty">
                             <div class="fs-hint-card">
                                 <i class="fa-regular fa-comment-dots text-2xl mb-2 block"></i>
@@ -829,27 +830,27 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=floatdrag-v17"></script>
-    <script src="/js/config.js?v=floatdrag-v17"></script>
-    <script src="/js/api.js?v=floatdrag-v17"></script>
-    <script src="/js/state.js?v=floatdrag-v17"></script>
-    <script src="/js/database.js?v=floatdrag-v17"></script>
-    <script src="/js/ui.js?v=floatdrag-v17"></script>
-    <script src="/js/ai.js?v=floatdrag-v17"></script>
-    <script src="/js/pdf.js?v=floatdrag-v17"></script>
-    <script src="/js/search.js?v=floatdrag-v17"></script>
-    <script src="/js/annotations.js?v=floatdrag-v17"></script>
-    <script src="/js/links.js?v=floatdrag-v17"></script>
+    <script src="/js/utils.js?v=liquidglass-v18"></script>
+    <script src="/js/config.js?v=liquidglass-v18"></script>
+    <script src="/js/api.js?v=liquidglass-v18"></script>
+    <script src="/js/state.js?v=liquidglass-v18"></script>
+    <script src="/js/database.js?v=liquidglass-v18"></script>
+    <script src="/js/ui.js?v=liquidglass-v18"></script>
+    <script src="/js/ai.js?v=liquidglass-v18"></script>
+    <script src="/js/pdf.js?v=liquidglass-v18"></script>
+    <script src="/js/search.js?v=liquidglass-v18"></script>
+    <script src="/js/annotations.js?v=liquidglass-v18"></script>
+    <script src="/js/links.js?v=liquidglass-v18"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=floatdrag-v17"></script>
-    <script src="/js/conflict.js?v=floatdrag-v17"></script>
+    <script src="/js/undo.js?v=liquidglass-v18"></script>
+    <script src="/js/conflict.js?v=liquidglass-v18"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=floatdrag-v17"></script>
+    <script src="/js/yjs-collab.js?v=liquidglass-v18"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=floatdrag-v17"></script>
-    <script src="/js/filemanager.js?v=floatdrag-v17"></script>
-    <script src="/js/events.js?v=floatdrag-v17"></script>
-    <script src="/js/app.js?v=floatdrag-v17"></script>
+    <script src="/js/folders.js?v=liquidglass-v18"></script>
+    <script src="/js/filemanager.js?v=liquidglass-v18"></script>
+    <script src="/js/events.js?v=liquidglass-v18"></script>
+    <script src="/js/app.js?v=liquidglass-v18"></script>
 
 </body>
 </html>

@@ -224,11 +224,13 @@ function toggleLeftSidebar() {
 }
 
 // ---- Floating tool sidebar (AI Chat + Comments) --------------------------
-// ONE fully transparent overlay that floats above the PDF. The PDF canvas
-// never resizes or moves — the sidebar is absolutely positioned and takes no
-// flex space. Visibility is driven by body.float-sidebar-open; the shown pane
+// ONE liquid glass card floating above the PDF. The PDF canvas never
+// resizes or moves — the card is absolutely positioned and takes no flex
+// space. Visibility is driven by body.float-sidebar-open; the shown pane
 // (AI Chat OR Comments, never both) is driven by exactly one of
 // body.fs-mode-chat / body.fs-mode-comments (CSS in style.css).
+// The card's surface is frosted translucent glass and it ABSORBS the
+// pointer (pointer-events: auto) — clicks on the card never reach the PDF.
 function toggleAiSidebar() {
     const nowOpen = document.body.classList.toggle('float-sidebar-open');
     if (nowOpen) applyFloatSidebarPos();   // position/measure needs a visible element

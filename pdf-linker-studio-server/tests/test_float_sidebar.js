@@ -1,18 +1,18 @@
 // ============================================================================
 // tests/test_float_sidebar.js
-// Regression suite: ONE fully transparent floating sidebar for AI Chat +
+// Regression suite: ONE floating liquid glass sidebar for AI Chat +
 // Comments (replaces the old flex #ai-sidebar and the fixed comment overlay
 // with its dimming backdrop).
 //
 // Feature contract:
 //   * The PDF canvas NEVER resizes or moves because of the sidebar — the
 //     aside is absolutely positioned and takes no flex space.
-//   * The sidebar container background is 100% transparent: no blur, no
-//     tint, no glass. Only real UI elements (mode pills, bubbles, composer
-//     card, comment card) are visible.
-//   * pointer-events: none on the container; pointer-events: auto only on
-//     real UI elements → the PDF stays fully interactive while the sidebar
-//     is open (scroll / zoom / draw / annotate / place comments).
+//   * The sidebar surface is LIQUID GLASS (not plain transparent): frosted
+//     translucent card — soft white gradient tint + backdrop blur +
+//     saturation, light border, rounded corners, floating shadow.
+//   * The card ABSORBS the pointer (pointer-events: auto on the container,
+//     no pass-through islands) → clicks / taps / wheel on the card NEVER
+//     reach the PDF underneath; annotating the PDF = aim outside the card.
 //   * A simple mode switcher shows AI Chat OR Comments, one at a time
 //     (body.fs-mode-chat / body.fs-mode-comments).
 //   * AI Chat business logic (ai.js) and Comments business logic
@@ -45,8 +45,8 @@ assert.strictEqual = (a, b, msg) => { if (a !== b) throw new Error(msg || `expec
 assert.ok = assert;
 
 // Previously shipped cache-busting strings — the version must keep moving.
-const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15', 'floatside-v16'];
-const CURRENT_VERSION = 'floatdrag-v17';
+const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17'];
+const CURRENT_VERSION = 'liquidglass-v18';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -95,7 +95,7 @@ function makeUiSandbox(bodyClasses = [], opts = {}) {
         saveSettings: () => { sb.__saves = (sb.__saves || 0) + 1; },
         closeChatHistory: () => { sb.__historyClosed = true; },
         cancelCommentEdit: () => { sb.__commentCancelled = true; },
-        // floatdrag-v17: openFloatSidebar also (re)positions the card. This
+        // liquidglass-v18: openFloatSidebar also (re)positions the card. This
         // suite only tests MODE logic (getElementById is null here anyway),
         // so a no-op stub keeps the sandbox minimal.
         applyFloatSidebarPos: () => {},
@@ -327,7 +327,7 @@ test('6.4 config.js keeps the comment els mapping working', () => {
 });
 
 // ===============================================================
-console.log('\nSuite 7 — CSS contract (transparency + pointer-events)');
+console.log('\nSuite 7 — CSS contract (liquid glass + pointer blocking)');
 const css = fs.readFileSync(STYLE_CSS, 'utf8');
 function cssBlock(selector) {
     const idx = css.indexOf(selector);
@@ -340,46 +340,47 @@ function cssBlock(selector) {
     throw new Error(`unbalanced block for ${selector}`);
 }
 
-test('7.1 #float-sidebar: absolute overlay, 100% transparent, no glass', () => {
+test('7.1 #float-sidebar: absolute overlay with a LIQUID GLASS surface', () => {
     const b = cssBlock('#float-sidebar {');
     assert(b.includes('position: absolute'), 'must be absolutely positioned (no flex space)');
-    assert(b.includes('background: transparent'), 'background must be 100% transparent');
-    assert(b.includes('backdrop-filter: none'), 'no blur/glass allowed');
-    assert(b.includes('pointer-events: none'), 'container must not capture the pointer');
-    assert(!/backdrop-filter:\s*blur/.test(b), 'no blur value allowed');
+    assert(/backdrop-filter:\s*blur\(/.test(b), 'must have backdrop blur (liquid glass)');
+    assert(/saturate\(/.test(b), 'must saturate the backdrop (liquid glass)');
+    assert(b.includes('-webkit-backdrop-filter: blur('), 'webkit variant for Safari');
+    assert(/background:\s*linear-gradient/.test(b), 'translucent gradient tint');
+    assert(/rgba\(/.test(b), 'translucent rgba layers');
+    assert(b.includes('border-radius'), 'rounded glass card');
+    assert(b.includes('box-shadow'), 'floating card shadow');
+    assert(!/background:\s*transparent/.test(b), 'must NOT be plain transparent anymore');
 });
 
-test('7.2 visibility + pane switching driven by body classes', () => {
+test('7.2 #float-sidebar ABSORBS the pointer (no pass-through)', () => {
+    const b = cssBlock('#float-sidebar {');
+    assert(b.includes('pointer-events: auto'), 'container must capture the pointer');
+});
+
+test('7.3 visibility + pane switching driven by body classes', () => {
     assert(css.includes('body.float-sidebar-open #float-sidebar { display: flex; }'), 'open rule');
     assert(css.includes('body.fs-mode-chat #fs-chat-pane { display: flex; }'), 'chat pane rule');
     assert(css.includes('body.fs-mode-comments #fs-comment-pane { display: flex; }'), 'comments pane rule');
     assert(css.includes('body.fs-mode-comments #fs-chat-actions { display: none; }'), 'chat-only actions hidden in comments mode');
 });
 
-test('7.3 chat list is a pass-through; only bubbles capture the pointer', () => {
-    const b = cssBlock('#chat-history {');
-    assert(b.includes('pointer-events: none'), 'list container pass-through');
-    assert(css.includes('#chat-history > * { pointer-events: auto; }'), 'children (bubbles) interactive');
-});
-
-test('7.4 comment panel: white card inside the pane; real .hidden hide', () => {
-    const b = cssBlock('#comment-editor-panel {');
-    assert(b.includes('pointer-events: auto'), 'card must be interactive');
+test('7.4 comment panel: editor card inside the pane; real .hidden hide', () => {
     const hidden = cssBlock('#comment-editor-panel.hidden {');
     assert(hidden.includes('display: none'), 'hidden class must really hide (in-flow element)');
 });
 
-test('7.5 comments empty state only shows while the panel is hidden, and passes taps through', () => {
+test('7.5 comments empty state only shows while the panel is hidden', () => {
     assert(css.includes('#comment-editor-panel.hidden ~ #fs-comments-empty { display: flex; }'),
         'sibling-visibility rule');
-    const b = cssBlock('#fs-comments-empty {');
-    assert(b.includes('pointer-events: none'), 'empty state must not block the PDF');
 });
 
-test('7.6 mode pills + composer card + drawer are interactive islands', () => {
-    assert(cssBlock('#fs-mode-switch {').includes('pointer-events: auto'), 'pills interactive');
-    assert(cssBlock('.fs-composer-card {').includes('pointer-events: auto'), 'composer interactive');
-    assert(cssBlock('#chat-history-drawer {').includes('pointer-events: auto'), 'drawer interactive');
+test('7.6 @supports fallback for browsers without backdrop-filter', () => {
+    assert(css.includes('@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'),
+        'fallback block must exist');
+    const idx = css.indexOf('@supports not ((backdrop-filter: blur(1px))');
+    const block = css.slice(idx, idx + 260);
+    assert(/rgba\(255,\s*255,\s*255,\s*0\.9/.test(block), 'fallback surface must be near-opaque');
 });
 
 test('7.7 old sidebar/backdrop CSS is fully removed', () => {
