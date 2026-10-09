@@ -92,7 +92,7 @@ const els = {
     aiSettingMaxChunks: document.getElementById('ai-setting-max-chunks'),
     aiSettingChunkSize: document.getElementById('ai-setting-chunk-size'),
 
-    // Comment Editor Panel (overlay inside #ai-sidebar)
+    // Comment Editor Panel (comments pane inside #float-sidebar)
     commentEditorPanel: document.getElementById('comment-editor-panel'),
     commentPreviewArea: document.getElementById('comment-preview-area'),
     commentEditorArea: document.getElementById('comment-editor-area'),
