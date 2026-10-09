@@ -228,6 +228,16 @@ async function performGlobalSearch() {
         }
     }
 
+    // Keep results from the currently active PDF at the top, while still
+    // showing matching pages from every other imported PDF below them.
+    const activeSide = state.lastActiveSide === 'right' ? 'right' : 'left';
+    const activeDocId = state.view[activeSide].docId;
+    allMatches.sort((a, b) => {
+        if (a.docId === activeDocId && b.docId !== activeDocId) return -1;
+        if (b.docId === activeDocId && a.docId !== activeDocId) return 1;
+        return 0;
+    });
+
     container.innerHTML = '';
     if (allMatches.length === 0) {
         container.innerHTML = '<div class="text-xs text-gray-500 p-2">No matches found.</div>';
@@ -261,13 +271,9 @@ async function performGlobalSearch() {
             state.view[side].pageId = pageIdFromNum(targetDoc, match.page);
             state.view[side].scrollTop = 0;
             
-            const input = document.getElementById(`${side}-search-input`);
-            input.value = query;
-            input.classList.remove('hidden');
-            document.getElementById(`${side}-search-nav`).classList.remove('hidden');
-
-            await performViewportSearch(side, match.page);
-            
+            // Make the destination viewport active, then navigate directly to
+            // the matching page. No separate per-PDF search box is required.
+            setActivePdf(side, false);
             renderPage(side);
             renderDocList();
         };

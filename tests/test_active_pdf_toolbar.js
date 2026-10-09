@@ -148,9 +148,6 @@ test('1.3 All relocated per-side element IDs appear exactly once (els[side+...] 
         'left-zoom-level', 'right-zoom-level',
         'lock-left-btn', 'lock-right-btn',
         'left-view-title', 'right-view-title',
-        'left-search-input', 'right-search-input',
-        'left-search-nav', 'right-search-nav',
-        'left-search-count', 'right-search-count',
     ];
     for (const id of ids) {
         assert.strictEqual(countOccurrences(html, `id="${id}"`), 1,
@@ -170,11 +167,18 @@ test('1.4 Relocated tools keep their exact handlers (operate per side)', () => {
         "insertPage('right', 'blank')", "insertPage('right', 'duplicate')",
         "deleteCurrentPage('left')", "deleteCurrentPage('right')",
         "toggleLock('left')", "toggleLock('right')",
-        "toggleViewportSearch('left')", "toggleViewportSearch('right')",
         "setActivePdf('left')", "setActivePdf('right')",
     ];
     for (const h of handlers) {
         assert.ok(html.includes(h), `handler missing: ${h}`);
+    }
+});
+
+test('1.4b Search uses the sidebar only, with no per-PDF Find controls', () => {
+    assert.ok(html.includes('id="unified-search-input"'), 'unified sidebar search remains');
+    assert.ok(html.includes('id="global-search-results"'), 'sidebar content results remain');
+    for (const id of ['left-search-input', 'right-search-input', 'left-search-toggle', 'right-search-toggle']) {
+        assert.strictEqual(countOccurrences(html, `id="${id}"`), 0, `#${id} removed`);
     }
 });
 
@@ -203,7 +207,7 @@ test('1.7 body carries the default data-active-pdf="left"', () => {
 test('1.8 Cache-busting version bumped so devices reload the new UI', () => {
     const m = /style\.css\?v=([^"]+)"/.exec(html);
     assert.ok(m, 'style.css has a cache-busting version param');
-    assert.ok(!['comment-v9', 'activepdf-v11'].includes(m[1]),
+    assert.ok(!['comment-v9', 'activepdf-v11', 'ipadcolor-v22'].includes(m[1]),
         `version must move past every previously-shipped string (got ${m[1]})`);
 });
 

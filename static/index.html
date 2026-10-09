@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=ipadcolor-v22">
+    <link rel="stylesheet" href="/css/style.css?v=ipadcolor-v23">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -73,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable annotation toolbar (horizontal / vertical) + tap-active-tool size menu + custom color palette">ipadcolor-v22</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable annotation toolbar (horizontal / vertical) + tap-active-tool size menu + custom color palette">ipadcolor-v23</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -123,22 +123,6 @@
                     <button id="lock-left-btn" onclick="toggleLock('left')" class="lock-btn" title="Lock PDF A Viewport">
                         <i class="fa-solid fa-lock-open"></i>
                     </button>
-
-                    <div class="relative group/search">
-                        <input type="text" id="left-search-input" placeholder="Find..." class="hidden pl-6 pr-2 py-0.5 text-[10px] border border-gray-300 rounded w-24 focus:w-32 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        <button id="left-search-toggle" onclick="toggleViewportSearch('left')" class="tool-btn !w-7 !h-7 !text-[11px]" title="Find in PDF A">
-                            <i class="fa-solid fa-magnifying-glass"></i>
-                        </button>
-                        <div id="left-search-nav" class="hidden absolute right-0 top-8 bg-white shadow-md border rounded flex p-1 z-50">
-                            <button onclick="navigateSearchResult('left', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-up"></i></button>
-                            <span id="left-search-count" class="text-[10px] self-center px-1 text-gray-500">0/0</span>
-                            <button onclick="navigateSearchResult('left', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-down"></i></button>
-                            <button onclick="closeViewportSearch('left')" class="ml-1 p-1 hover:bg-red-50 text-red-500 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
-                        </div>
-                    </div>
-
-                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
-
                     <button onclick="zoomViewport('left', -0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom Out PDF A"><i class="fa-solid fa-minus"></i></button>
                     <span id="left-zoom-level" class="text-[10px] w-8 text-center font-mono text-gray-500">100%</span>
                     <button onclick="zoomViewport('left', 0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom In PDF A"><i class="fa-solid fa-plus"></i></button>
@@ -166,22 +150,6 @@
                     <button id="lock-right-btn" onclick="toggleLock('right')" class="lock-btn" title="Lock PDF B Viewport">
                         <i class="fa-solid fa-lock-open"></i>
                     </button>
-
-                    <div class="relative group/search">
-                        <input type="text" id="right-search-input" placeholder="Find..." class="hidden pl-6 pr-2 py-0.5 text-[10px] border border-gray-300 rounded w-24 focus:w-32 transition-all focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        <button id="right-search-toggle" onclick="toggleViewportSearch('right')" class="tool-btn !w-7 !h-7 !text-[11px]" title="Find in PDF B">
-                            <i class="fa-solid fa-magnifying-glass"></i>
-                        </button>
-                        <div id="right-search-nav" class="hidden absolute right-0 top-8 bg-white shadow-md border rounded flex p-1 z-50">
-                            <button onclick="navigateSearchResult('right', -1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-up"></i></button>
-                            <span id="right-search-count" class="text-[10px] self-center px-1 text-gray-500">0/0</span>
-                            <button onclick="navigateSearchResult('right', 1)" class="p-1 hover:bg-gray-100 rounded text-gray-600 text-xs"><i class="fa-solid fa-chevron-down"></i></button>
-                            <button onclick="closeViewportSearch('right')" class="ml-1 p-1 hover:bg-red-50 text-red-500 rounded text-xs"><i class="fa-solid fa-xmark"></i></button>
-                        </div>
-                    </div>
-
-                    <div class="w-px h-4 bg-gray-300 mx-0.5"></div>
-
                     <button onclick="zoomViewport('right', -0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom Out PDF B"><i class="fa-solid fa-minus"></i></button>
                     <span id="right-zoom-level" class="text-[10px] w-8 text-center font-mono text-gray-500">100%</span>
                     <button onclick="zoomViewport('right', 0.25)" class="tool-btn !w-7 !h-7 !text-[11px]" title="Zoom In PDF B"><i class="fa-solid fa-plus"></i></button>
@@ -950,30 +918,30 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=ipadcolor-v22"></script>
-    <script src="/js/config.js?v=ipadcolor-v22"></script>
-    <script src="/js/api.js?v=ipadcolor-v22"></script>
-    <script src="/js/state.js?v=ipadcolor-v22"></script>
-    <script src="/js/database.js?v=ipadcolor-v22"></script>
-    <script src="/js/ui.js?v=ipadcolor-v22"></script>
-    <script src="/js/floattools.js?v=ipadcolor-v22"></script>
-    <script src="/js/sizemenu.js?v=ipadcolor-v22"></script>
-    <script src="/js/colormenu.js?v=ipadcolor-v22"></script>
-    <script src="/js/ai.js?v=ipadcolor-v22"></script>
-    <script src="/js/pdf.js?v=ipadcolor-v22"></script>
-    <script src="/js/search.js?v=ipadcolor-v22"></script>
-    <script src="/js/annotations.js?v=ipadcolor-v22"></script>
-    <script src="/js/links.js?v=ipadcolor-v22"></script>
+    <script src="/js/utils.js?v=ipadcolor-v23"></script>
+    <script src="/js/config.js?v=ipadcolor-v23"></script>
+    <script src="/js/api.js?v=ipadcolor-v23"></script>
+    <script src="/js/state.js?v=ipadcolor-v23"></script>
+    <script src="/js/database.js?v=ipadcolor-v23"></script>
+    <script src="/js/ui.js?v=ipadcolor-v23"></script>
+    <script src="/js/floattools.js?v=ipadcolor-v23"></script>
+    <script src="/js/sizemenu.js?v=ipadcolor-v23"></script>
+    <script src="/js/colormenu.js?v=ipadcolor-v23"></script>
+    <script src="/js/ai.js?v=ipadcolor-v23"></script>
+    <script src="/js/pdf.js?v=ipadcolor-v23"></script>
+    <script src="/js/search.js?v=ipadcolor-v23"></script>
+    <script src="/js/annotations.js?v=ipadcolor-v23"></script>
+    <script src="/js/links.js?v=ipadcolor-v23"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=ipadcolor-v22"></script>
-    <script src="/js/conflict.js?v=ipadcolor-v22"></script>
+    <script src="/js/undo.js?v=ipadcolor-v23"></script>
+    <script src="/js/conflict.js?v=ipadcolor-v23"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=ipadcolor-v22"></script>
+    <script src="/js/yjs-collab.js?v=ipadcolor-v23"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=ipadcolor-v22"></script>
-    <script src="/js/filemanager.js?v=ipadcolor-v22"></script>
-    <script src="/js/events.js?v=ipadcolor-v22"></script>
-    <script src="/js/app.js?v=ipadcolor-v22"></script>
+    <script src="/js/folders.js?v=ipadcolor-v23"></script>
+    <script src="/js/filemanager.js?v=ipadcolor-v23"></script>
+    <script src="/js/events.js?v=ipadcolor-v23"></script>
+    <script src="/js/app.js?v=ipadcolor-v23"></script>
 
 </body>
 </html>

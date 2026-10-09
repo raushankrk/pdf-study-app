@@ -82,8 +82,8 @@ const eventsSrc = fs.readFileSync(EVENTS_JS, 'utf8');
 // Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+    'floattools-v19', 'ftorient-v20', 'ftsize-v21', 'ipadcolor-v22'];
+const CURRENT_VERSION = 'ipadcolor-v23';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as the sibling suites)
