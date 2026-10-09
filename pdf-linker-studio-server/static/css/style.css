@@ -260,332 +260,22 @@ body.left-sidebar-collapsed #left-sidebar {
 }
 body.left-sidebar-collapsed .toggle-left-btn i { transform: rotate(180deg); }
 
-/* --- Tag rail: quick-switch mini sidebar (visible when explorer collapsed) ---
- * Shows one colored chip per TAGGED PDF (first 3 letters of the name) so the
- * user can switch between frequently used PDFs with one tap even while the
- * file explorer is hidden. Filled by renderTagRail() in filemanager.js. */
-#tag-rail {
-    display: none;                 /* hidden while the explorer is expanded */
-    width: 44px;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 0 10px;
-    background: #ffffff;
-    border-right: 1px solid #e5e7eb;
-    overflow-y: auto;
-    scrollbar-width: none;         /* few chips — keep the strip clean */
+/* --- AI Sidebar Styles --- */
+#ai-sidebar {
+    width: 320px;
+    transition: width 0.3s ease-in-out;
+    display: flex; flex-direction: column;
 }
-#tag-rail::-webkit-scrollbar { display: none; }
-body.left-sidebar-collapsed #tag-rail { display: flex; }
-.tag-rail-head {
-    color: #9ca3af;
-    font-size: 10px;
-    line-height: 1;
-    margin-bottom: 2px;
-    flex-shrink: 0;
-}
-.tag-chip {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    padding: 0;
-    border: 2px solid transparent;
-    border-radius: 9px;
-    color: #ffffff;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.3px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
-    flex-shrink: 0;
-}
-.tag-chip:hover { transform: scale(1.1); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28); }
-.tag-chip:active { transform: scale(0.96); }
-/* Chip of a PDF currently open in a viewport: dark border + amber halo */
-.tag-chip-active {
-    border-color: #111827;
-    box-shadow: 0 0 0 2px #fbbf24, 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-/* Tag badge on explorer rows (next to the favorite star) */
-.tree-tag { color: #2563eb; }
+body.ai-sidebar-collapsed #ai-sidebar { width: 0 !important; overflow: hidden; padding: 0; border: none; }
+body.ai-sidebar-collapsed .toggle-ai-btn i { transform: rotate(180deg); }
 
-/* Touch devices: bigger chips + wider rail (finger-friendly) */
-@media (hover: none), (pointer: coarse) {
-    #tag-rail { width: 52px; }
-    .tag-chip {
-        width: 40px;
-        height: 40px;
-        min-width: 40px;
-        font-size: 11px;
-        border-radius: 10px;
-    }
-}
-
-/* ======================================================================== */
-/* --- Floating Tool Sidebar (AI Chat + Comments) -------------------------- */
-/* ======================================================================== */
-/* ONE floating LIQUID GLASS card hosting both the AI chat and the comment
-   editor (mode switcher shows exactly one pane at a time). Core rules:
-     * The PDF canvas NEVER resizes or moves — the sidebar is absolutely
-       positioned inside #workspace-main and takes NO flex space.
-     * LIQUID GLASS surface (not plain transparent): a frosted translucent
-       card — soft white gradient tint + backdrop blur + saturation, a
-       hairline light border, rounded corners and a floating shadow. The
-       PDF glows softly through the card, but the card itself reads as a
-       real object hovering above the page.
-     * The card ABSORBS the pointer: pointer-events: auto on the container,
-       so clicks / taps / wheel / pen gestures on the card NEVER reach the
-       PDF underneath. Interacting with the PDF = aim outside the card.
-       (events.js + app.js keep their #float-sidebar guards as a second
-       line of defense.)
-     * The sidebar is a compact CARD the user can DRAG anywhere inside the
-       workspace via the grip handle (#fs-drag-handle). Position is applied
-       ONLY through transform: translate3d(...) (GPU-composited → smooth
-       1:1 tracking); JS in ui.js owns the math, clamping and persistence. */
-
-#float-sidebar {
-    position: absolute;
-    /* Compact card anchored at the top-left of #workspace-main; the actual
-       on-screen position comes from the JS-driven transform below (default
-       = docked at the top-right corner, the old right:0 resting place). */
-    left: 0;
-    top: 0;
-    height: min(620px, 100%);
-    max-height: 100%;
-    /* Start below the right panel's floating minimize button (top-right
-       corner, 26px + margins). The button's z-index sits ABOVE the card, so
-       it stays visible + clickable even in the docked corner. */
-    padding: 44px 10px 10px;
-    width: min(380px, calc(100vw - 60px));
-    display: none;                /* shown only with body.float-sidebar-open */
-    flex-direction: column;
-    /* ---- Liquid glass surface ---- */
-    background: linear-gradient(155deg,
-        rgba(255, 255, 255, 0.68) 0%,
-        rgba(255, 255, 255, 0.44) 34%,
-        rgba(241, 245, 255, 0.50) 60%,
-        rgba(255, 255, 255, 0.62) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    border-radius: 18px;
-    box-shadow:
-        0 18px 48px rgba(15, 23, 42, 0.22),
-        0 4px 14px rgba(15, 23, 42, 0.10),
-        inset 0 1px 0 rgba(255, 255, 255, 0.80);
-    backdrop-filter: blur(20px) saturate(1.75);
-    -webkit-backdrop-filter: blur(20px) saturate(1.75);
-    overflow: hidden;             /* clip children to the rounded glass edge */
-    pointer-events: auto;         /* the card ABSORBS clicks — nothing passes through */
-    z-index: 1200;                /* above canvas content; below modals (9999) */
-    transform: translate3d(0, 0, 0);  /* real position set by ui.js */
-    will-change: transform;       /* keep the layer GPU-composited for smooth drags */
-    transition: transform 0.18s ease-out;  /* glide on re-dock / resize re-clamp;
-                                              disabled while actually dragging */
-}
-/* Graceful degradation: browsers without backdrop-filter would show a card
-   that is too see-through to read. Give them a near-opaque surface instead —
-   same geometry, same blocking behavior, just no frost. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    #float-sidebar {
-        background: rgba(255, 255, 255, 0.95);
-    }
-}
-body.float-sidebar-open #float-sidebar { display: flex; }
-/* While a drag is in progress the transform must track the pointer 1:1 —
-   no transition lag. ui.js toggles this class on <body>. */
-body.fs-dragging #float-sidebar { transition: none; }
-body.fs-dragging { user-select: none; -webkit-user-select: none; }
-/* Header AI toggle affordance: dimmed while the floating sidebar is closed. */
-body:not(.float-sidebar-open) .toggle-ai-btn { opacity: 0.7; }
-
-/* Drag grip: the ONLY element that starts a sidebar drag (ui.js binds its
-   pointerdown). Everything else in the card is ordinary interactive UI;
-   the whole card blocks the PDF anyway, so no island juggling is needed.
-   Double-tap on the grip re-docks (see ui.js). */
-#fs-drag-handle {
-    pointer-events: auto;
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9999px;
-    border: 1px dashed #9aa3b2;   /* dashed border = "grab me" affordance */
-    background: rgba(255, 255, 255, 0.85);
-    color: #6b7280;
-    font-size: 0.68rem;
-    cursor: grab;
-    touch-action: none;           /* JS owns touch drags — no pan/scroll/dbl-tap-zoom */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: background 0.15s ease, color 0.15s ease;
-}
-#fs-drag-handle:hover { background: #ffffff; color: #4f46e5; }
-body.fs-dragging #fs-drag-handle { cursor: grabbing; color: #4f46e5; border-style: solid; }
-
-/* Header strip: mode switcher + contextual actions — an ordinary part of
-   the glass card (clicks here hit the card, never the PDF). */
-#fs-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-    flex-shrink: 0;
-}
-#fs-mode-switch {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-.fs-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 9999px;
-    border: 1px solid rgba(255, 255, 255, 0.85);
-    background: rgba(255, 255, 255, 0.80);
-    color: #4b5563;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-.fs-tab:hover { background: #ffffff; color: #1f2937; }
-/* Active pill is driven purely by the body mode class — zero JS needed. */
-body.fs-mode-chat #fs-tab-chat,
-body.fs-mode-comments #fs-tab-comments {
-    background: #4f46e5;
-    border-color: #4f46e5;
-    color: #ffffff;
-    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
-}
-#fs-header-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-#fs-header-actions button {
-    width: 30px;
-    height: 30px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9999px;
-    border: 1px solid rgba(255, 255, 255, 0.85);
-    background: rgba(255, 255, 255, 0.80);
-    color: #4b5563;
-    font-size: 0.75rem;
-    cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-}
-#fs-header-actions button:hover { background: #ffffff; color: #1f2937; }
-#fs-close:hover { color: #dc2626 !important; border-color: #fca5a5 !important; }
-/* Chat-only quick actions disappear while the comments pane is shown. */
-body.fs-mode-comments #fs-chat-actions { display: none; }
-
-/* Body: the two panes stack inside the glass card; exactly one is displayed,
-   driven by the body mode classes. */
-#fs-body {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-}
-#fs-chat-pane,
-#fs-comment-pane {
-    flex: 1;
-    min-height: 0;
-    display: none;
-    flex-direction: column;
-    position: relative;
-    /* Clip at the pane edge: the chat-history drawer slides in from the
-       left via translateX(-100%) — without this it would leak out of the
-       card while "closed". */
-    overflow: hidden;
-}
-body.fs-mode-chat #fs-chat-pane { display: flex; }
-body.fs-mode-comments #fs-comment-pane { display: flex; }
-
-/* --- Chat pane --- */
-/* The message list is a normal scroll area of the card: wheel / touch
-   gestures over it scroll the CHAT — the PDF underneath stays still. */
 #chat-history { scroll-behavior: smooth; flex: 1; overflow-y: auto; }
 .ai-message { display: flex; flex-direction: column; max-width: 90%; animation: fadeIn 0.3s ease; margin-bottom: 12px; }
 .ai-message.user { align-self: flex-end; align-items: flex-end; }
 .ai-message.assistant { align-self: flex-start; align-items: flex-start; }
 .ai-bubble { padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; }
 .ai-message.user .ai-bubble { background-color: #3b82f6; color: white; border-bottom-right-radius: 0; }
-.ai-message.assistant .ai-bubble { background-color: rgba(255, 255, 255, 0.88); color: #1f2937; border-bottom-left-radius: 0; border: 1px solid rgba(229, 231, 235, 0.9); }
-
-/* Floating hint / empty-state card (chat empty state, comments empty state).
-   Translucent white so it melts into the glass surface. */
-.fs-hint-card {
-    display: block;
-    background: rgba(255, 255, 255, 0.72);
-    border: 1px solid rgba(255, 255, 255, 0.85);
-    border-radius: 10px;
-    padding: 14px 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    line-height: 1.55;
-}
-
-/* Floating composer card at the bottom of the chat pane. */
-#fs-composer { flex-shrink: 0; }
-.fs-composer-card {
-    background: rgba(255, 255, 255, 0.78);
-    border: 1px solid rgba(255, 255, 255, 0.9);
-    border-radius: 12px;
-    padding: 8px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
-}
-
-/* Chat history drawer: floating card sliding over the chat pane. */
-#chat-history-drawer { border-radius: 12px; }
-
-/* --- Comments pane --- */
-/* The comment editor is reused as-is (#comment-editor-panel) and lives
-   inside the glass card as a near-opaque editor surface. When no comment
-   is active the panel keeps its `hidden` class and the empty-state hint
-   shows instead (sibling selector below). */
-#comment-editor-panel {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    background: rgba(255, 255, 255, 0.88);
-    border: 1px solid rgba(255, 255, 255, 0.9);
-    border-radius: 12px;
-    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.12);
-    overflow: hidden;
-}
-/* Real hide (ID specificity beats both Tailwind's .hidden and the flex
-   rule above). openCommentSidebar sets inline display:flex to show it. */
-#comment-editor-panel.hidden { display: none; }
-
-/* Empty state: shown only while the editor panel is hidden. It is part of
-   the glass card, so taps on it are absorbed by the card — click a comment
-   icon on the PDF OUTSIDE the card to open one. */
-#fs-comments-empty {
-    flex: 1;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 16px;
-}
-#comment-editor-panel.hidden ~ #fs-comments-empty { display: flex; }
-#fs-comments-empty .fs-hint-card {
-    max-width: 260px;
-    text-align: center;
-    color: #4b5563;
-}
+.ai-message.assistant .ai-bubble { background-color: #f3f4f6; color: #1f2937; border-bottom-left-radius: 0; border: 1px solid #e5e7eb; }
 
 /* Citation Buttons in Chat */
 .citation-chip {
@@ -614,501 +304,7 @@ body.fs-mode-comments #fs-comment-pane { display: flex; }
     position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
     opacity: 0; transition: opacity 0.2s; display: flex; gap: 4px;
 }
-.chat-list-item:hover .chat-item-actions { opacity: 1; }
-
-/* ======================================================================== */
-/* --- Floating Annotation Toolbar (draggable liquid glass palette) -------- */
-/* ======================================================================== */
-/* The annotation + link tools (former header Groups 1-3: App Modes,
-   Annotation Draw Tools, Pen/Highlighter options) now live in a small
-   liquid glass palette floating over #workspace-main. Same contract as the
-   floating sidebar:
-     * position:absolute + JS-driven translate3d (js/floattools.js) — takes
-       NO flex space, so the PDF canvas never resizes or moves.
-     * pointer-events: auto — clicks / taps / wheel ON the bar are absorbed
-       by the bar and NEVER pass through to the PDF underneath. To scroll,
-       draw or annotate, aim outside the bar.
-     * Default resting spot: horizontally centered just below the top edge
-       (mirrors the old header position, clear of the minimize buttons);
-       after the first drag the position persists in the settings blob and
-       is restored on boot. Double-tap the grip re-docks to the default. */
-#float-toolbar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 5px 6px;
-    max-width: calc(100vw - 24px);
-    flex-wrap: wrap;                /* very narrow screens: wrap, don't overflow */
-    border-radius: 14px;
-    /* ---- Liquid glass surface (same recipe as the floating sidebar) ---- */
-    background: linear-gradient(155deg,
-        rgba(255, 255, 255, 0.72) 0%,
-        rgba(255, 255, 255, 0.50) 34%,
-        rgba(241, 245, 255, 0.56) 60%,
-        rgba(255, 255, 255, 0.66) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    box-shadow:
-        0 12px 34px rgba(15, 23, 42, 0.20),
-        0 3px 10px rgba(15, 23, 42, 0.10),
-        inset 0 1px 0 rgba(255, 255, 255, 0.80);
-    backdrop-filter: blur(18px) saturate(1.7);
-    -webkit-backdrop-filter: blur(18px) saturate(1.7);
-    overflow: hidden;               /* clip children to the rounded glass edge */
-    pointer-events: auto;           /* the bar ABSORBS clicks — no pass-through */
-    z-index: 1150;                  /* above canvas; below sidebar (1200) + min-btn (1250) */
-    transform: translate3d(0, 0, 0);/* real position set by floattools.js */
-    will-change: transform;         /* stay GPU-composited for smooth drags */
-    transition: transform 0.18s ease-out; /* glide on re-dock / re-clamp;
-                                             disabled while actually dragging */
-}
-/* Graceful degradation: no backdrop-filter → near-opaque surface, same
-   geometry and same click-absorbing behavior, just no frost. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    #float-toolbar {
-        background: rgba(255, 255, 255, 0.96);
-    }
-}
-/* While a drag is in progress the transform must track the pointer 1:1 —
-   no transition lag. floattools.js toggles this class on <body>. */
-body.ft-dragging #float-toolbar { transition: none; }
-body.ft-dragging { user-select: none; -webkit-user-select: none; }
-
-/* Grip: the ONLY element that starts a toolbar drag (floattools.js binds
-   its pointerdown). Everything else in the bar is ordinary interactive UI.
-   Double-tap on the grip re-docks (see floattools.js). */
-#ft-drag-handle {
-    pointer-events: auto;
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9999px;
-    border: 1px dashed #9aa3b2;   /* dashed border = "grab me" affordance */
-    background: rgba(255, 255, 255, 0.85);
-    color: #6b7280;
-    font-size: 0.68rem;
-    cursor: grab;
-    touch-action: none;           /* JS owns touch drags — no pan/scroll/dbl-tap-zoom */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: background 0.15s ease, color 0.15s ease;
-}
-#ft-drag-handle:hover { background: #ffffff; color: #4f46e5; }
-body.ft-dragging #ft-drag-handle { cursor: grabbing; color: #4f46e5; border-style: solid; }
-
-/* Orientation toggle (#ft-orient-toggle): flips the palette between the
-   horizontal ribbon (default) and a vertical rail — js/floattools.js
-   setFloatToolbarOrientation(). Sits right after the grip; its icon ALWAYS
-   advertises the orientation you will GET by clicking it (up-down arrows in
-   the ribbon, left-right arrows in the rail). Solid border distinguishes it
-   from the dashed "grab me" grip. */
-#ft-orient-toggle {
-    pointer-events: auto;
-    width: 26px;
-    height: 26px;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 9999px;
-    border: 1px solid #c3cad6;
-    background: rgba(255, 255, 255, 0.85);
-    color: #6b7280;
-    font-size: 0.6rem;
-    cursor: pointer;
-    touch-action: manipulation;     /* taps toggle; the grip owns gestures */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    transition: background 0.15s ease, color 0.15s ease;
-}
-#ft-orient-toggle:hover { background: #ffffff; color: #4f46e5; }
-
-/* ---- Vertical orientation (#float-toolbar.ft-vertical) --------------------
-   The ribbon stands up as a slim single-column rail: the groups stack and
-   every group's buttons stack too. Size selection lives in the floating size
-   menu (#tool-size-menu below), so no inline slider breaks the rail's
-   proportions. The position engine (floattools.js) is orientation-agnostic:
-   the default spot is orientation-specific (ribbon = top-center, rail =
-   flush left-center like a classic toolbox) and a dragged position is
-   re-clamped the moment the class flips (measurement is synchronous) and
-   afterwards by the existing ResizeObserver (pen options / rail width
-   changes). NOTE: no group separators — the groups' own rounded gray trays
-   separate them (user request: separators removed to save space). */
-#float-toolbar.ft-vertical {
-    flex-direction: column;
-    align-items: stretch;           /* groups span the full rail width */
-    flex-wrap: nowrap;
-    max-width: none;
-    max-height: calc(100% - 20px);  /* never taller than the workspace */
-    overflow-x: hidden;
-    overflow-y: auto;               /* extremely short screens scroll, not clip */
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.4) transparent;
-}
-#float-toolbar.ft-vertical::-webkit-scrollbar { width: 6px; }
-#float-toolbar.ft-vertical::-webkit-scrollbar-thumb {
-    background: rgba(100, 116, 139, 0.35);
-    border-radius: 9999px;
-}
-#float-toolbar.ft-vertical::-webkit-scrollbar-track { background: transparent; }
-/* Every tool group stands up: its buttons stack in one centered column
-   (mode group, draw-tools group AND the pen-options group, which ui.js
-   reveals by adding the flex class). */
-#float-toolbar.ft-vertical > div.flex { flex-direction: column; align-items: center; }
-/* The two round meta buttons (grip + orientation toggle) center on the rail
-   instead of hugging the left edge (they have a fixed width, so the bar's
-   align-items: stretch leaves them at cross-start without this). */
-#float-toolbar.ft-vertical > #ft-drag-handle,
-#float-toolbar.ft-vertical > #ft-orient-toggle { align-self: center; }
-
-/* ---- Tool Size Flyout (#tool-size-menu) ----------------------------------
-   Apple-Notes style secondary menu for pen / highlighter / eraser sizes.
-   Opened by tapping the ALREADY-ACTIVE tool a second time (floattools.js
-   handleToolBtnTap); never auto-opens on plain tool selection. A body-level
-   position:fixed card — same liquid glass material as the toolbar — placed
-   beside (rail) or below (ribbon) the owning tool button and clamped to the
-   viewport by JS. Header shows the tool name + the CURRENT numeric size;
-   each row is a live stroke preview of one preset size with its numeric
-   value; the active row carries a check. Any pointerdown outside the menu
-   (or Escape / tool switch / orientation flip / toolbar drag) closes it. */
-#tool-size-menu {
-    position: fixed;
-    left: 0;
-    top: 0;
-    min-width: 172px;
-    padding: 10px;
-    border-radius: 16px;
-    /* Liquid glass surface — same recipe as #float-toolbar, a touch denser
-       so the size rows stay readable over any PDF content. */
-    background: linear-gradient(155deg,
-        rgba(255, 255, 255, 0.82) 0%,
-        rgba(255, 255, 255, 0.64) 34%,
-        rgba(241, 245, 255, 0.68) 60%,
-        rgba(255, 255, 255, 0.78) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    box-shadow:
-        0 18px 44px rgba(15, 23, 42, 0.22),
-        0 4px 12px rgba(15, 23, 42, 0.10),
-        inset 0 1px 0 rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px) saturate(1.7);
-    -webkit-backdrop-filter: blur(20px) saturate(1.7);
-    pointer-events: auto;           /* absorbs its own clicks — never passes through */
-    overscroll-behavior: contain;   /* no scroll chaining to the PDF underneath */
-    touch-action: manipulation;
-    z-index: 1210;                  /* above #float-toolbar (1150) AND the sidebar (1200): a transient popover floats above the persistent card; the panel-min-btn (1250) still wins */
-    opacity: 0;
-    transform: scale(0.9);
-    transform-origin: left center;  /* JS sets the origin per placement */
-    transition: opacity 0.16s ease-out,
-                transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15);
-    will-change: opacity, transform;
-}
-#tool-size-menu.tsm-hidden { display: none; }
-#tool-size-menu.tsm-open { opacity: 1; transform: scale(1); }
-/* Graceful degradation: no backdrop-filter -> near-opaque surface, same
-   geometry and behavior, just no frost. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    #tool-size-menu { background: rgba(255, 255, 255, 0.97); }
-}
-
-/* Header row: tool name on the left, CURRENT size as a numeric chip on the
-   right — the "which size am I using" readout (integer or float). */
-#tsm-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 2px 4px 8px;
-}
-#tsm-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: #334155;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-}
-#tsm-value {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-    font-weight: 700;
-    color: #3730a3;
-    background: #eef2ff;
-    border: 1px solid #c7d2fe;
-    border-radius: 9999px;
-    padding: 1px 8px;
-    min-width: 30px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-}
-
-/* Size rows: stroke preview + numeric value + active check. */
-#tsm-options {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-}
-.tsm-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 5px 8px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    cursor: pointer;
-    transition: background 0.12s ease, border-color 0.12s ease;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-}
-.tsm-row:hover { background: rgba(255, 255, 255, 0.92); }
-.tsm-row:active { background: #e0e7ff; }
-.tsm-row.tsm-active {
-    background: #eef2ff;
-    border-color: #c7d2fe;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-.tsm-canvas {
-    flex-shrink: 0;
-    display: block;
-    border-radius: 6px;
-}
-.tsm-val {
-    margin-left: auto;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11px;
-    color: #475569;
-    font-variant-numeric: tabular-nums;
-}
-.tsm-check {
-    width: 14px;
-    text-align: center;
-    font-size: 11px;
-    color: #4f46e5;
-    visibility: hidden;
-    flex-shrink: 0;
-}
-.tsm-row.tsm-active .tsm-check { visibility: visible; }
-
-/* Numeric size badge on the ACTIVE tool button: the current tool size stays
-   readable even while the flyout is closed (e.g. "5" on the pen, "20" on the
-   highlighter when it is active). */
-.tool-size-badge {
-    position: absolute;
-    right: -5px;
-    bottom: -4px;
-    min-width: 15px;
-    height: 14px;
-    padding: 0 4px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 9px;
-    font-weight: 700;
-    line-height: 1;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color: #ffffff;
-    background: #4f46e5;
-    border: 1.5px solid #ffffff;
-    border-radius: 9999px;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
-    pointer-events: none;   /* never blocks the button's own clicks */
-    z-index: 5;
-}
-
-/* ---- Tool Color Flyout (#tool-color-menu) ---------------------------------
-   iPad / iOS FIX + Apple-Notes style palette. The old flow clicked a hidden
-   <input type="color">, which iOS Safari does not support — color selection
-   silently did nothing on iPad. This custom flyout is plain DOM (swatch
-   buttons + hex field) so it works identically on iPad, Android and desktop.
-   Opened by tapping the color preview canvas in #pen-customization
-   (js/colormenu.js). Same liquid glass material and pop animation as the
-   size flyout: body-level position:fixed card placed beside (rail) or below
-   (ribbon) the anchor canvas, clamped to the viewport by JS. Header shows
-   the CURRENT color as a swatch + exact hex value; 15 preset swatches with
-   a check on the active one; a custom row with a hex text field (every
-   platform) and a feature-detected native <input type="color"> chip that is
-   never rendered on iOS. Any pointerdown outside (or Escape / tool switch /
-   size-menu open / orientation flip / toolbar drag) closes it. */
-#tool-color-menu {
-    position: fixed;
-    left: 0;
-    top: 0;
-    min-width: 208px;
-    padding: 10px;
-    border-radius: 16px;
-    /* Liquid glass surface — same recipe as #tool-size-menu. */
-    background: linear-gradient(155deg,
-        rgba(255, 255, 255, 0.82) 0%,
-        rgba(255, 255, 255, 0.64) 34%,
-        rgba(241, 245, 255, 0.68) 60%,
-        rgba(255, 255, 255, 0.78) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    box-shadow:
-        0 18px 44px rgba(15, 23, 42, 0.22),
-        0 4px 12px rgba(15, 23, 42, 0.10),
-        inset 0 1px 0 rgba(255, 255, 255, 0.85);
-    backdrop-filter: blur(20px) saturate(1.7);
-    -webkit-backdrop-filter: blur(20px) saturate(1.7);
-    pointer-events: auto;           /* absorbs its own clicks — never passes through */
-    overscroll-behavior: contain;   /* no scroll chaining to the PDF underneath */
-    touch-action: manipulation;
-    z-index: 1210;                  /* above #float-toolbar (1150) AND the sidebar (1200): a transient popover floats above the persistent card; the panel-min-btn (1250) still wins */
-    opacity: 0;
-    transform: scale(0.9);
-    transform-origin: left center;  /* JS sets the origin per placement */
-    transition: opacity 0.16s ease-out,
-                transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15);
-    will-change: opacity, transform;
-}
-#tool-color-menu.tcm-hidden { display: none; }
-#tool-color-menu.tcm-open { opacity: 1; transform: scale(1); }
-/* Graceful degradation: no backdrop-filter -> near-opaque surface, same
-   geometry and behavior, just no frost. */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    #tool-color-menu { background: rgba(255, 255, 255, 0.97); }
-}
-
-/* Header row: title on the left, CURRENT color as a swatch + exact hex value
-   chip on the right — the "which color am I using" readout. */
-#tcm-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-    padding: 2px 4px 8px;
-}
-#tcm-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: #334155;
-    letter-spacing: 0.01em;
-    white-space: nowrap;
-}
-.tcm-value-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 11px;
-    font-weight: 700;
-    color: #3730a3;
-    background: #eef2ff;
-    border: 1px solid #c7d2fe;
-    border-radius: 9999px;
-    padding: 2px 8px 2px 4px;
-    font-variant-numeric: tabular-nums;
-}
-#tcm-chip-swatch {
-    width: 14px;
-    height: 14px;
-    border-radius: 5px;
-    background: #ef4444;
-    border: 1px solid rgba(15, 23, 42, 0.18);
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
-    display: inline-block;
-    flex-shrink: 0;
-}
-#tcm-value-text { line-height: 1; }
-
-/* Preset swatch grid: 5 columns x 3 rows, tap targets roomy enough for
-   touch. The active swatch gets an indigo ring + check. */
-#tcm-options {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
-    margin-top: 2px;
-}
-.tcm-swatch {
-    position: relative;
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
-    border: 1px solid rgba(15, 23, 42, 0.16);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
-                0 1px 2px rgba(15, 23, 42, 0.12);
-    cursor: pointer;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-}
-.tcm-swatch:hover { transform: scale(1.08); }
-.tcm-swatch:active { transform: scale(0.92); }
-.tcm-swatch.tcm-active {
-    box-shadow: 0 0 0 2px #4f46e5,
-                inset 0 1px 0 rgba(255, 255, 255, 0.35),
-                0 1px 3px rgba(15, 23, 42, 0.2);
-}
-.tcm-check {
-    font-size: 10px;
-    line-height: 1;
-    color: #ffffff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
-    visibility: hidden;
-    pointer-events: none;
-}
-.tcm-swatch.tcm-active .tcm-check { visibility: visible; }
-
-/* Custom row: hex field (every platform, iPad included) + optional native
-   <input type="color"> chip (feature-detected — never rendered on iOS). */
-#tcm-custom-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(148, 163, 184, 0.4);
-}
-.tcm-custom-label {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #64748b;
-    flex-shrink: 0;
-}
-#tcm-hex {
-    flex: 1;
-    min-width: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: #1f2937;
-    background: rgba(255, 255, 255, 0.92);
-    border: 1px solid #cbd5e1;
-    border-radius: 8px;
-    padding: 5px 8px;
-    outline: none;
-    transition: border-color 0.12s ease, box-shadow 0.12s ease;
-}
-#tcm-hex:focus {
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.18);
-}
-/* Native chip (only exists where <input type="color"> is really supported):
-   styled as one more swatch so it reads as "pick ANY color". */
-.tcm-native {
-    width: 30px;
-    height: 30px;
-    flex-shrink: 0;
-    border-radius: 9px;
-    border: 1px dashed rgba(15, 23, 42, 0.3);
-    background: conic-gradient(#ef4444, #f59e0b, #facc15, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
-    padding: 3px;
-    cursor: pointer;
-}
-.tcm-native::-webkit-color-swatch-wrapper { padding: 0; }
-.tcm-native::-webkit-color-swatch { border: none; border-radius: 6px; }
-.tcm-native::-moz-color-swatch { border: none; border-radius: 6px; }
-
+.chat-list-item:hover .chat-item-actions { opacity: 1; }                
 /* --- Tool Cursor Styles --- */
 #tool-cursor {
     font-size: 24px;
@@ -2560,11 +1756,9 @@ body > header > * {
        desktops never matched this media query). The slider bar must keep
        its 4px height — do NOT re-add min-height/height overrides here. */
 
-    /* Sidebar default widths — narrower so the PDF gets more space on a tablet.
-       The floating tool sidebar is an overlay (no flex space) — slightly
-       narrower on tablets so more of the PDF stays visible behind it. */
+    /* Sidebar default widths — narrower so the PDF gets more space on a tablet. */
     #left-sidebar { width: 14rem !important; }
-    #float-sidebar { width: min(320px, calc(100vw - 24px)); padding: 46px 8px 8px; }
+    #ai-sidebar  { width: 280px !important; }
 
     /* Floating panel-minimize buttons: 36px tap target on touch
        (Apple HIG-friendly) with a slightly larger icon. */
@@ -2575,30 +1769,6 @@ body > header > * {
         top: 10px;
         right: 12px;
     }
-
-    /* Floating tool sidebar: finger-friendly mode pills + header buttons
-       (+ the drag grip — dragging must be comfortable on a tablet too). */
-    .fs-tab { padding: 8px 14px; font-size: 0.85rem; }
-    #fs-header-actions button { width: 36px; height: 36px; font-size: 0.9rem; }
-    #fs-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
-
-    /* Floating annotation toolbar: same treatment — bigger grip + roomier
-       padding (the tool buttons themselves already grow to 40px via the
-       .tool-btn touch rule above). */
-    #ft-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
-    #ft-orient-toggle { width: 34px; height: 34px; font-size: 0.78rem; }
-    #float-toolbar { gap: 8px; padding: 7px 8px; border-radius: 16px; }
-
-    /* Tool size flyout: roomier rows for finger taps. */
-    #tool-size-menu { min-width: 186px; padding: 12px; border-radius: 18px; }
-    .tsm-row { padding: 7px 8px; gap: 12px; }
-
-    /* Tool color flyout: roomier swatches + hex field for finger taps. */
-    #tool-color-menu { min-width: 224px; padding: 12px; border-radius: 18px; }
-    .tcm-swatch { width: 34px; height: 34px; border-radius: 10px; }
-    #tcm-options { gap: 8px; }
-    #tcm-hex { padding: 7px 9px; font-size: 13px; }
-    .tcm-native { width: 34px; height: 34px; }
 
     /* (Brand text + Dashboard label + PDF icon are already hidden on ALL
        devices — see the .header-* rules above.) */
@@ -2613,10 +1783,11 @@ body > header > * {
         border: none !important;
         overflow: hidden;
     }
-    /* The floating tool sidebar is already an overlay — on phones just make
-       it a bit narrower (and touch-friendlier tap targets come from the
-       base rules). No push/collapse behavior needed anymore. */
-    #float-sidebar { width: min(92vw, 360px); }
+    #ai-sidebar {
+        width: 0 !important;
+        border: none !important;
+        overflow: hidden;
+    }
     body:not(.left-sidebar-collapsed) #left-sidebar {
         position: absolute;
         z-index: 50;
@@ -2626,12 +1797,32 @@ body > header > * {
         height: 100%;
         box-shadow: 4px 0 16px rgba(0,0,0,0.18);
     }
+    body:not(.ai-sidebar-collapsed) #ai-sidebar {
+        position: absolute;
+        z-index: 50;
+        right: 0;
+        width: 90vw !important;
+        max-width: 360px;
+        border-left: 1px solid #e5e7eb !important;
+        height: 100%;
+        box-shadow: -4px 0 16px rgba(0,0,0,0.18);
+    }
 }
 
-/* NOTE: the old "hide the AI sidebar by default below 1024px on touch
-   devices" rule was REMOVED — the floating tool sidebar is a transparent
-   overlay that takes no layout space, so there is no need to auto-collapse
-   it on tablets. The PDF canvas is never resized by the sidebar. */
+/* iPad in portrait is typically 810px / 1024px CSS pixels wide. In landscape
+   it's 1024px / 1366px. Hide the AI sidebar by default below 1024px so the
+   editor gets enough horizontal space. The user can re-open it from the toolbar. */
+@media (hover: none) and (max-width: 1024px) {
+    body:not(.ai-sidebar-collapsed) #ai-sidebar {
+        width: 0 !important;
+        border: none !important;
+        overflow: hidden;
+        padding: 0 !important;
+    }
+    body:not(.ai-sidebar-collapsed) .toggle-ai-btn i {
+        transform: rotate(180deg);
+    }
+}
 
 
 /* ====================================================================== */
@@ -2729,15 +1920,46 @@ body > header > * {
 }
 
 /* ====================================================================== */
-/* --- Comment Editor (inside the floating tool sidebar) ---------------- */
+/* --- Comment Overlay Sidebar ------------------------------------------ */
 /* ====================================================================== */
-/* The comment editor UI (#comment-editor-panel) is reused unchanged but  */
-/* now lives inside the transparent floating sidebar (#float-sidebar) as  */
-/* a floating white card in the COMMENTS pane. There is NO backdrop       */
-/* anymore: the sidebar container is pointer-events:none, so the user can */
-/* keep annotating and interacting with the PDF while a comment is open.  */
-/* Visibility/hide rules are in the "Floating Tool Sidebar" block above.  */
+/* The comment editor is a FIXED-POSITION floating panel that overlays    */
+/* everything else on the screen. It does NOT push, resize, or modify the  */
+/* AI chat sidebar — the AI chat stays wherever it was (collapsed or open) */
+/* and this panel simply covers the right side of the screen with a       */
+/* higher z-index.                                                        */
+/*                                                                       */
+/* A semi-transparent backdrop (#comment-backdrop) sits behind the panel  */
+/* to dim the rest of the UI and focus attention on the comment. Clicking */
+/* the backdrop closes the comment (handled in annotations.js).          */
+/* ====================================================================== */
 
+/* The backdrop — a full-screen dim overlay behind the comment panel. */
+#comment-backdrop {
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    transition: opacity 0.2s ease;
+}
+#comment-backdrop.hidden { opacity: 0; pointer-events: none; }
+
+/* The comment editor panel itself — a floating right-side sidebar. */
+#comment-editor-panel {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.18);
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    transform: translateX(0);
+}
+#comment-editor-panel.hidden {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+}
+/* On very narrow screens (phones), the panel takes the full width. */
+@media (max-width: 640px) {
+    #comment-editor-panel { width: 100% !important; }
+}
 #comment-preview-area {
     line-height: 1.6;
     font-size: 0.85rem;
@@ -2855,9 +2077,7 @@ body > header > * {
     position: absolute;
     top: 8px;
     right: 10px;
-    z-index: 1250;              /* ABOVE the floating glass sidebar (1200) so the
-                                   button stays visible + clickable even when the
-                                   card is docked/drugged over it; below modals */
+    z-index: 115;               /* above canvas content + slider bar */
     width: 26px;
     height: 26px;
     border-radius: 6px;

@@ -247,17 +247,6 @@ async function init() {
                 }
 
                 if (savedData.settings.appMode) setAppMode(savedData.settings.appMode, false);
-                // Restore the per-tool customization buckets (color + size
-                // per tool) BEFORE setAnnoTool reads them — without this the
-                // tool resets to the in-code defaults on every reload
-                // (ipadcolor-v22: the color menu made the gap visible).
-                // MERGE (not replace) so buckets the blob doesn't know keep
-                // their in-code defaults.
-                if (savedData.settings.toolSettings &&
-                    typeof savedData.settings.toolSettings === 'object') {
-                    state.toolSettings = Object.assign({}, state.toolSettings,
-                        savedData.settings.toolSettings);
-                }
                 if (savedData.settings.annoTool) setAnnoTool(savedData.settings.annoTool, false);
                 const lineModeBtn = document.getElementById('tool-line-mode');
                 if (lineModeBtn && state.lineMode === 'straight') {
@@ -266,66 +255,18 @@ async function init() {
                 }
                 if (savedData.settings.annoColor) {
                     state.annoColor = savedData.settings.annoColor;
-                    // The preview dot / color-menu chip refresh via
-                    // updateThicknessPreview() after boot.
+                    els.colorPicker.value = savedData.settings.annoColor;
                 }
                 if (savedData.settings.annoThickness) {
                     state.annoThickness = savedData.settings.annoThickness;
-                    // The inline slider is gone — the numeric badge + size
-                    // flyout (floattools.js) display the restored value.
+                    els.thicknessPicker.value = savedData.settings.annoThickness;
                 }
                 if (savedData.settings.leftSidebarCollapsed) {
                     document.body.classList.add('left-sidebar-collapsed');
                 }
-                // ---- Floating tool sidebar (AI Chat + Comments) ----
-                // The <body> tag defaults to open + chat mode. Restore the
-                // persisted state: new blobs carry floatSidebarOpen /
-                // floatSidebarMode; older blobs only carry aiSidebarCollapsed
-                // (true = sidebar closed) — map it so returning users keep
-                // their previous layout. Exactly one mode class is always set.
-                if (savedData.settings.floatSidebarOpen !== undefined) {
-                    document.body.classList.toggle('float-sidebar-open', !!savedData.settings.floatSidebarOpen);
-                } else if (savedData.settings.aiSidebarCollapsed !== undefined) {
-                    document.body.classList.toggle('float-sidebar-open', !savedData.settings.aiSidebarCollapsed);
+                if (savedData.settings.aiSidebarCollapsed) {
+                    document.body.classList.add('ai-sidebar-collapsed');
                 }
-                document.body.classList.toggle('fs-mode-comments', savedData.settings.floatSidebarMode === 'comments');
-                document.body.classList.toggle('fs-mode-chat', savedData.settings.floatSidebarMode !== 'comments');
-                // Restore where the user dragged the floating sidebar. Only
-                // accept well-formed {x,y} numbers — anything else (null,
-                // strings, NaN, partial objects) means "docked default".
-                // Clamping to the current workspace happens in
-                // applyFloatSidebarPos() (needs a visible element to measure).
-                const savedFsPos = savedData.settings.floatSidebarPos;
-                if (savedFsPos && typeof savedFsPos === 'object' &&
-                    typeof savedFsPos.x === 'number' && isFinite(savedFsPos.x) &&
-                    typeof savedFsPos.y === 'number' && isFinite(savedFsPos.y)) {
-                    state.floatSidebarPos = { x: savedFsPos.x, y: savedFsPos.y };
-                } else {
-                    state.floatSidebarPos = null;
-                }
-                if (document.body.classList.contains('float-sidebar-open')) {
-                    applyFloatSidebarPos();
-                }
-                // Restore where the user dragged the floating annotation
-                // toolbar. Same strict validation: only well-formed {x,y}
-                // numbers are accepted — anything else means "docked default"
-                // (top-center). Clamping happens in applyFloatToolbarPos().
-                const savedFtPos = savedData.settings.floatToolbarPos;
-                if (savedFtPos && typeof savedFtPos === 'object' &&
-                    typeof savedFtPos.x === 'number' && isFinite(savedFtPos.x) &&
-                    typeof savedFtPos.y === 'number' && isFinite(savedFtPos.y)) {
-                    state.floatToolbarPos = { x: savedFtPos.x, y: savedFtPos.y };
-                } else {
-                    state.floatToolbarPos = null;
-                }
-                // Restore the toolbar ORIENTATION ('horizontal' | 'vertical').
-                // Old settings blobs predate this key → the horizontal ribbon
-                // default; only the exact string 'vertical' opts into the
-                // rail. The class + toggle button are applied (without saving)
-                // by initFloatToolbarDrag — the single application point.
-                const savedFtOrient = savedData.settings.floatToolbarOrientation;
-                state.floatToolbarOrientation =
-                    savedFtOrient === 'vertical' ? 'vertical' : 'horizontal';
                 // Restore AI settings
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
@@ -346,10 +287,6 @@ async function init() {
                 if (Array.isArray(savedData.settings.recentDocIds)) {
                     // Filter out any IDs that no longer exist.
                     state.recentDocIds = savedData.settings.recentDocIds.filter(id => state.documents[id]);
-                }
-                if (Array.isArray(savedData.settings.taggedDocIds)) {
-                    // Tagged PDFs (quick-switch rail): drop entries for deleted docs.
-                    state.taggedDocIds = savedData.settings.taggedDocIds.filter(id => state.documents[id]);
                 }
                 if (Array.isArray(savedData.settings.collapsedFolderIds)) {
                     const collapsedSet = new Set(savedData.settings.collapsedFolderIds);
@@ -421,15 +358,9 @@ async function init() {
     document.addEventListener('touchstart', (e) => {
         // Only intercept in non-navigation modes
         if (state.appMode === 'navigation') return;
-        // Don't intercept touches inside the floating glass sidebar — the
-        // composer, chat list and comment editor need normal touch behavior
-        // (scrolling, typing). Touches on the card never reach the PDF
-        // anyway (the card is pointer-events:auto and absorbs them).
-        if (e.target.closest('#float-sidebar')) return;
-        // Same for the floating annotation toolbar: the palette absorbs its
-        // own touches (buttons, slider, grip drag) — never forward them to
-        // the PDF handlers below.
-        if (e.target.closest('#float-toolbar')) return;
+        // Don't intercept touches inside the comment overlay — the textarea
+        // and buttons need normal touch behavior to work.
+        if (e.target.closest('#comment-editor-panel') || e.target.closest('#comment-backdrop')) return;
         // Check if any of the touches are inside a viewport
         const target = e.target;
         if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
@@ -447,12 +378,9 @@ async function init() {
     // pan/zoom (the two-finger gesture handler in initTwoFingerGestures handles it).
     document.addEventListener('touchmove', (e) => {
         if (state.appMode === 'navigation') return;
-        // Don't intercept touchmove inside the floating tool sidebar — the
-        // textarea / chat list need normal scroll behavior.
-        if (e.target.closest('#float-sidebar')) return;
-        // ...and inside the floating annotation toolbar (its own drag +
-        // slider gestures are managed by floattools.js / the controls).
-        if (e.target.closest('#float-toolbar')) return;
+        // Don't intercept touchmove inside the comment overlay — the textarea
+        // needs normal scroll/text-selection behavior.
+        if (e.target.closest('#comment-editor-panel')) return;
         // 2-finger touches are pan/zoom — let the gesture handler deal with them
         if (e.touches.length >= 2) return;
         if (state.drawing && state.drawing.active) {
@@ -485,18 +413,26 @@ async function init() {
     // pan/zoom, never draw. The mode (pen/highlighter/etc.) is preserved.
     initPinchZoom();
 
-    // ---- Color selection lives in the floating COLOR MENU now ----
-    // (js/colormenu.js: tapping the preview canvas opens the custom
-    // #tool-color-menu palette — swatch grid + hex field — replacing the
-    // old hidden <input type="color">, which iOS Safari never supported
-    // and which therefore did nothing on iPad. applyToolColor performs the
-    // same state.annoColor + toolSettings[tool].color writes this listener
-    // used to, plus persistence.)
+    els.colorPicker.addEventListener('input', (e) => {
+        state.annoColor = e.target.value;
+        if (state.toolSettings && state.toolSettings[state.annoTool]) {
+            state.toolSettings[state.annoTool].color = state.annoColor;
+        }
+        if (state.annoTool === 'pen') setAnnoTool('pen', false); 
+        saveSettings();
+        updateThicknessPreview();
+    });
 
-    // ---- Tool size selection lives in the floating size menu now ----
-    // (js/floattools.js: applyToolSize applies preset/typed sizes from the
-    // Apple-Notes style flyout opened by tapping the active tool again. The
-    // old inline #thickness-picker slider was removed from the toolbar.)
+    els.thicknessPicker.addEventListener('input', (e) => {
+        state.annoThickness = parseInt(e.target.value);
+        const display = document.getElementById('thickness-val');
+        if (display) display.innerText = state.annoThickness;
+        if (state.toolSettings && state.toolSettings[state.annoTool]) {
+            state.toolSettings[state.annoTool].thickness = state.annoThickness;
+        }
+        saveSettings();
+        updateThicknessPreview();
+    });
 
     // AI Settings Range Sliders (live text update)
     if (els.aiSettingTemp) {
@@ -541,13 +477,25 @@ async function init() {
         });
     }
 
-    // ---- (No sidebar backdrop) ----
-    // The floating tool sidebar is fully transparent and pointer-events:none
-    // on its container — there is no dimming backdrop anymore, so the PDF
-    // stays interactive while the sidebar is open. No click-outside-to-close
-    // handler is needed: the sidebar is closed via its X button or Ctrl+/.
+    // ---- Comment overlay backdrop: click outside the panel to close ----
+    // The backdrop sits behind the floating comment panel. Clicking/tapping
+    // it (i.e. clicking outside the panel) closes the comment — UNLESS
+    // we're in split mode with unsaved changes, in which case we treat
+    // it as a cancel (which removes empty comments or keeps non-empty ones).
+    //
+    // We use pointerdown (not click) for faster response on touch devices.
+    // This is safe because handlePointerDown in events.js already bails out
+    // when the target is inside #comment-backdrop, so there's no conflict.
+    const commentBackdrop = document.getElementById('comment-backdrop');
+    if (commentBackdrop) {
+        commentBackdrop.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof cancelCommentEdit === 'function') cancelCommentEdit();
+        });
+    }
 
-    // ---- Global Escape key: also closes the active comment ----
+    // ---- Global Escape key: also closes the comment overlay ----
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' &&
             state.activeComment && state.activeComment.id &&
@@ -559,17 +507,6 @@ async function init() {
     });
 
     initResizer();
-    // Draggable floating sidebar: grip pointerdown + window resize re-clamp.
-    initFloatSidebarDrag();
-    // Draggable floating annotation toolbar: grip pointerdown + place at the
-    // default/restored spot + workspace & toolbar size observation.
-    initFloatToolbarDrag();
-    // Tool size flyout (tap the active pen/highlighter/eraser again):
-    // Escape closer + badge for a restored size-adjustable active tool.
-    initToolSizeMenu();
-    // Tool color flyout (tap the color preview canvas): hex-field bindings
-    // + Escape closer. iPad-safe replacement for the old native input.
-    initToolColorMenu();
     updateViewportActiveVisuals();
 
     // ---- Header horizontal scroll for mouse-wheel users ----

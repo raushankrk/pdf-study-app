@@ -223,276 +223,9 @@ function toggleLeftSidebar() {
     saveSettings();
 }
 
-// ---- Floating tool sidebar (AI Chat + Comments) --------------------------
-// ONE liquid glass card floating above the PDF. The PDF canvas never
-// resizes or moves — the card is absolutely positioned and takes no flex
-// space. Visibility is driven by body.float-sidebar-open; the shown pane
-// (AI Chat OR Comments, never both) is driven by exactly one of
-// body.fs-mode-chat / body.fs-mode-comments (CSS in style.css).
-// The card's surface is frosted translucent glass and it ABSORBS the
-// pointer (pointer-events: auto) — clicks on the card never reach the PDF.
 function toggleAiSidebar() {
-    const nowOpen = document.body.classList.toggle('float-sidebar-open');
-    if (nowOpen) applyFloatSidebarPos();   // position/measure needs a visible element
+    document.body.classList.toggle('ai-sidebar-collapsed');
     saveSettings();
-}
-
-// Which pane is currently shown ('chat' | 'comments'). Defaults to 'chat'
-// whenever neither class is set (e.g. a fresh profile before boot).
-function getFloatSidebarMode() {
-    return document.body.classList.contains('fs-mode-comments') ? 'comments' : 'chat';
-}
-
-function setFloatSidebarMode(mode) {
-    if (mode !== 'chat' && mode !== 'comments') return;
-    document.body.classList.toggle('fs-mode-chat', mode === 'chat');
-    document.body.classList.toggle('fs-mode-comments', mode === 'comments');
-    saveSettings();
-}
-
-// Open the floating sidebar and optionally switch to a mode. Used by the
-// comment feature (opening a comment reveals the sidebar in comments mode)
-// and available for any future tool that wants the floating layer.
-function openFloatSidebar(mode) {
-    document.body.classList.add('float-sidebar-open');
-    if (mode) setFloatSidebarMode(mode);
-    applyFloatSidebarPos();                // (re)clamp + apply on every open
-    if (!mode) saveSettings();
-}
-
-// Close the whole floating sidebar. If a comment is currently being edited,
-// close the comment first — same semantics as the old comment panel's X
-// (a brand-new empty comment is removed instead of leaving a stray icon).
-function closeFloatSidebar() {
-    if (state.activeComment && state.activeComment.id &&
-        typeof cancelCommentEdit === 'function') {
-        cancelCommentEdit();
-    }
-    document.body.classList.remove('float-sidebar-open');
-    if (typeof closeChatHistory === 'function') closeChatHistory();
-    saveSettings();
-}
-
-// ---- Draggable floating sidebar -------------------------------------------
-// The sidebar is a compact CARD (not a full-height column) that the user can
-// drag anywhere inside #workspace-main via the grip handle (#fs-drag-handle).
-//
-// Smoothness: the position is applied exclusively through transform:
-// translate3d(...) (GPU-composited — no layout, no reflow) with
-// requestAnimationFrame coalescing, so dragging tracks the pointer 1:1 at
-// display refresh rate. A short CSS transition on transform gives a soft
-// glide for programmatic moves (re-dock / resize re-clamp); the body.fs-
-// dragging class turns that transition OFF during a drag for zero lag.
-//
-// Positioning contract:
-//   * state.floatSidebarPos === null  → docked at the DEFAULT top-right
-//     corner (right edge flush with the workspace, like the original
-//     right:0 layout). This stays "dock-like" — it follows the workspace
-//     edge on resize — until the user drags the card at least once.
-//   * After a drag, state.floatSidebarPos = { x, y } is persisted via
-//     saveSettings() and restored (validated + re-clamped) on boot.
-//   * The card is always clamped fully inside #workspace-main, so the grip
-//     and pills can never be lost off-screen.
-let fsCurrentPos = null;        // last APPLIED position {x,y} (workspace CSS px)
-let fsDragCtx = null;           // active drag: {startX, startY, origX, origY, pointerId}
-let fsPendingXY = null;         // rAF-coalesced next position
-let fsRafPending = false;
-let fsLastGripTap = 0;          // double-tap-to-re-dock detection (works for touch too)
-let fsLastGripTapXY = { x: 0, y: 0 };
-
-// Default resting position: top-right corner of the workspace — the exact
-// visual equivalent of the original `right: 0; top: 0` docked sidebar.
-function floatSidebarDefaultPos() {
-    const ws = document.getElementById('workspace-main');
-    const sb = document.getElementById('float-sidebar');
-    if (!ws || !sb) return { x: 0, y: 0 };
-    const wsRect = ws.getBoundingClientRect();
-    const sbRect = sb.getBoundingClientRect();
-    return { x: Math.max(0, Math.round(wsRect.width - sbRect.width)), y: 0 };
-}
-
-// Keep the card fully inside the workspace: x ∈ [0, wsW - sbW],
-// y ∈ [0, wsH - sbH]. Non-finite input falls back to the default corner.
-function clampFloatSidebarPos(x, y) {
-    if (!isFinite(x) || !isFinite(y)) return floatSidebarDefaultPos();
-    const ws = document.getElementById('workspace-main');
-    const sb = document.getElementById('float-sidebar');
-    if (!ws || !sb) return { x: Math.max(0, Math.round(x)), y: Math.max(0, Math.round(y)) };
-    const wsRect = ws.getBoundingClientRect();
-    const sbRect = sb.getBoundingClientRect(); // transform does not affect size
-    const maxX = Math.max(0, wsRect.width - sbRect.width);
-    const maxY = Math.max(0, wsRect.height - sbRect.height);
-    return {
-        x: Math.min(Math.max(0, Math.round(x)), Math.round(maxX)),
-        y: Math.min(Math.max(0, Math.round(y)), Math.round(maxY)),
-    };
-}
-
-// Resolve the position to apply: the saved/dragged position when valid,
-// otherwise the default corner — always clamped to the current workspace.
-function fsResolvePos() {
-    if (state.floatSidebarPos &&
-        isFinite(state.floatSidebarPos.x) && isFinite(state.floatSidebarPos.y)) {
-        return clampFloatSidebarPos(state.floatSidebarPos.x, state.floatSidebarPos.y);
-    }
-    const d = floatSidebarDefaultPos();
-    return clampFloatSidebarPos(d.x, d.y);
-}
-
-// Write the position into the inline transform. Called directly by the rAF
-// batch and by the drag-end flush.
-function fsWriteTransform(pos) {
-    const sb = document.getElementById('float-sidebar');
-    if (!sb) return;
-    fsCurrentPos = pos;
-    sb.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0px)`;
-}
-
-// Apply the resolved position to the sidebar. MUST run while the sidebar is
-// visible (display:none elements have no box to measure) — toggleAiSidebar /
-// openFloatSidebar call this right after adding body.float-sidebar-open, so
-// the transform is set before the next paint (no visible jump).
-function applyFloatSidebarPos() {
-    const sb = document.getElementById('float-sidebar');
-    if (!sb) return;
-    if (!document.body.classList.contains('float-sidebar-open')) return;
-    const pos = fsResolvePos();
-    // First-ever apply: the inline transform is still empty, so the element
-    // would animate from the CSS default (0,0) to the dock corner. Disable
-    // the transition for this one write, force a reflow, then re-enable —
-    // later programmatic moves (re-dock / re-clamp) glide as intended.
-    const firstApply = !sb.style.transform;
-    if (firstApply) sb.style.transition = 'none';
-    fsWriteTransform(pos);
-    if (firstApply) { void sb.offsetWidth; sb.style.transition = ''; }
-}
-
-// rAF-coalesced move used while dragging: stores the latest target and
-// schedules a single frame to apply it (multiple pointermove events between
-// frames collapse into one style write).
-function moveFloatSidebarTo(x, y) {
-    fsPendingXY = { x, y };
-    if (fsRafPending) return;
-    fsRafPending = true;
-    requestAnimationFrame(() => {
-        fsRafPending = false;
-        if (!fsPendingXY) return;
-        const p = clampFloatSidebarPos(fsPendingXY.x, fsPendingXY.y);
-        fsPendingXY = null;
-        fsWriteTransform(p);
-    });
-}
-
-// pointerdown on the grip: start a drag (or detect a double-tap → re-dock).
-// preventDefault + setPointerCapture keep the gesture ours: no text
-// selection, no focus steal, and — because the grip is inside the guarded
-// #float-sidebar island — the annotation pointer handlers never see it.
-function beginFloatSidebarDrag(e) {
-    if (e.button !== undefined && e.button !== 0) return;
-    const sb = document.getElementById('float-sidebar');
-    if (!sb || !document.body.classList.contains('float-sidebar-open')) return;
-    // Double-tap / double-click on the grip (works for mouse AND touch)
-    // re-docks the sidebar to its default corner.
-    const now = Date.now();
-    const dist = Math.hypot(e.clientX - fsLastGripTapXY.x, e.clientY - fsLastGripTapXY.y);
-    if (now - fsLastGripTap < 350 && dist < 8) {
-        fsLastGripTap = 0;
-        resetFloatSidebarPos();
-        return;
-    }
-    fsLastGripTap = now;
-    fsLastGripTapXY = { x: e.clientX, y: e.clientY };
-    const startPos = fsCurrentPos || floatSidebarDefaultPos();
-    fsDragCtx = {
-        startX: e.clientX, startY: e.clientY,
-        origX: startPos.x, origY: startPos.y,
-        pointerId: e.pointerId,
-    };
-    document.body.classList.add('fs-dragging');
-    if (e.preventDefault) e.preventDefault();
-    try {
-        if (e.target && e.target.setPointerCapture && e.pointerId !== undefined) {
-            e.target.setPointerCapture(e.pointerId);
-        }
-    } catch (_) { /* capture is best-effort; window listeners cover the rest */ }
-    if (!fsCurrentPos) fsWriteTransform(clampFloatSidebarPos(startPos.x, startPos.y));
-    window.addEventListener('pointermove', moveFloatSidebarDrag, { passive: false });
-    window.addEventListener('pointerup', endFloatSidebarDrag);
-    window.addEventListener('pointercancel', endFloatSidebarDrag);
-}
-
-function moveFloatSidebarDrag(e) {
-    if (!fsDragCtx) return;
-    if (e.pointerId !== undefined && fsDragCtx.pointerId !== undefined &&
-        e.pointerId !== fsDragCtx.pointerId) return;
-    if (e.cancelable) e.preventDefault();
-    moveFloatSidebarTo(
-        fsDragCtx.origX + (e.clientX - fsDragCtx.startX),
-        fsDragCtx.origY + (e.clientY - fsDragCtx.startY));
-}
-
-function endFloatSidebarDrag() {
-    if (!fsDragCtx) return;
-    const ctx = fsDragCtx;
-    fsDragCtx = null;
-    document.body.classList.remove('fs-dragging');
-    window.removeEventListener('pointermove', moveFloatSidebarDrag);
-    window.removeEventListener('pointerup', endFloatSidebarDrag);
-    window.removeEventListener('pointercancel', endFloatSidebarDrag);
-    // Flush a still-pending rAF target so the persisted position matches the
-    // visual resting position exactly (very fast flicks can leave one queued).
-    if (fsPendingXY) {
-        fsWriteTransform(clampFloatSidebarPos(fsPendingXY.x, fsPendingXY.y));
-        fsPendingXY = null;
-    }
-    // Persist only REAL drags: a plain tap (or 1-2px of jitter) must not turn
-    // the docked default into an explicit saved position — an untouched card
-    // keeps following the workspace edge on resize.
-    if (fsCurrentPos) {
-        const moved = Math.hypot(fsCurrentPos.x - ctx.origX, fsCurrentPos.y - ctx.origY);
-        if (moved >= 3) {
-            state.floatSidebarPos = { x: fsCurrentPos.x, y: fsCurrentPos.y };
-        }
-    }
-    saveSettings();
-}
-
-// Double-tap on the grip (or any future "re-dock" affordance): forget the
-// dragged position — the card glides back to its default top-right corner
-// and, being un-personalized again, follows the workspace edge on resize.
-function resetFloatSidebarPos() {
-    state.floatSidebarPos = null;
-    applyFloatSidebarPos();
-    saveSettings();
-}
-
-// Window resize: re-clamp a dragged position so the card stays inside the
-// (possibly smaller) workspace; recompute the dock corner for a never-dragged
-// card so it keeps hugging the right edge. No-op while closed.
-function handleFloatSidebarResize() {
-    if (document.body.classList.contains('float-sidebar-open')) {
-        applyFloatSidebarPos();
-    }
-}
-
-// Bind the grip + workspace-size observation. Called once from app.js boot.
-function initFloatSidebarDrag() {
-    const grip = document.getElementById('fs-drag-handle');
-    if (grip) grip.addEventListener('pointerdown', beginFloatSidebarDrag);
-    // Re-clamp / re-dock whenever the WORKSPACE itself changes size — the
-    // left file sidebar collapsing (it animates its width over ~300ms, so a
-    // single boot-time measurement can be stale), the split resizer moving,
-    // a panel being minimized, or the window being resized. A ResizeObserver
-    // on #workspace-main covers ALL of those sources with one primitive; the
-    // window-resize listener is only the legacy fallback. (Writing the
-    // transform changes no layout, so the observer can never loop.)
-    const ws = document.getElementById('workspace-main');
-    if (typeof ResizeObserver !== 'undefined' && ws && ws.addEventListener) {
-        const ro = new ResizeObserver(() => handleFloatSidebarResize());
-        ro.observe(ws);
-    } else {
-        window.addEventListener('resize', handleFloatSidebarResize);
-    }
 }
 
 function toggleChatHistory() {
@@ -563,14 +296,6 @@ function setAppMode(mode, save = true) {
 }
 
 function setAnnoTool(tool, save = true) {
-    // ---- Size flyout: any tool switch closes the size menu ----------------
-    // The flyout belongs to ONE tool button; selecting a different tool
-    // (button, keyboard shortcut, programmatic) always dismisses it.
-    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
-    // Same for the color flyout (#tool-color-menu, js/colormenu.js) — it
-    // edits ONE tool's color and must never outlive that tool.
-    if (typeof closeToolColorMenu === 'function') closeToolColorMenu();
-
     // ---- BUG FIX (Pen/Highlighter tool switching) ----
     // `state.annoTool` is per-device UI state. It MUST NEVER be overwritten
     // by remote collaboration (Yjs awareness, project revision changes,
@@ -609,21 +334,17 @@ function setAnnoTool(tool, save = true) {
             highlighter: { color: '#facc15', thickness: 20 }
         };
     }
-    const settingsKey = (typeof toolSettingsKeyFor === 'function') ? toolSettingsKeyFor(tool) : tool;
-    if (state.toolSettings[settingsKey] || state.toolSettings[tool]) {
-        // Eraser tool ids are hyphenated but their settings buckets are
-        // camelCase (toolSettingsKeyFor) — fall back to the raw id so blobs
-        // saved by older builds (which wrote 'eraser-pixel' keys) still load.
-        const settings = state.toolSettings[settingsKey] || state.toolSettings[tool];
+    if (state.toolSettings[tool]) {
+        const settings = state.toolSettings[tool];
         if (settings.color !== undefined) {
             state.annoColor = settings.color;
-            // Color readouts (preview canvas dot, color-menu chip) refresh
-            // via updateThicknessPreview() at the end of this function.
+            els.colorPicker.value = settings.color;
         }
         if (settings.thickness !== undefined) {
             state.annoThickness = settings.thickness;
-            // Numeric readouts (button badge + size-menu value chip) are
-            // refreshed by updateToolSizeBadge() at the end of this function.
+            els.thicknessPicker.value = settings.thickness;
+            const thicknessDisplay = document.getElementById('thickness-val');
+            if (thicknessDisplay) thicknessDisplay.innerText = settings.thickness;
         }
     }
 
@@ -646,13 +367,16 @@ function setAnnoTool(tool, save = true) {
         }
     }
 
-    // Show/hide pen customization panel (no separator — the groups' own
-    // rounded trays separate them; separators were removed to save space)
+    // Show/hide pen customization panel
     const isLineTool = (tool === 'pen' || tool === 'highlighter');
     const penCustomization = document.getElementById('pen-customization');
+    const penSep = document.getElementById('pen-customization-sep');
     if (penCustomization) {
         penCustomization.classList.toggle('hidden', !isLineTool);
         penCustomization.classList.toggle('flex', isLineTool);
+    }
+    if (penSep) {
+        penSep.classList.toggle('hidden', !isLineTool);
     }
 
     // ---- Image tool: open file picker immediately ----
@@ -677,9 +401,6 @@ function setAnnoTool(tool, save = true) {
     if (lineModeBtn) lineModeBtn.style.display = isLineTool ? '' : 'none';
 
     updateThicknessPreview();
-    // Numeric size badge on the active tool button (pen/highlighter/erasers
-    // only — floattools.js keeps it in sync with the size flyout).
-    if (typeof updateToolSizeBadge === 'function') updateToolSizeBadge();
 }
 
 // ---- Modals ----
@@ -872,8 +593,6 @@ async function clearAllData() {
         applyPanelMinimizeVisuals(null);
         // Fresh workspace: forget all resume-on-reopen reading positions.
         state.lastPositions = {};
-        // Fresh workspace: no tagged PDFs (quick-switch rail) either.
-        state.taggedDocIds = [];
         updateViewportActiveVisuals();
 
         await ensureRootFolder();
@@ -906,15 +625,8 @@ function updateThicknessPreview() {
     const canvas = document.getElementById('thickness-preview-canvas');
     if (!canvas) return;
     canvas.style.cursor = 'pointer';
-    canvas.title = 'Tap to change color';
-    // iPad FIX: this used to programmatically click a hidden
-    // <input type="color">, which iOS Safari does not support — color
-    // selection silently did nothing on iPad (laptop/Android were fine).
-    // It now opens the custom #tool-color-menu palette (js/colormenu.js):
-    // plain DOM, so it works identically on every platform.
-    canvas.onclick = () => {
-        if (typeof toggleToolColorMenu === 'function') toggleToolColorMenu();
-    };
+    canvas.title = 'Click to change color';
+    canvas.onclick = () => document.getElementById('color-picker').click();
 
     const ctx = canvas.getContext('2d');
     const size = canvas.width;

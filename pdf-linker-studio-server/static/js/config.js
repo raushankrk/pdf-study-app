@@ -44,10 +44,8 @@ const els = {
     toolEraserPixel: document.getElementById('tool-eraser-pixel'),
     toolEraserStroke: document.getElementById('tool-eraser-stroke'),
     toolImage: document.getElementById('tool-image'),
-    // (colorPicker removed: color selection now lives in the custom
-    // #tool-color-menu palette, js/colormenu.js — the hidden native
-    // <input type="color"> was dropped because iOS Safari never
-    // supported it, which left iPad users unable to pick colors.)
+    colorPicker: document.getElementById('color-picker'),
+    thicknessPicker: document.getElementById('thickness-picker'),
     importInput: document.getElementById('import-project-input'),
     modal: document.getElementById('modal'),
     modalTitle: document.getElementById('modal-title'),
@@ -94,7 +92,7 @@ const els = {
     aiSettingMaxChunks: document.getElementById('ai-setting-max-chunks'),
     aiSettingChunkSize: document.getElementById('ai-setting-chunk-size'),
 
-    // Comment Editor Panel (comments pane inside #float-sidebar)
+    // Comment Editor Panel (overlay inside #ai-sidebar)
     commentEditorPanel: document.getElementById('comment-editor-panel'),
     commentPreviewArea: document.getElementById('comment-preview-area'),
     commentEditorArea: document.getElementById('comment-editor-area'),
