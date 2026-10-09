@@ -190,11 +190,62 @@ async function init() {
                     state.lastActiveSide = 'right';
                 }
 
+                // ---- Restore per-document reading positions (resume on reopen) ----
+                // Keep only entries whose doc still exists and whose shape is
+                // valid. The two viewports are the freshest source for the
+                // docs they currently show — seed/refresh those entries from
+                // the restored view state so a reload never loses the spot
+                // even if the settings blob was saved by an older version.
+                state.lastPositions = {};
+                const savedPositions = savedData.settings.lastPositions;
+                if (savedPositions && typeof savedPositions === 'object') {
+                    Object.keys(savedPositions).forEach(docId => {
+                        const p = savedPositions[docId];
+                        if (state.documents[docId] && p && typeof p === 'object') {
+                            state.lastPositions[docId] = {
+                                pageId: p.pageId || null,
+                                pageNum: parseInt(p.pageNum, 10) || 1,
+                                scrollTop: Math.max(0, parseInt(p.scrollTop, 10) || 0),
+                            };
+                        }
+                    });
+                }
+                ['left', 'right'].forEach(side => {
+                    const v = state.view[side];
+                    if (v && v.docId && state.documents[v.docId]) {
+                        state.lastPositions[v.docId] = {
+                            pageId: v.pageId || null,
+                            pageNum: v.pageNum || 1,
+                            scrollTop: Math.max(0, v.scrollTop || 0),
+                        };
+                    }
+                });
+
                 if (savedData.settings.splitRatio) {
                     state.splitRatio = savedData.settings.splitRatio;
                     els.leftPanel.style.width = (state.splitRatio * 100) + '%';
                     els.rightPanel.style.width = ((1 - state.splitRatio) * 100) + '%';
                 }
+
+                // ---- Restore minimized panel (single-toolbar era) ----
+                // If a canvas was minimized when the session ended, collapse
+                // it again. Its lock is already persisted via settings.view
+                // (minimizePanel auto-locks); minimizedAutoLock tells us the
+                // lock was OURS, so a later restore will undo it again.
+                // Never restore on a fresh workspace (no docs at all).
+                const savedMinSide = savedData.settings.minimizedSide;
+                if ((savedMinSide === 'left' || savedMinSide === 'right') &&
+                    (state.view.left.docId || state.view.right.docId)) {
+                    minimizePanel(savedMinSide, false);
+                    // minimizePanel recomputes the auto-lock flag from the view
+                    // state — but the lock itself was PERSISTED, so at boot the
+                    // viewport already looks locked and the recomputed flag
+                    // would wrongly read false. Re-assert the persisted flag:
+                    // a later restore must unlock a lock that was originally
+                    // automatic, and keep a manual lock.
+                    state.minimizeAutoLock[savedMinSide] = savedData.settings.minimizedAutoLock === true;
+                }
+
                 if (savedData.settings.appMode) setAppMode(savedData.settings.appMode, false);
                 if (savedData.settings.annoTool) setAnnoTool(savedData.settings.annoTool, false);
                 const lineModeBtn = document.getElementById('tool-line-mode');
@@ -208,14 +259,61 @@ async function init() {
                 }
                 if (savedData.settings.annoThickness) {
                     state.annoThickness = savedData.settings.annoThickness;
-                    els.thicknessPicker.value = savedData.settings.annoThickness;
+                    // The inline slider is gone — the numeric badge + size
+                    // flyout (floattools.js) display the restored value.
                 }
                 if (savedData.settings.leftSidebarCollapsed) {
                     document.body.classList.add('left-sidebar-collapsed');
                 }
-                if (savedData.settings.aiSidebarCollapsed) {
-                    document.body.classList.add('ai-sidebar-collapsed');
+                // ---- Floating tool sidebar (AI Chat + Comments) ----
+                // The <body> tag defaults to open + chat mode. Restore the
+                // persisted state: new blobs carry floatSidebarOpen /
+                // floatSidebarMode; older blobs only carry aiSidebarCollapsed
+                // (true = sidebar closed) — map it so returning users keep
+                // their previous layout. Exactly one mode class is always set.
+                if (savedData.settings.floatSidebarOpen !== undefined) {
+                    document.body.classList.toggle('float-sidebar-open', !!savedData.settings.floatSidebarOpen);
+                } else if (savedData.settings.aiSidebarCollapsed !== undefined) {
+                    document.body.classList.toggle('float-sidebar-open', !savedData.settings.aiSidebarCollapsed);
                 }
+                document.body.classList.toggle('fs-mode-comments', savedData.settings.floatSidebarMode === 'comments');
+                document.body.classList.toggle('fs-mode-chat', savedData.settings.floatSidebarMode !== 'comments');
+                // Restore where the user dragged the floating sidebar. Only
+                // accept well-formed {x,y} numbers — anything else (null,
+                // strings, NaN, partial objects) means "docked default".
+                // Clamping to the current workspace happens in
+                // applyFloatSidebarPos() (needs a visible element to measure).
+                const savedFsPos = savedData.settings.floatSidebarPos;
+                if (savedFsPos && typeof savedFsPos === 'object' &&
+                    typeof savedFsPos.x === 'number' && isFinite(savedFsPos.x) &&
+                    typeof savedFsPos.y === 'number' && isFinite(savedFsPos.y)) {
+                    state.floatSidebarPos = { x: savedFsPos.x, y: savedFsPos.y };
+                } else {
+                    state.floatSidebarPos = null;
+                }
+                if (document.body.classList.contains('float-sidebar-open')) {
+                    applyFloatSidebarPos();
+                }
+                // Restore where the user dragged the floating annotation
+                // toolbar. Same strict validation: only well-formed {x,y}
+                // numbers are accepted — anything else means "docked default"
+                // (top-center). Clamping happens in applyFloatToolbarPos().
+                const savedFtPos = savedData.settings.floatToolbarPos;
+                if (savedFtPos && typeof savedFtPos === 'object' &&
+                    typeof savedFtPos.x === 'number' && isFinite(savedFtPos.x) &&
+                    typeof savedFtPos.y === 'number' && isFinite(savedFtPos.y)) {
+                    state.floatToolbarPos = { x: savedFtPos.x, y: savedFtPos.y };
+                } else {
+                    state.floatToolbarPos = null;
+                }
+                // Restore the toolbar ORIENTATION ('horizontal' | 'vertical').
+                // Old settings blobs predate this key → the horizontal ribbon
+                // default; only the exact string 'vertical' opts into the
+                // rail. The class + toggle button are applied (without saving)
+                // by initFloatToolbarDrag — the single application point.
+                const savedFtOrient = savedData.settings.floatToolbarOrientation;
+                state.floatToolbarOrientation =
+                    savedFtOrient === 'vertical' ? 'vertical' : 'horizontal';
                 // Restore AI settings
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
@@ -236,6 +334,10 @@ async function init() {
                 if (Array.isArray(savedData.settings.recentDocIds)) {
                     // Filter out any IDs that no longer exist.
                     state.recentDocIds = savedData.settings.recentDocIds.filter(id => state.documents[id]);
+                }
+                if (Array.isArray(savedData.settings.taggedDocIds)) {
+                    // Tagged PDFs (quick-switch rail): drop entries for deleted docs.
+                    state.taggedDocIds = savedData.settings.taggedDocIds.filter(id => state.documents[id]);
                 }
                 if (Array.isArray(savedData.settings.collapsedFolderIds)) {
                     const collapsedSet = new Set(savedData.settings.collapsedFolderIds);
@@ -307,9 +409,15 @@ async function init() {
     document.addEventListener('touchstart', (e) => {
         // Only intercept in non-navigation modes
         if (state.appMode === 'navigation') return;
-        // Don't intercept touches inside the comment overlay — the textarea
-        // and buttons need normal touch behavior to work.
-        if (e.target.closest('#comment-editor-panel') || e.target.closest('#comment-backdrop')) return;
+        // Don't intercept touches inside the floating glass sidebar — the
+        // composer, chat list and comment editor need normal touch behavior
+        // (scrolling, typing). Touches on the card never reach the PDF
+        // anyway (the card is pointer-events:auto and absorbs them).
+        if (e.target.closest('#float-sidebar')) return;
+        // Same for the floating annotation toolbar: the palette absorbs its
+        // own touches (buttons, slider, grip drag) — never forward them to
+        // the PDF handlers below.
+        if (e.target.closest('#float-toolbar')) return;
         // Check if any of the touches are inside a viewport
         const target = e.target;
         if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
@@ -327,9 +435,12 @@ async function init() {
     // pan/zoom (the two-finger gesture handler in initTwoFingerGestures handles it).
     document.addEventListener('touchmove', (e) => {
         if (state.appMode === 'navigation') return;
-        // Don't intercept touchmove inside the comment overlay — the textarea
-        // needs normal scroll/text-selection behavior.
-        if (e.target.closest('#comment-editor-panel')) return;
+        // Don't intercept touchmove inside the floating tool sidebar — the
+        // textarea / chat list need normal scroll behavior.
+        if (e.target.closest('#float-sidebar')) return;
+        // ...and inside the floating annotation toolbar (its own drag +
+        // slider gestures are managed by floattools.js / the controls).
+        if (e.target.closest('#float-toolbar')) return;
         // 2-finger touches are pan/zoom — let the gesture handler deal with them
         if (e.touches.length >= 2) return;
         if (state.drawing && state.drawing.active) {
@@ -372,16 +483,10 @@ async function init() {
         updateThicknessPreview();
     });
 
-    els.thicknessPicker.addEventListener('input', (e) => {
-        state.annoThickness = parseInt(e.target.value);
-        const display = document.getElementById('thickness-val');
-        if (display) display.innerText = state.annoThickness;
-        if (state.toolSettings && state.toolSettings[state.annoTool]) {
-            state.toolSettings[state.annoTool].thickness = state.annoThickness;
-        }
-        saveSettings();
-        updateThicknessPreview();
-    });
+    // ---- Tool size selection lives in the floating size menu now ----
+    // (js/floattools.js: applyToolSize applies preset/typed sizes from the
+    // Apple-Notes style flyout opened by tapping the active tool again. The
+    // old inline #thickness-picker slider was removed from the toolbar.)
 
     // AI Settings Range Sliders (live text update)
     if (els.aiSettingTemp) {
@@ -426,25 +531,13 @@ async function init() {
         });
     }
 
-    // ---- Comment overlay backdrop: click outside the panel to close ----
-    // The backdrop sits behind the floating comment panel. Clicking/tapping
-    // it (i.e. clicking outside the panel) closes the comment — UNLESS
-    // we're in split mode with unsaved changes, in which case we treat
-    // it as a cancel (which removes empty comments or keeps non-empty ones).
-    //
-    // We use pointerdown (not click) for faster response on touch devices.
-    // This is safe because handlePointerDown in events.js already bails out
-    // when the target is inside #comment-backdrop, so there's no conflict.
-    const commentBackdrop = document.getElementById('comment-backdrop');
-    if (commentBackdrop) {
-        commentBackdrop.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (typeof cancelCommentEdit === 'function') cancelCommentEdit();
-        });
-    }
+    // ---- (No sidebar backdrop) ----
+    // The floating tool sidebar is fully transparent and pointer-events:none
+    // on its container — there is no dimming backdrop anymore, so the PDF
+    // stays interactive while the sidebar is open. No click-outside-to-close
+    // handler is needed: the sidebar is closed via its X button or Ctrl+/.
 
-    // ---- Global Escape key: also closes the comment overlay ----
+    // ---- Global Escape key: also closes the active comment ----
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' &&
             state.activeComment && state.activeComment.id &&
@@ -456,6 +549,14 @@ async function init() {
     });
 
     initResizer();
+    // Draggable floating sidebar: grip pointerdown + window resize re-clamp.
+    initFloatSidebarDrag();
+    // Draggable floating annotation toolbar: grip pointerdown + place at the
+    // default/restored spot + workspace & toolbar size observation.
+    initFloatToolbarDrag();
+    // Tool size flyout (tap the active pen/highlighter/eraser again):
+    // Escape closer + badge for a restored size-adjustable active tool.
+    initToolSizeMenu();
     updateViewportActiveVisuals();
 
     // ---- Header horizontal scroll for mouse-wheel users ----

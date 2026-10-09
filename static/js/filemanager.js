@@ -492,6 +492,16 @@ function _renderDocLeaf(doc, depth, isLast, parentLines) {
         row.appendChild(fav);
     }
 
+    // Tag badge (only if tagged — click to untag; see the quick-switch rail)
+    if (typeof isDocTagged === 'function' && isDocTagged(doc.id)) {
+        const tag = document.createElement('span');
+        tag.className = 'tree-fav tree-tag';
+        tag.innerHTML = '<i class="fa-solid fa-tag text-[9px]"></i>';
+        tag.title = 'Tagged — click to untag';
+        tag.onclick = (e) => { e.stopPropagation(); toggleDocTag(doc.id); };
+        row.appendChild(tag);
+    }
+
     // Kebab (⋮) menu — replaces the row of inline action buttons.
     // Same rationale as the folder row: one easy-to-tap 28px button instead
     // of six cramped 18px buttons. The dropdown has Open / Open-other /
@@ -661,12 +671,18 @@ function toggleSearchMode() {
 window.toggleSortMenu = toggleSortMenu;
 window.toggleSearchMode = toggleSearchMode;
 
-// ---- Smart open (uses active side, respects locks) ----
+// ---- Smart open (uses active side, respects locks + minimized panel) ----
 function openDocumentSmart(docId, forceDouble = false) {
+    // A viewport can receive a document only if it is VISIBLE (not minimized)
+    // and unlocked. A minimized viewport is always locked (auto-lock applied
+    // by minimizePanel), but the explicit minimized check keeps this function
+    // correct even if a future change loosened the lock rule.
+    const usable = s => state.minimizedSide !== s && !state.view[s].locked;
+
     let side = state.lastActiveSide || 'left';
-    if (state.view[side].locked) {
+    if (!usable(side)) {
         const other = side === 'left' ? 'right' : 'left';
-        if (!state.view[other].locked) side = other;
+        if (usable(other)) side = other;
         else {
             showModal("Viewport Locked", "Cannot open document: Both viewports are locked.");
             return;
@@ -674,10 +690,12 @@ function openDocumentSmart(docId, forceDouble = false) {
     }
     // If both viewports already have this doc, switch to opposite side.
     if (!forceDouble && (state.view.left.docId === docId || state.view.right.docId === docId)) {
-        side = state.view.left.docId === docId ? 'right' : 'left';
-        if (state.view[side].locked) {
-            side = state.view.left.docId === docId ? 'left' : 'right';
-        }
+        const opposite = state.view.left.docId === docId ? 'right' : 'left';
+        // Prefer the opposite viewport when usable; otherwise keep the current
+        // `side` (already verified usable above) — matches the old behavior of
+        // reloading the doc on the remaining viewport when the other one is
+        // locked (a minimized viewport counts as locked).
+        if (usable(opposite)) side = opposite;
     }
     setActiveDocument(side, docId);
     pushRecentDoc(docId);
@@ -810,6 +828,110 @@ function showMoveDialog(docIds, folderIds) {
     };
 }
 
+// ---- Tagged PDFs (quick-switch rail) ----
+// The user can TAG a PDF as most-useful (file ⋮ menu → Tag, or the tag
+// badge on the row). Tagged PDFs appear as small colored chips (first 3
+// letters of the name) in a narrow rail that is visible whenever the left
+// sidebar is collapsed — one tap switches between frequently used PDFs
+// (openDocumentSmart routes to a usable viewport and resumes the last
+// reading position). Chip colors are derived deterministically from the
+// doc id, so each PDF keeps its own color across sessions.
+const TAG_CHIP_COLORS = [
+    '#dc2626', // red-600
+    '#ea580c', // orange-600
+    '#d97706', // amber-600
+    '#059669', // emerald-600
+    '#0d9488', // teal-600
+    '#0891b2', // cyan-600
+    '#2563eb', // blue-600
+    '#4f46e5', // indigo-600
+    '#7c3aed', // violet-600
+    '#c026d3', // fuchsia-600
+    '#db2777', // pink-600
+    '#475569', // slate-600
+];
+
+function isDocTagged(docId) {
+    return Array.isArray(state.taggedDocIds) && state.taggedDocIds.includes(docId);
+}
+
+// Stable per-doc color: FNV-1a hash of the id into the palette (better spread
+// than a naive polynomial hash — doc ids are similar-looking digit strings).
+function docTagColor(docId) {
+    const s = String(docId || '');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return TAG_CHIP_COLORS[h % TAG_CHIP_COLORS.length];
+}
+
+// First 3 letters of the PDF name, uppercase ("report.pdf" -> "REP").
+function docTagShort(name) {
+    return String(name || '').trim().slice(0, 3).toUpperCase() || 'PDF';
+}
+
+function toggleDocTag(docId) {
+    if (!docId || !state.documents[docId]) return;
+    if (!Array.isArray(state.taggedDocIds)) state.taggedDocIds = [];
+    const idx = state.taggedDocIds.indexOf(docId);
+    if (idx === -1) state.taggedDocIds.push(docId);
+    else state.taggedDocIds.splice(idx, 1);
+    saveSettings();
+    // Re-render explorer badges AND the rail (renderDocList re-renders the rail).
+    if (typeof renderDocList === 'function') renderDocList();
+}
+
+function renderTagRail() {
+    const rail = document.getElementById('tag-rail');
+    if (!rail) return;
+    rail.innerHTML = '';
+
+    // Header: tiny pin icon (doubles as the hint when nothing is tagged).
+    const head = document.createElement('div');
+    head.className = 'tag-rail-head';
+    head.innerHTML = '<i class="fa-solid fa-thumbtack"></i>';
+    rail.appendChild(head);
+
+    const ids = (Array.isArray(state.taggedDocIds) ? state.taggedDocIds : [])
+        .filter(id => state.documents[id]);
+    if (ids.length === 0) {
+        // Nothing tagged — keep the single dim hint icon only.
+        rail.title = 'Tag a PDF to pin it here (file \u22ee menu \u2192 Tag)';
+        return;
+    }
+    rail.title = '';
+    const usedColors = [];
+    ids.forEach(docId => {
+        const doc = state.documents[docId];
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'tag-chip';
+        chip.dataset.docId = docId;
+        // Per-doc color, with collision resolution WITHIN the current rail so
+        // every visible chip is visually distinct even when two ids hash to
+        // the same palette slot (the later chip shifts to the next free color;
+        // with ≤12 tags every chip keeps a unique color).
+        let color = docTagColor(docId);
+        for (let guard = 0; usedColors.includes(color) && guard < TAG_CHIP_COLORS.length; guard++) {
+            color = TAG_CHIP_COLORS[(TAG_CHIP_COLORS.indexOf(color) + 1) % TAG_CHIP_COLORS.length];
+        }
+        usedColors.push(color);
+        chip.style.background = color;
+        chip.textContent = docTagShort(doc.name);
+        chip.title = `${doc.name} — open this PDF`;
+        // Ring the chips of the PDFs currently open in a viewport.
+        if (state.view.left.docId === docId || state.view.right.docId === docId) {
+            chip.classList.add('tag-chip-active');
+        }
+        chip.onclick = () => {
+            if (typeof openDocumentSmart === 'function') openDocumentSmart(docId);
+        };
+        rail.appendChild(chip);
+    });
+}
+
 // ---- Context menus ----
 function _ensureContextMenu() {
     let menu = document.getElementById('context-menu');
@@ -852,6 +974,7 @@ function showDocContextMenu(x, y, docId) {
         <div class="cm-item" data-action="duplicate"><i class="fa-solid fa-clone"></i> Duplicate</div>
         <div class="cm-item" data-action="move"><i class="fa-solid fa-folder-tree"></i> Move to...</div>
         <div class="cm-item" data-action="fav"><i class="fa-${doc.favorite ? 'solid' : 'regular'} fa-star"></i> ${doc.favorite ? 'Unstar' : 'Star'}</div>
+        <div class="cm-item" data-action="tag"><i class="fa-solid fa-tag"></i> ${isDocTagged(docId) ? 'Untag' : 'Tag'}</div>
         <div class="cm-item" data-action="info"><i class="fa-solid fa-circle-info"></i> Properties</div>
         <div class="cm-sep"></div>
         <div class="cm-item cm-danger" data-action="delete"><i class="fa-solid fa-trash"></i> Delete <span class="cm-key">Del</span></div>
@@ -871,6 +994,7 @@ function showDocContextMenu(x, y, docId) {
             else if (action === 'duplicate') duplicateDocument(docId);
             else if (action === 'move') showMoveDialog(selectedDocIds, selectedFolderIds);
             else if (action === 'fav') toggleFavorite(docId);
+            else if (action === 'tag') toggleDocTag(docId);
             else if (action === 'info') showFileProperties(docId);
             else if (action === 'delete') {
                 if (isMulti) showBulkDeleteDialog();
@@ -1113,6 +1237,12 @@ async function _deleteDocumentRecord(id) {
     if (!state.documents[id]) return;
     delete state.documents[id];
     delete state.annotations[id];
+    // Drop the resume-on-reopen position memory for this doc too.
+    if (state.lastPositions) delete state.lastPositions[id];
+    // Untag it (quick-switch rail) — the doc no longer exists.
+    if (Array.isArray(state.taggedDocIds)) {
+        state.taggedDocIds = state.taggedDocIds.filter(x => x !== id);
+    }
     // Embeddings live server-side now; nothing to filter here.
 
     // Remove from links list (client-side cache) and on the server.
@@ -1242,6 +1372,7 @@ window.addEventListener('blur', _closeAllMenus);
 // Expose to global scope for inline onclick handlers.
 window.openDocumentSmart = openDocumentSmart;
 window.toggleFavorite = toggleFavorite;
+window.toggleDocTag = toggleDocTag;
 window.duplicateDocument = duplicateDocument;
 window.showMoveDialog = showMoveDialog;
 window.showFileProperties = showFileProperties;

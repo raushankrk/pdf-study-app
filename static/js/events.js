@@ -14,22 +14,28 @@ function getMousePosInViewport(evt, side) {
 }
 
 function handlePointerDown(e) {
-    // ---- Comment overlay guards (CRITICAL) ----
-    // 1. If the pointer landed inside the comment overlay panel or its
-    //    backdrop, bail out immediately — we don't want to create a new
-    //    comment, start a marquee selection, or do anything else. The
-    //    overlay has its own click/keyboard handlers.
-    if (e.target.closest('#comment-editor-panel') || e.target.closest('#comment-backdrop')) return;
+    // ---- Floating tool sidebar guard (CRITICAL) ----
+    // If the pointer landed on the liquid glass sidebar card (or the comment
+    // card inside it), bail out — those elements have their own handlers.
+    // NOTE: the card is pointer-events:auto with a frosted glass surface, so
+    // clicks ON the card are absorbed by the card itself and usually never
+    // even reach the page; this guard is the second line of defense (e.g.
+    // synthetic events, or future DOM changes) and keeps annotation strokes
+    // from ever starting inside the sidebar.
+    if (e.target.closest('#float-sidebar') || e.target.closest('#comment-editor-panel')) return;
+    // Same for the floating annotation toolbar: its glass padding, grip and
+    // group containers are not buttons, so without this guard a pointerdown
+    // there could start a stroke on the PDF underneath. The bar absorbs all
+    // of its own interactions (buttons handle their own clicks).
+    if (e.target.closest('#float-toolbar')) return;
+    // Same defense for the tool SIZE flyout (#tool-size-menu): it floats
+    // ABOVE the canvas next to the toolbar, so a pointerdown on it (or its
+    // padding) must never start a stroke on the PDF underneath. Its rows are
+    // buttons (covered by the button guard below) — this guards the glass
+    // container itself.
+    if (e.target.closest('#tool-size-menu')) return;
 
-    // 2. If the comment overlay is currently OPEN, don't start any new
-    //    annotation/comment action on the PDF. The user should close the
-    //    overlay first (by clicking the backdrop, pressing Esc, or clicking
-    //    the X button). This prevents accidental comment creation when the
-    //    user taps outside the overlay but the tap lands on the PDF behind
-    //    the dimmed backdrop.
-    if (state.activeComment && state.activeComment.id) return;
-
-    // 3. Standard early-return guards — now also includes TEXTAREA so that
+    // 2. Standard early-return guards — also includes TEXTAREA so that
     //    tapping the markdown editor on touch devices doesn't trigger
     //    comment creation. Without this, the pointerdown event bubbles up
     //    from the textarea to window, handlePointerDown runs, sees the
@@ -1191,6 +1197,11 @@ function handleKeyDown(e) {
 const handleScroll = debounce((side) => {
     const viewport = els[side + 'Viewport'];
     state.view[side].scrollTop = viewport.scrollTop;
+    // Scroll/pan never re-renders, so record the position here too
+    // (resume-on-reopen memory; renderPage covers the page-change paths).
+    if (state.view[side].docId && typeof rememberDocPosition === 'function') {
+        rememberDocPosition(side);
+    }
     if (state.view[side].docId && state.lastActiveSide !== side) {
         // Scrolling/panning a PDF makes it the active one — keep the
         // single header toolbar (tabs + controls) in sync immediately.

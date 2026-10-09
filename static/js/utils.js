@@ -75,3 +75,12 @@ function pageNumFromId(doc, pageId) {
     const idx = doc.pageIds.indexOf(pageId);
     return idx === -1 ? 1 : idx + 1;
 }
+// Map a tool id to its state.toolSettings bucket key. The eraser tool ids
+// use hyphens ('eraser-pixel' / 'eraser-stroke') while the settings buckets
+// are camelCase ('eraserPixel' / 'eraserStroke'). Pen and highlighter map to
+// themselves. Also accepts an already-camelCase key (idempotent).
+function toolSettingsKeyFor(tool) {
+    if (tool === 'eraser-pixel') return 'eraserPixel';
+    if (tool === 'eraser-stroke') return 'eraserStroke';
+    return tool;
+}

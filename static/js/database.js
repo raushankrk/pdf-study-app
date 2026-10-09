@@ -205,8 +205,36 @@ async function saveSettings() {
         // Which PDF (left = A / right = B) is currently active — restored on
         // boot so the single header toolbar targets the same PDF again.
         activeSide: state.lastActiveSide === 'right' ? 'right' : 'left',
+        // Minimized panel (single-toolbar era): at most one of the two
+        // canvases can be collapsed. minimizedAutoLock records whether the
+        // lock on that canvas was applied automatically by minimizePanel
+        // (so restoring after a reload can undo it again; manual locks stay).
+        minimizedSide: state.minimizedSide === 'left' || state.minimizedSide === 'right'
+            ? state.minimizedSide : null,
+        minimizedAutoLock: !!(state.minimizedSide && state.minimizeAutoLock &&
+                              state.minimizeAutoLock[state.minimizedSide]),
+        // Per-document reading positions (resume on reopen). One small entry
+        // per doc; only docs that still exist are restored on boot.
+        lastPositions: state.lastPositions || {},
+        // Tagged PDFs (quick-switch rail): keep only docs that still exist.
+        taggedDocIds: (Array.isArray(state.taggedDocIds) ? state.taggedDocIds : [])
+            .filter(id => state.documents[id]),
         leftSidebarCollapsed: document.body.classList.contains('left-sidebar-collapsed'),
-        aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed'),
+        // Floating tool sidebar (AI Chat + Comments): open state + which pane
+        // is shown. Restored on boot; exactly one mode class is always set.
+        floatSidebarOpen: document.body.classList.contains('float-sidebar-open'),
+        floatSidebarMode: document.body.classList.contains('fs-mode-comments') ? 'comments' : 'chat',
+        // Where the user dragged the floating sidebar ({x,y} in workspace CSS
+        // px). null = never dragged → the card docks top-right and follows
+        // the workspace edge on resize.
+        floatSidebarPos: state.floatSidebarPos || null,
+        // Where the user dragged the floating annotation toolbar ({x,y} in
+        // workspace CSS px). null = never dragged → the bar sits top-center
+        // and re-centers on resize until the first drag.
+        floatToolbarPos: state.floatToolbarPos || null,
+        // Toolbar layout: 'horizontal' ribbon or 'vertical' rail (#ft-orient-
+        // toggle flips it). Normalized so only the two exact strings persist.
+        floatToolbarOrientation: state.floatToolbarOrientation === 'vertical' ? 'vertical' : 'horizontal',
         aiSettings: state.aiSettings,
         // File-explorer persistence
         currentFolderId: state.currentFolderId || ROOT_FOLDER_ID,

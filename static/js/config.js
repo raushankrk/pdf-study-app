@@ -45,7 +45,6 @@ const els = {
     toolEraserStroke: document.getElementById('tool-eraser-stroke'),
     toolImage: document.getElementById('tool-image'),
     colorPicker: document.getElementById('color-picker'),
-    thicknessPicker: document.getElementById('thickness-picker'),
     importInput: document.getElementById('import-project-input'),
     modal: document.getElementById('modal'),
     modalTitle: document.getElementById('modal-title'),
@@ -92,7 +91,7 @@ const els = {
     aiSettingMaxChunks: document.getElementById('ai-setting-max-chunks'),
     aiSettingChunkSize: document.getElementById('ai-setting-chunk-size'),
 
-    // Comment Editor Panel (overlay inside #ai-sidebar)
+    // Comment Editor Panel (comments pane inside #float-sidebar)
     commentEditorPanel: document.getElementById('comment-editor-panel'),
     commentPreviewArea: document.getElementById('comment-preview-area'),
     commentEditorArea: document.getElementById('comment-editor-area'),

@@ -130,14 +130,52 @@ function renderDocList() {
     if (typeof _renderBreadcrumbs === 'function') _renderBreadcrumbs();
     if (typeof _renderFileList === 'function') _renderFileList();
     if (typeof renderRecentFiles === 'function') renderRecentFiles();
+    // Tagged-PDF quick-switch rail: refresh chips (active ring follows the
+    // viewports, deleted docs disappear, renames update the letters).
+    if (typeof renderTagRail === 'function') renderTagRail();
+}
+
+// ---- Per-document reading position (resume on reopen) ----
+// Records where the user currently is in the doc shown on `side`, so the
+// doc can later be re-opened at the same spot (setActiveDocument reads it).
+// Called from every position-changing path: renderPage() covers doc opens,
+// page nav (navigatePage / jumpToPage / slider) and page insert/delete;
+// handleScroll() covers scroll/pan (which never re-renders).
+function rememberDocPosition(side) {
+    if (!state.lastPositions) state.lastPositions = {};
+    const viewState = state.view[side];
+    if (!viewState || !viewState.docId) return;
+    state.lastPositions[viewState.docId] = {
+        pageId: viewState.pageId || null,
+        pageNum: viewState.pageNum || 1,
+        scrollTop: Math.max(0, viewState.scrollTop || 0),
+    };
 }
 
 function setActiveDocument(side, docId, render = true) {
     const doc = state.documents[docId];
     state.view[side].docId = docId;
-    state.view[side].pageNum = 1;
-    state.view[side].pageId = pageIdFromNum(doc, 1);
-    state.view[side].scrollTop = 0;
+
+    // ---- RESUME: reopen where the user last left off ----
+    // If we remember a position for THIS document (and its saved page still
+    // exists — pages may have been inserted/deleted since), restore it
+    // instead of forcing page 1. Applies to every reopen path: re-clicking
+    // the PDF in the explorer/recent list, the doc re-routing to the other
+    // canvas after a minimize, or the same doc being re-opened in the pane
+    // that is already showing it.
+    const last = state.lastPositions ? state.lastPositions[docId] : null;
+    const pageIds = (doc && doc.pageIds) || [];
+    if (last && last.pageId && pageIds.includes(last.pageId)) {
+        const num = pageNumFromId(doc, last.pageId) || parseInt(last.pageNum, 10) || 1;
+        state.view[side].pageId = last.pageId;
+        state.view[side].pageNum = Math.min(Math.max(1, num), doc.pageCount || num);
+        state.view[side].scrollTop = Math.max(0, parseInt(last.scrollTop, 10) || 0);
+    } else {
+        state.view[side].pageNum = 1;
+        state.view[side].pageId = pageIdFromNum(doc, 1);
+        state.view[side].scrollTop = 0;
+    }
+
     state.lastActiveSide = side;
     clearSelection();
     closeViewportSearch(side);
@@ -184,6 +222,13 @@ async function renderPage(side) {
         const resolvedNum = pageNumFromId(doc, viewState.pageId);
         if (resolvedNum) viewState.pageNum = resolvedNum;
     }
+
+    // Remember where the user is in this doc (resume-on-reopen memory).
+    // renderPage() is reached by EVERY page-change path (doc open, page nav,
+    // slider, jump, insert/delete page), so this one hook keeps the memory
+    // fresh for the page part; scroll-only updates are captured in
+    // handleScroll() which never re-renders.
+    rememberDocPosition(side);
 
     const canvas = els[side + 'Canvas'];
     const annoCanvas = els[side + 'AnnoCanvas'];

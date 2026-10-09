@@ -92,6 +92,44 @@ const state = {
     currentChatId: null,
     imageCache: {},
     lastActiveSide: 'left',
+    // ---- Minimized panel (single-toolbar era) ----
+    // At most ONE panel can be minimized at a time (the workspace must always
+    // show at least one PDF canvas). The minimized panel is AUTO-LOCKED so
+    // newly opened PDFs can never land in it (openDocumentSmart respects
+    // locks) — minimizeAutoLock[side] remembers whether the lock was applied
+    // automatically (so restoring can undo it again, leaving manual locks
+    // untouched).
+    minimizedSide: null,                        // null | 'left' | 'right'
+    minimizeAutoLock: { left: false, right: false },
+    // ---- Per-document reading position (resume on reopen) ----
+    // docId -> { pageId, pageNum, scrollTop }. Updated on every page render /
+    // scroll so that closing a PDF (replacing it in a canvas, minimizing the
+    // canvas so a re-click re-routes, or re-opening from the explorer/recent
+    // list) resumes where the user left off instead of restarting at page 1.
+    // Persisted via settings (saveSettings) and restored on boot.
+    lastPositions: {},
+    // ---- Tagged PDFs (quick-switch rail) ----
+    // docIds the user TAGGED as most-useful. Tagged PDFs appear as small
+    // colored chips (first 3 letters of the name) in a narrow rail that
+    // shows when the left sidebar is collapsed — one tap switches between
+    // frequently used PDFs. Order = tag order; persisted in settings.
+    taggedDocIds: [],
+    // ---- Draggable floating sidebar position ----
+    // { x, y } = the sidebar card's CSS-pixel offset inside #workspace-main,
+    // set when the user DRAGS the sidebar somewhere (persisted via settings).
+    // null = not personalized: the card docks at its default top-right corner
+    // (and follows the workspace edge on resize) until the first drag.
+    floatSidebarPos: null,
+    // ---- Draggable floating annotation toolbar position ----
+    // Same contract as floatSidebarPos: { x, y } in #workspace-main CSS px,
+    // set by floattools.js when the user DRAGS the toolbar (persisted via
+    // settings). null = not personalized: the bar sits top-center (and
+    // re-centers on resize) until the first drag.
+    floatToolbarPos: null,
+    // Toolbar LAYOUT: 'horizontal' ribbon (default) or 'vertical' rail —
+    // flipped by the #ft-orient-toggle button (js/floattools.js) and
+    // persisted via settings so it survives reloads.
+    floatToolbarOrientation: 'horizontal',
     drawing: {
         active: false,
         startSide: null,
