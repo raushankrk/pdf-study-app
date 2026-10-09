@@ -114,6 +114,12 @@ const state = {
     // shows when the left sidebar is collapsed — one tap switches between
     // frequently used PDFs. Order = tag order; persisted in settings.
     taggedDocIds: [],
+    // ---- Draggable floating sidebar position ----
+    // { x, y } = the sidebar card's CSS-pixel offset inside #workspace-main,
+    // set when the user DRAGS the sidebar somewhere (persisted via settings).
+    // null = not personalized: the card docks at its default top-right corner
+    // (and follows the workspace edge on resize) until the first drag.
+    floatSidebarPos: null,
     drawing: {
         active: false,
         startSide: null,

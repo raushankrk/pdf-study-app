@@ -277,6 +277,22 @@ async function init() {
                 }
                 document.body.classList.toggle('fs-mode-comments', savedData.settings.floatSidebarMode === 'comments');
                 document.body.classList.toggle('fs-mode-chat', savedData.settings.floatSidebarMode !== 'comments');
+                // Restore where the user dragged the floating sidebar. Only
+                // accept well-formed {x,y} numbers — anything else (null,
+                // strings, NaN, partial objects) means "docked default".
+                // Clamping to the current workspace happens in
+                // applyFloatSidebarPos() (needs a visible element to measure).
+                const savedFsPos = savedData.settings.floatSidebarPos;
+                if (savedFsPos && typeof savedFsPos === 'object' &&
+                    typeof savedFsPos.x === 'number' && isFinite(savedFsPos.x) &&
+                    typeof savedFsPos.y === 'number' && isFinite(savedFsPos.y)) {
+                    state.floatSidebarPos = { x: savedFsPos.x, y: savedFsPos.y };
+                } else {
+                    state.floatSidebarPos = null;
+                }
+                if (document.body.classList.contains('float-sidebar-open')) {
+                    applyFloatSidebarPos();
+                }
                 // Restore AI settings
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
@@ -512,6 +528,8 @@ async function init() {
     });
 
     initResizer();
+    // Draggable floating sidebar: grip pointerdown + window resize re-clamp.
+    initFloatSidebarDrag();
     updateViewportActiveVisuals();
 
     // ---- Header horizontal scroll for mouse-wheel users ----

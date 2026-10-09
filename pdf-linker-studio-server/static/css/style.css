@@ -339,15 +339,24 @@ body.left-sidebar-collapsed #tag-rail { display: flex; }
      * pointer-events: none on the container, pointer-events: auto on the
        real UI elements → taps on transparent gaps fall straight through to
        the PDF: scroll / zoom / draw / annotate keep working while the
-       sidebar is open.                                                      */
+       sidebar is open.
+     * The sidebar is a compact CARD the user can DRAG anywhere inside the
+       workspace via the grip handle (#fs-drag-handle). Position is applied
+       ONLY through transform: translate3d(...) (GPU-composited → smooth
+       1:1 tracking); JS in ui.js owns the math, clamping and persistence. */
 
 #float-sidebar {
     position: absolute;
+    /* Compact card anchored at the top-left of #workspace-main; the actual
+       on-screen position comes from the JS-driven transform below (default
+       = docked at the top-right corner, the old right:0 resting place). */
+    left: 0;
     top: 0;
-    right: 0;
-    bottom: 0;
+    height: min(620px, 100%);
+    max-height: 100%;
     /* Start below the right panel's floating minimize button (top-right
-       corner, 26px + margins) so both controls stay visible and clickable. */
+       corner, 26px + margins) so both controls stay visible and clickable
+       through the transparent padding. */
     padding: 44px 10px 10px;
     width: min(380px, calc(100vw - 60px));
     display: none;                /* shown only with body.float-sidebar-open */
@@ -359,10 +368,42 @@ body.left-sidebar-collapsed #tag-rail { display: flex; }
     -webkit-backdrop-filter: none;
     pointer-events: none;         /* the container never captures the pointer */
     z-index: 1200;                /* above canvas content; below modals (9999) */
+    transform: translate3d(0, 0, 0);  /* real position set by ui.js */
+    will-change: transform;       /* keep the layer GPU-composited for smooth drags */
+    transition: transform 0.18s ease-out;  /* glide on re-dock / resize re-clamp;
+                                              disabled while actually dragging */
 }
 body.float-sidebar-open #float-sidebar { display: flex; }
+/* While a drag is in progress the transform must track the pointer 1:1 —
+   no transition lag. ui.js toggles this class on <body>. */
+body.fs-dragging #float-sidebar { transition: none; }
+body.fs-dragging { user-select: none; -webkit-user-select: none; }
 /* Header AI toggle affordance: dimmed while the floating sidebar is closed. */
 body:not(.float-sidebar-open) .toggle-ai-btn { opacity: 0.7; }
+
+/* Drag grip: the ONLY element that starts a sidebar drag. A small island in
+   the transparent header (pointer-events: auto) — dragging it never steals
+   gestures from the PDF underneath. Double-tap re-docks (see ui.js). */
+#fs-drag-handle {
+    pointer-events: auto;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px dashed #b9c0cb;   /* dashed border = "grab me" affordance */
+    background: rgba(255, 255, 255, 0.92);
+    color: #9ca3af;
+    font-size: 0.68rem;
+    cursor: grab;
+    touch-action: none;           /* JS owns touch drags — no pan/scroll/dbl-tap-zoom */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+#fs-drag-handle:hover { background: #ffffff; color: #4f46e5; }
+body.fs-dragging #fs-drag-handle { cursor: grabbing; color: #4f46e5; border-style: solid; }
 
 /* Header strip: mode switcher + contextual actions. The strip itself is
    transparent — only the pills / buttons capture the pointer. */
@@ -2033,9 +2074,11 @@ body > header > * {
         right: 12px;
     }
 
-    /* Floating tool sidebar: finger-friendly mode pills + header buttons. */
+    /* Floating tool sidebar: finger-friendly mode pills + header buttons
+       (+ the drag grip — dragging must be comfortable on a tablet too). */
     .fs-tab { padding: 8px 14px; font-size: 0.85rem; }
     #fs-header-actions button { width: 36px; height: 36px; font-size: 0.9rem; }
+    #fs-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
 
     /* (Brand text + Dashboard label + PDF icon are already hidden on ALL
        devices — see the .header-* rules above.) */

@@ -16,9 +16,9 @@
 //     drag the position is persisted and restored (validated) on boot.
 //   * Dragging works with mouse AND touch (pointer events, touch-action:none
 //     grip); double-tap on the grip re-docks.
-//   * All previous sidebar contracts still hold: liquid glass surface (not
-//     plain transparent), the card ABSORBS the pointer (clicks never reach
-//     the PDF), one pane at a time, interaction guards intact.
+//   * All previous sidebar contracts still hold: 100% transparent container,
+//     pointer-events layering (gaps pass through to the PDF), one pane at a
+//     time, annotate-while-open guards intact.
 // ============================================================================
 const fs = require('fs');
 const path = require('path');
@@ -46,10 +46,10 @@ assert.deepStrictEqual = (a, b, msg) => {
 };
 assert.ok = assert;
 
-// Version chain — liquidglass-v18 must be new (never reuse a shipped string).
+// Version chain — floatdrag-v17 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
-    'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18', 'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+    'posresume-v14', 'tagrail-v15', 'floatside-v16'];
+const CURRENT_VERSION = 'floatdrag-v17';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -232,7 +232,7 @@ test('1.2 grip is a <button> with move icon + double-tap hint in its title', () 
     assert(tag.includes('aria-label'), 'grip needs an aria-label');
 });
 
-test('1.3 version bumped to liquidglass-v18 (CSS + every script + chip)', () => {
+test('1.3 version bumped to floatdrag-v17 (CSS + every script + chip)', () => {
     const cssLink = html.match(/rel="stylesheet" href="\/css\/style\.css\?v=([^"]+)"/);
     assert.strictEqual(cssLink[1], CURRENT_VERSION, 'CSS cache version');
     const scripts = html.match(/<script src="\/js\/[^"]+\?v=([\w-]+)"><\/script>/g) || [];
@@ -241,10 +241,9 @@ test('1.3 version bumped to liquidglass-v18 (CSS + every script + chip)', () => 
     assert(html.includes(`>${CURRENT_VERSION}</span>`), 'header version chip');
 });
 
-test('1.4 liquidglass-v18 was never shipped before', () => {
+test('1.4 floatdrag-v17 was never shipped before', () => {
     assert(!SHIPPED_VERSIONS.includes(CURRENT_VERSION), 'must not reuse a shipped string');
     assert(!html.includes('floatside-v16'), 'old string must be fully replaced');
-    assert(!html.includes('floatdrag-v17'), 'immediately-previous string must be fully replaced');
 });
 
 test('1.5 sidebar still an overlay inside #workspace-main (canvas never resizes)', () => {
@@ -256,7 +255,7 @@ test('1.5 sidebar still an overlay inside #workspace-main (canvas never resizes)
 });
 
 // ===============================================================
-console.log('\nSuite 2 — CSS contract (draggable card + liquid glass intact)');
+console.log('\nSuite 2 — CSS contract (draggable card + transparency intact)');
 const css = fs.readFileSync(STYLE_CSS, 'utf8');
 
 test('2.1 #float-sidebar is a transform-driven compact card (no right/bottom dock)', () => {
@@ -270,10 +269,9 @@ test('2.1 #float-sidebar is a transform-driven compact card (no right/bottom doc
     assert(block.includes('transform: translate3d(0, 0, 0)'), 'JS-driven transform');
     assert(block.includes('will-change: transform'), 'GPU compositing hint');
     assert(/transition:\s*transform/.test(block), 'glide transition for programmatic moves');
-    assert(/backdrop-filter:\s*blur\(/.test(block), 'still liquid glass (backdrop blur)');
-    assert(/background:\s*linear-gradient/.test(block), 'still a translucent glass tint');
-    assert(!/background:\s*transparent/.test(block), 'must NOT be plain transparent');
-    assert(block.includes('pointer-events: auto'), 'card still absorbs the pointer');
+    assert(block.includes('background: transparent'), 'still 100% transparent');
+    assert(block.includes('backdrop-filter: none'), 'still NO glass effect');
+    assert(block.includes('pointer-events: none'), 'container still pass-through');
 });
 
 test('2.2 drag state: transition off + selection off while dragging', () => {
@@ -293,12 +291,12 @@ test('2.3 grip: pointer-events island + touch-action none + grab cursor', () => 
     assert(grabbing.includes('cursor: grabbing'), 'grabbing cursor while dragging');
 });
 
-test('2.4 pointer blocking layering (clicks on the card never reach the PDF)', () => {
-    assert(cssBlock(css, '#float-sidebar').includes('pointer-events: auto'), 'container absorbs');
+test('2.4 pass-through layering unchanged (gaps still fall through to the PDF)', () => {
+    assert(cssBlock(css, '#fs-body').includes('pointer-events: none'), '#fs-body pass-through');
     const pane = cssBlock(css, '#fs-chat-pane,\n#fs-comment-pane');
-    assert(!pane.includes('pointer-events: none'), 'panes are ordinary card content');
+    assert(pane.includes('pointer-events: none'), 'panes pass-through');
     assert(pane.includes('overflow: hidden'), 'drawer clip kept');
-    assert(!cssBlock(css, '#chat-history').includes('pointer-events: none'), 'chat list is a normal scroll area');
+    assert(cssBlock(css, '#chat-history').includes('pointer-events: none'), 'chat list pass-through');
 });
 
 test('2.5 touch media query enlarges the grip for finger dragging', () => {

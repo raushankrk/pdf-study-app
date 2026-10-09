@@ -45,8 +45,8 @@ assert.strictEqual = (a, b, msg) => { if (a !== b) throw new Error(msg || `expec
 assert.ok = assert;
 
 // Previously shipped cache-busting strings — the version must keep moving.
-const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15'];
-const CURRENT_VERSION = 'floatside-v16';
+const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13', 'posresume-v14', 'tagrail-v15', 'floatside-v16'];
+const CURRENT_VERSION = 'floatdrag-v17';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -95,6 +95,10 @@ function makeUiSandbox(bodyClasses = [], opts = {}) {
         saveSettings: () => { sb.__saves = (sb.__saves || 0) + 1; },
         closeChatHistory: () => { sb.__historyClosed = true; },
         cancelCommentEdit: () => { sb.__commentCancelled = true; },
+        // floatdrag-v17: openFloatSidebar also (re)positions the card. This
+        // suite only tests MODE logic (getElementById is null here anyway),
+        // so a no-op stub keeps the sandbox minimal.
+        applyFloatSidebarPos: () => {},
         console,
     };
     vm.createContext(sb);

@@ -697,3 +697,114 @@ removal, persistence + boot compat, CSS transparency/pointer-events/
 clipping contract). Full battery re-run green: position_resume 18,
 tag_rail 21, minimize_panel 30, active_pdf_toolbar 23, touch_slider_space
 8, frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5.
+
+## Feature — Draggable floating sidebar (smooth free movement)
+
+**Request**: "instead of fix overly side bar make it floating so that i can
+freely move (smooth move) any where we want" — the transparent floating
+sidebar (floatside-v16) was a full-height, right-docked column. It is now a
+compact CARD that the user can drag anywhere inside the PDF workspace, with
+smooth 1:1 tracking, and the position is remembered.
+
+**Design** (PDF stays the main workspace; the sidebar is only a tool layer):
+- `#float-sidebar` changed from `top:0; right:0; bottom:0` (full-height
+  dock) to a compact card anchored at `left:0; top:0` with
+  `height: min(620px, 100%)` — the on-screen position comes exclusively
+  from a JS-driven `transform: translate3d(...)`. The PDF canvas still
+  NEVER resizes or moves; transparency (`background: transparent`,
+  `backdrop-filter: none`) and the pointer-events layering are untouched.
+- Default position (never dragged) = the old docked corner: card's right
+  edge flush with the workspace's right edge, top 0. Because
+  `state.floatSidebarPos` stays `null` until the first drag, this default
+  keeps following the workspace edge (dock-like) until personalized.
+- Drag affordance: new `#fs-drag-handle` grip button (dashed circle,
+  `fa-up-down-left-right`) at the left of the sidebar header — the ONLY
+  drag starter. It is a pointer-events island, so dragging it never steals
+  gestures from the PDF; the whole rest of the transparent container keeps
+  passing taps through to the PDF.
+- Smoothness: pointermove targets are coalesced through
+  `requestAnimationFrame` (one style write per frame) and applied as
+  `translate3d` (GPU-composited, no layout). `body.fs-dragging` disables
+  the transform transition during a drag (zero lag); programmatic moves
+  (re-dock, resize re-clamp) glide via a 0.18s transition.
+- Clamping: the card is always kept fully inside `#workspace-main`
+  (`x ∈ [0, wsW − sbW]`, `y ∈ [0, wsH − sbH]`) — the grip and pills can
+  never be dragged off-screen.
+- Persistence: `state.floatSidebarPos = {x, y}` is saved via
+  `saveSettings()` (settings JSON — zero backend changes) and restored on
+  boot with strict validation (only finite `{x,y}` numbers accepted;
+  anything else = docked default). Clamping happens on apply, so a
+  position saved on a big screen stays visible on a small one.
+- Re-dock: double-tap / double-click on the grip (works for touch too —
+  manual <350ms + <8px detection) forgets the dragged position and glides
+  the card back to the default corner.
+- Workspace-aware repositioning: a `ResizeObserver` on `#workspace-main`
+  re-applies the position whenever the workspace changes size — the left
+  file sidebar collapsing (it animates its width, which made a single
+  boot-time measurement stale), the split resizer moving, a panel being
+  minimized, or the window resizing. Window-resize listener kept only as
+  legacy fallback.
+- A drag that moves < 3px (a plain tap) does NOT personalize the position —
+  an untouched card keeps its dock-like follow behavior.
+- Mouse AND touch: pointer events + `touch-action: none` on the grip
+  (no pan/scroll/double-tap-zoom interference); grip enlarged to 34px in
+  the touch media query. `preventDefault` + `setPointerCapture` keep the
+  gesture ours (no text selection, no focus steal).
+
+**Files changed**:
+- `static/index.html` — `#fs-drag-handle` button added as the header's
+  first control; cache version → `floatdrag-v17` (CSS + all scripts +
+  header chip).
+- `static/js/ui.js` — drag module (`floatSidebarDefaultPos`,
+  `clampFloatSidebarPos`, `fsResolvePos`, `fsWriteTransform`,
+  `applyFloatSidebarPos`, `moveFloatSidebarTo`, `begin/move/end
+  FloatSidebarDrag`, `resetFloatSidebarPos`, `handleFloatSidebarResize`,
+  `initFloatSidebarDrag`); `toggleAiSidebar`/`openFloatSidebar` now apply
+  the position on open.
+- `static/js/state.js` — `state.floatSidebarPos: null`.
+- `static/js/database.js` — `saveSettings` persists `floatSidebarPos`.
+- `static/js/app.js` — boot restores + validates the position (applies it
+  when the sidebar opens restored-open); `initFloatSidebarDrag()` called
+  at boot.
+- `static/css/style.css` — card layout (`left/top` + `height: min(620px,
+  100%)`, transform-driven, `will-change`, transition), `body.fs-dragging`
+  rules, grip styling (dashed border, grab/grabbing cursor, `touch-action:
+  none`), touch media bump.
+
+**Behavior verification** (headless Chromium, real server + project):
+- Dock position converges after boot even with the animated file-sidebar
+  collapse (right edges flush at 1280px).
+- Real mouse drag (grip at 985,156 → −385,+194): card moved to
+  `translate3d(523px, 0px, 0px)`; on the short test viewport the card is
+  workspace-height so y clamps to 0 — by design; `state.floatSidebarPos`
+  persisted; canvas panel rects and scroll positions (0 / 331) remained
+  pixel-identical.
+- Reload restored `translate3d(523px, ...)`, then later `translate3d(223px,
+  ...)` after a second drag to the LEFT panel — free movement anywhere.
+- Double-tap on the grip re-docked to `translate3d(908px, 0px, 0px)` and
+  cleared the saved position.
+- Pen strokes drawn while the sidebar was open: starting OUTSIDE the card
+  (recorded + persisted) and starting INSIDE a transparent gap of the
+  dragged card (elementFromPoint → `right-anno-canvas`, 3 points recorded,
+  sidebar stayed open). Tapping the chat hint card (a real UI element)
+  correctly does NOT start a stroke.
+- `elementFromPoint` at the minimize button (inside the card's transparent
+  padding zone) still resolves to the button — clickable through the
+  transparent layer.
+- Comments pill switches panes at the dragged position; Ctrl+/ toggles the
+  sidebar; zero page errors. Screenshots: fd_docked_default.png,
+  fd_dragged_comments.png, fd_dragged_left.png.
+
+**Test**: NEW `tests/test_float_drag.js` — 44 tests across 4 suites (HTML
+grip structure + version bump + no reuse of shipped strings; CSS card/
+transparency/dragging/touch contract; 27 VM tests of the drag engine —
+default-dock math, clamping incl. non-finite input, closed-state no-op,
+first-apply jump suppression, saved-position validation, toggle/open
+integration, full drag lifecycle with rAF coalescing + end-flush,
+pointer-id filtering, zero-distance-tap persistence guard, double-tap
+re-dock vs new-drag timing/distance discrimination, resize re-clamp,
+ResizeObserver wiring + fallback; wiring/guards/persistence source
+contract). `test_float_sidebar.js` updated for the version bump (+1
+sandbox stub). Full battery re-run green: float_sidebar 38, position_resume
+18, tag_rail 21, minimize_panel 30, active_pdf_toolbar 23, touch_slider_space
+8, frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5.

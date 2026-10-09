@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=floatside-v16">
+    <link rel="stylesheet" href="/css/style.css?v=floatdrag-v17">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -73,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Floating AI Chat + Comments sidebar">floatside-v16</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Floating AI Chat + Comments sidebar — draggable anywhere">floatdrag-v17</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -528,8 +528,16 @@
                  ================================================================ -->
             <aside id="float-sidebar" aria-label="AI Chat and Comments">
 
-                <!-- Header: mode switcher + contextual actions (transparent strip) -->
+                <!-- Header: drag handle + mode switcher + contextual actions.
+                     The grip is the ONLY drag affordance: it is a small
+                     pointer-events island, so dragging the sidebar never
+                     steals gestures from the PDF underneath. -->
                 <div id="fs-header">
+                    <button id="fs-drag-handle"
+                            title="Drag to move the sidebar anywhere — double-tap to re-dock it"
+                            aria-label="Move sidebar (drag; double-tap re-docks)">
+                        <i class="fa-solid fa-up-down-left-right"></i>
+                    </button>
                     <div id="fs-mode-switch" role="tablist" aria-label="Sidebar mode">
                         <button id="fs-tab-chat" class="fs-tab" onclick="setFloatSidebarMode('chat')" role="tab" aria-label="Show AI Chat" title="AI Chat (Ctrl+/ toggles sidebar)">
                             <i class="fa-solid fa-robot"></i><span>AI Chat</span>
@@ -821,27 +829,27 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=floatside-v16"></script>
-    <script src="/js/config.js?v=floatside-v16"></script>
-    <script src="/js/api.js?v=floatside-v16"></script>
-    <script src="/js/state.js?v=floatside-v16"></script>
-    <script src="/js/database.js?v=floatside-v16"></script>
-    <script src="/js/ui.js?v=floatside-v16"></script>
-    <script src="/js/ai.js?v=floatside-v16"></script>
-    <script src="/js/pdf.js?v=floatside-v16"></script>
-    <script src="/js/search.js?v=floatside-v16"></script>
-    <script src="/js/annotations.js?v=floatside-v16"></script>
-    <script src="/js/links.js?v=floatside-v16"></script>
+    <script src="/js/utils.js?v=floatdrag-v17"></script>
+    <script src="/js/config.js?v=floatdrag-v17"></script>
+    <script src="/js/api.js?v=floatdrag-v17"></script>
+    <script src="/js/state.js?v=floatdrag-v17"></script>
+    <script src="/js/database.js?v=floatdrag-v17"></script>
+    <script src="/js/ui.js?v=floatdrag-v17"></script>
+    <script src="/js/ai.js?v=floatdrag-v17"></script>
+    <script src="/js/pdf.js?v=floatdrag-v17"></script>
+    <script src="/js/search.js?v=floatdrag-v17"></script>
+    <script src="/js/annotations.js?v=floatdrag-v17"></script>
+    <script src="/js/links.js?v=floatdrag-v17"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=floatside-v16"></script>
-    <script src="/js/conflict.js?v=floatside-v16"></script>
+    <script src="/js/undo.js?v=floatdrag-v17"></script>
+    <script src="/js/conflict.js?v=floatdrag-v17"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=floatside-v16"></script>
+    <script src="/js/yjs-collab.js?v=floatdrag-v17"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=floatside-v16"></script>
-    <script src="/js/filemanager.js?v=floatside-v16"></script>
-    <script src="/js/events.js?v=floatside-v16"></script>
-    <script src="/js/app.js?v=floatside-v16"></script>
+    <script src="/js/folders.js?v=floatdrag-v17"></script>
+    <script src="/js/filemanager.js?v=floatdrag-v17"></script>
+    <script src="/js/events.js?v=floatdrag-v17"></script>
+    <script src="/js/app.js?v=floatdrag-v17"></script>
 
 </body>
 </html>

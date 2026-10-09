@@ -224,6 +224,10 @@ async function saveSettings() {
         // is shown. Restored on boot; exactly one mode class is always set.
         floatSidebarOpen: document.body.classList.contains('float-sidebar-open'),
         floatSidebarMode: document.body.classList.contains('fs-mode-comments') ? 'comments' : 'chat',
+        // Where the user dragged the floating sidebar ({x,y} in workspace CSS
+        // px). null = never dragged → the card docks top-right and follows
+        // the workspace edge on resize.
+        floatSidebarPos: state.floatSidebarPos || null,
         aiSettings: state.aiSettings,
         // File-explorer persistence
         currentFolderId: state.currentFolderId || ROOT_FOLDER_ID,
