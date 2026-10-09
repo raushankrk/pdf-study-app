@@ -59,23 +59,107 @@ async function deleteDocumentFromDB(docId) {
 
 // ---- Links ----
 async function saveLinkToDB(linkData) {
+    // Real-time sync: always push directly to the server. The WebSocket
+    // broadcast (triggered by bump_project_revision on the server) will
+    // notify other connected devices instantly — no queueing needed.
     await Api.createLink(linkData);
 }
 
 async function deleteLinkFromDB(linkId) {
+    // Real-time sync: always push directly to the server.
     await Api.deleteLink(linkId);
 }
 
 // ---- Annotations ----
-// Original signature: saveAnnotationsToDB(docId, allPagesData) where allPagesData
-// is { pageId: pageData }. We replace ALL annotations for the doc.
+// The bulk-save path: replace ALL annotations for a doc.
+// Used by the editor's debounced save (called after strokes / drags / etc.).
+//
+// We try the per-page PUT endpoint first when the caller passes a single
+// page; see saveAnnotationPage below. The bulk path uses last-write-wins
+// (server-side conflict check is skipped because the bulk replace doesn't
+// carry a single revision number).
 async function saveAnnotationsToDB(docId, allPagesData) {
+    // Real-time sync: always push directly to the server.
     await Api.saveAllAnnotations(docId, allPagesData);
+    forgetAnnotationRevisionsForDoc(docId);
 }
 
-// Save just one page's annotations.
+/**
+ * Save a single annotation page WITH conflict detection.
+ * Sends `X-Expected-Revision` with the last-seen revision; if the server
+ * returns 409, shows the conflict modal and either reloads or overwrites
+ * based on the user's choice.
+ *
+ * @param {string} docId
+ * @param {string} pageId
+ * @param {object} pageData — { strokes, images, textBoxes }
+ * @returns {Promise<boolean>} true if the save succeeded (or was overwritten),
+ *   false if the user cancelled.
+ */
+async function saveAnnotationPageWithConflictCheck(docId, pageId, pageData) {
+    const expectedRev = getAnnotationRevision(docId, pageId);
+    try {
+        const resp = await Api.saveAnnotation(docId, pageId, pageData, expectedRev, false);
+        // Server returned { status: 'ok', revision: N } — remember the new rev.
+        rememberAnnotationRevision(docId, pageId, resp.revision || expectedRev + 1);
+        return true;
+    } catch (err) {
+        if (err && err.conflict && err.detail) {
+            // Show the modal — resolves to 'reload' | 'overwrite' | 'cancel'.
+            const choice = await showPageConflictModal(err.detail);
+            if (choice === 'cancel') {
+                return false;
+            }
+            if (choice === 'reload') {
+                // Reload this page's data from the server.
+                const data = await Api.getAnnotation(docId, pageId);
+                if (state.annotations[docId] && data && data.data) {
+                    state.annotations[docId][pageId] = data.data;
+                    // Hydrate any embedded images.
+                    if (data.data.images) {
+                        data.data.images.forEach(img => {
+                            if (!state.imageCache[img.id]) {
+                                const imageObj = new Image();
+                                imageObj.src = img.src;
+                                state.imageCache[img.id] = imageObj;
+                            }
+                        });
+                    }
+                    rememberAnnotationRevision(docId, pageId, data.revision || 0);
+                    // Re-render the visible side if it's showing this page.
+                    ['left', 'right'].forEach(side => {
+                        if (state.view[side].docId === docId &&
+                            state.view[side].pageId === pageId) {
+                            renderAnnotations(side);
+                            renderTextLayer(side);
+                        }
+                    });
+                }
+                return true;
+            }
+            if (choice === 'overwrite') {
+                // Force-write our local copy.
+                try {
+                    const resp = await Api.saveAnnotation(docId, pageId, pageData, null, true);
+                    rememberAnnotationRevision(docId, pageId, resp.revision || expectedRev + 1);
+                    return true;
+                } catch (e2) {
+                    console.error('[saveAnnotation] force-write failed:', e2);
+                    showModal('Save failed', escapeHtml(String(e2)));
+                    return false;
+                }
+            }
+            return false;
+        }
+        // Some other error — re-throw so the caller can show it.
+        throw err;
+    }
+}
+
+// Save just one page's annotations (legacy single-page API; delegates to
+// the conflict-aware version above).
 async function saveAnnotationToDB(docId, pageId, data) {
-    await Api.saveAnnotation(docId, pageId, data);
+    await saveAnnotationPageWithConflictCheck(docId, pageId, data);
 }
 
 // ---- Chats ----
@@ -109,7 +193,7 @@ async function deleteFolderFromDB(folderId) {
 
 // ---- Settings ----
 async function saveSettings() {
-    if (!window.state) return;
+    if (typeof state === "undefined") return;
     const settings = {
         view: state.view,
         splitRatio: state.splitRatio,
@@ -205,9 +289,22 @@ async function loadStateFromDB() {
 async function loadAnnotationsFromServer(docId) {
     try {
         const data = await Api.getAnnotations(docId);
-        state.annotations[docId] = data || {};
-        // Hydrate any embedded images into the in-memory image cache.
-        Object.values(state.annotations[docId]).forEach(pageData => {
+        // The server now returns { pages, revisions, docRevision }.
+        // Legacy servers returned just { pageId: pageData }. Handle both.
+        let pages = data;
+        let revisions = {};
+        if (data && typeof data === 'object' && data.pages !== undefined) {
+            pages = data.pages || {};
+            revisions = data.revisions || {};
+        }
+        state.annotations[docId] = pages;
+        // Record the per-page revisions so the editor can send
+        // X-Expected-Revision on save.
+        conflictState.annotationRevisions[docId] = {};
+        Object.keys(pages).forEach(pageId => {
+            conflictState.annotationRevisions[docId][pageId] = intOr(revisions[pageId], 0);
+            // Hydrate any embedded images into the in-memory image cache.
+            const pageData = pages[pageId];
             if (pageData && pageData.images) {
                 pageData.images.forEach(img => {
                     if (!state.imageCache[img.id]) {
@@ -225,6 +322,11 @@ async function loadAnnotationsFromServer(docId) {
         state.annotations[docId] = {};
         return state.annotations[docId];
     }
+}
+
+function intOr(v, dflt) {
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : dflt;
 }
 
 // ---- Clear all data ----

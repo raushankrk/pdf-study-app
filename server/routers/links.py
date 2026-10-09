@@ -42,6 +42,7 @@ def create_link(link: LinkCreate, project_id: str = Depends(get_current_project)
         "INSERT OR REPLACE INTO links (id, project_id, source_json, target_json, created_at) VALUES (?, ?, ?, ?, ?)",
         (lid, project_id, json.dumps(link.source), json.dumps(link.target), int(time.time() * 1000)),
     )
+    db.bump_project_revision(project_id)
     return {"id": lid, "source": link.source, "target": link.target}
 
 
@@ -50,10 +51,12 @@ def delete_link(link_id: str, project_id: str = Depends(get_current_project)):
     db.execute(
         "DELETE FROM links WHERE id = ? AND project_id = ?", (link_id, project_id)
     )
+    db.bump_project_revision(project_id)
     return {"status": "deleted"}
 
 
 @router.delete("")
 def delete_all_links(project_id: str = Depends(get_current_project)):
     db.execute("DELETE FROM links WHERE project_id = ?", (project_id,))
+    db.bump_project_revision(project_id)
     return {"status": "ok"}

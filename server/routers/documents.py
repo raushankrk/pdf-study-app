@@ -142,6 +142,15 @@ def _delete_document_completely(doc_id: str, project_id: str):
                 db.execute("DELETE FROM links WHERE id = ? AND project_id = ?", (link["id"], project_id))
         except json.JSONDecodeError:
             pass
+    # Delete the Yjs collaboration state for this doc (every stored update
+    # binary in anno_yjs_state with path = "<project_id>/<doc_id>"). Without
+    # this, deleted docs would leak Yjs CRDT state into the DB.
+    db.execute(
+        "DELETE FROM anno_yjs_state WHERE path = ?",
+        (f"{project_id}/{doc_id}",)
+    )
+    # Bump the project revision so other devices detect the deletion.
+    db.bump_project_revision(project_id)
 
 
 # ---- Endpoints ----
@@ -245,6 +254,8 @@ async def upload_documents(
         except Exception as e:
             results.append({"filename": upload.filename, "error": str(e)})
 
+    # Bump project revision so other devices notice the new documents.
+    db.bump_project_revision(project_id)
     return {"uploaded": results}
 
 
@@ -293,6 +304,7 @@ def update_document(doc_id: str, update: DocumentUpdate, project_id: str = Depen
             f"UPDATE documents SET {', '.join(updates)} WHERE id = ? AND project_id = ?",
             tuple(params)
         )
+        db.bump_project_revision(project_id)
 
     return {"status": "ok"}
 
@@ -343,12 +355,14 @@ def duplicate_document(doc_id: str, project_id: str = Depends(get_current_projec
             idx = page_ids.index(anno["page_id"])
             new_page_id = new_page_ids[idx]
             db.execute(
-                "INSERT OR REPLACE INTO annotations (doc_id, project_id, page_id, data_json) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO annotations (doc_id, project_id, page_id, data_json, revision, updated_at) "
+                "VALUES (?, ?, ?, ?, 0, 0)",
                 (new_id, project_id, new_page_id, anno["data_json"]),
             )
         except (ValueError, json.JSONDecodeError):
             pass
 
+    db.bump_project_revision(project_id)
     return {"id": new_id, "name": name}
 
 
@@ -371,6 +385,7 @@ def move_document(doc_id: str, req: MoveRequest, project_id: str = Depends(get_c
         "UPDATE documents SET folder_id = ?, modified_at = ? WHERE id = ? AND project_id = ?",
         (target, int(time.time() * 1000), doc_id, project_id),
     )
+    db.bump_project_revision(project_id)
     return {"status": "moved"}
 
 
@@ -396,4 +411,5 @@ async def replace_document_file(
         (file_path, file_size, file_hash, page_count, thumbnail,
          int(time.time() * 1000), doc_id, project_id),
     )
+    db.bump_project_revision(project_id)
     return {"status": "ok", "pageCount": page_count, "fileSize": file_size}

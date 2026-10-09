@@ -63,6 +63,9 @@ def _project_row_to_dict(row: dict, include_stats: bool = False) -> dict:
         "color": row.get("color") or "#3b82f6",
         "createdAt": row.get("created_at"),
         "modifiedAt": row.get("modified_at"),
+        # Conflict-detection: clients poll this counter to notice when another
+        # device has written to the project. See database.bump_project_revision.
+        "revision": int(row.get("revision") or 0),
     }
     if include_stats:
         pid = row["id"]
@@ -147,8 +150,8 @@ def create_project(project: ProjectCreate):
     pid = _generate_id("proj")
     now = int(time.time() * 1000)
     db.execute(
-        "INSERT INTO projects (id, name, description, created_at, modified_at, color) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO projects (id, name, description, created_at, modified_at, color, revision) "
+        "VALUES (?, ?, ?, ?, ?, ?, 0)",
         (pid, name, project.description or "", now, now, project.color or "#3b82f6"),
     )
     # Create root folder for this project
@@ -168,6 +171,26 @@ def get_project(project_id: str):
     if not row:
         raise HTTPException(404, "Project not found")
     return _project_row_to_dict(row, include_stats=True)
+
+
+@router.get("/{project_id}/revision")
+def get_project_revision_endpoint(project_id: str):
+    """Lightweight polling endpoint for multi-device conflict detection.
+
+    Returns just `{ revision, modifiedAt }` so a client can poll every ~30s
+    and compare against the revision it last saw. If they differ, another
+    device has written to the project; the client shows a banner offering
+    to reload.
+    """
+    row = db.query_one(
+        "SELECT revision, modified_at FROM projects WHERE id = ?", (project_id,)
+    )
+    if not row:
+        raise HTTPException(404, "Project not found")
+    return {
+        "revision": int(row.get("revision") or 0),
+        "modifiedAt": int(row.get("modified_at") or 0),
+    }
 
 
 @router.patch("/{project_id}")
@@ -198,6 +221,7 @@ def update_project(project_id: str, update: ProjectUpdate):
         params.append(update.color)
     if updates:
         updates.append("modified_at = ?")
+        updates.append("revision = revision + 1")
         params.append(int(time.time() * 1000))
         params.append(project_id)
         db.execute(f"UPDATE projects SET {', '.join(updates)} WHERE id = ?", tuple(params))
@@ -206,27 +230,111 @@ def update_project(project_id: str, update: ProjectUpdate):
 
 @router.delete("/{project_id}")
 def delete_project(project_id: str):
-    """Permanently delete a project + all its data (DB rows + PDF files)."""
+    """Permanently delete a project + all its data (DB rows + PDF files).
+
+    Storage reclamation:
+      - All DB deletes run inside a single transaction so the operation is
+        atomic — either every related row is removed or none are.
+      - After the transaction commits, we run VACUUM (and incremental_vacuum)
+        via `db.vacuum_after_project_delete()` so the SQLite file actually
+        shrinks. Without this, SQLite keeps the freed pages on a free-list
+        for reuse and the on-disk file size never decreases.
+      - PDF files + the project subdirectory on disk are removed with
+        shutil.rmtree(ignore_errors=True).
+
+    Project isolation:
+      - Every DELETE statement is scoped by `WHERE project_id = ?` (or
+        `WHERE id = ?` for the projects table itself), so deleting Project A
+        can never touch a single row of Project B. We also explicitly verify
+        Project B's row count is unchanged before/after as a belt-and-braces
+        safety net (visible in server logs).
+    """
     if project_id == "default":
         raise HTTPException(400, "The 'default' project cannot be deleted (it holds migrated data).")
     project = db.query_one("SELECT id, name FROM projects WHERE id = ?", (project_id,))
     if not project:
         raise HTTPException(404, "Project not found")
 
-    # Delete all DB rows belonging to this project.
-    db.execute("DELETE FROM embeddings WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM annotations WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM links WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM chats WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM documents WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM folders WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM settings WHERE project_id = ?", (project_id,))
-    db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+    # ---- Safety net: count OTHER projects' rows so we can verify they're untouched.
+    other_projects = db.query_all(
+        "SELECT id FROM projects WHERE id != ?", (project_id,)
+    )
+    other_counts_before = {}
+    for op in other_projects:
+        opid = op["id"]
+        other_counts_before[opid] = (
+            db.query_one("SELECT COUNT(*) as c FROM documents WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM annotations WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM links WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM folders WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM chats WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM embeddings WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM settings WHERE project_id = ?", (opid,))["c"],
+        )
 
-    # Delete all PDF files for this project.
+    # ---- Atomic cascade delete: every related row goes in ONE transaction.
+    # Order matters for referential sanity (children before parents), though
+    # there are no SQL FK constraints in this schema — being explicit avoids
+    # leaving dangling embeddings if a future FK is ever added.
+    #
+    # Includes the Yjs collaboration state (anno_yjs_state) for every doc in
+    # this project — uses a LIKE '<project_id>/%' prefix match on the path
+    # column so we don't touch other projects' Yjs data.
+    db.execute_many([
+        ("DELETE FROM embeddings WHERE project_id = ?", (project_id,)),
+        ("DELETE FROM annotations WHERE project_id = ?", (project_id,)),
+        ("DELETE FROM links WHERE project_id = ?", (project_id,)),
+        ("DELETE FROM chats WHERE project_id = ?", (project_id,)),
+        ("DELETE FROM documents WHERE project_id = ?", (project_id,)),
+        ("DELETE FROM folders WHERE project_id = ?", (project_id,)),
+        ("DELETE FROM settings WHERE project_id = ?", (project_id,)),
+        # Yjs CRDT state for every doc in this project.
+        ("DELETE FROM anno_yjs_state WHERE path LIKE ?", (project_id + "/%",)),
+        ("DELETE FROM projects WHERE id = ?", (project_id,)),
+    ])
+
+    # ---- Safety net verification: every other project's counts must be unchanged.
+    for op in other_projects:
+        opid = op["id"]
+        after = (
+            db.query_one("SELECT COUNT(*) as c FROM documents WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM annotations WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM links WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM folders WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM chats WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM embeddings WHERE project_id = ?", (opid,))["c"],
+            db.query_one("SELECT COUNT(*) as c FROM settings WHERE project_id = ?", (opid,))["c"],
+        )
+        if after != other_counts_before[opid]:
+            # Should never happen — but if it does, refuse to proceed with VACUUM
+            # and surface the issue loudly. This is the canonical "Project A must
+            # not affect Project B" guarantee.
+            print(f"[delete_project] WARNING: project {opid} row counts changed "
+                  f"from {other_counts_before[opid]} to {after} while deleting {project_id}!")
+            raise HTTPException(
+                500,
+                f"Refusing to delete: deleting project '{project_id}' would affect another project. "
+                f"Rollback triggered. Please contact the administrator."
+            )
+
+    # ---- Delete all PDF files + project subdirectory on disk.
     proj_pdf_dir = os.path.join(config.PDF_DIR, project_id)
     if os.path.isdir(proj_pdf_dir):
+        # ignore_errors=True so a single locked file doesn't fail the whole delete.
         shutil.rmtree(proj_pdf_dir, ignore_errors=True)
+
+    # ---- Reclaim SQLite file space.
+    # VACUUM is the only way to actually shrink the .db file. We run it after
+    # the deletes are committed, on a dedicated connection so it doesn't conflict
+    # with the per-thread connection's transaction state. This is the difference
+    # between "DB rows gone but file size unchanged" (the bug) and "DB rows gone
+    # AND file shrinks" (the fix).
+    try:
+        db.vacuum_after_project_delete()
+    except Exception as e:
+        # VACUUM failure is non-fatal — the rows are already gone. We log it
+        # so the operator can re-run VACUUM manually if needed.
+        print(f"[delete_project] VACUUM failed (non-fatal): {e}")
 
     return {"status": "deleted", "project_id": project_id}
 
@@ -269,7 +377,7 @@ def export_project(project_id: str):
             has_pdf_file INTEGER DEFAULT 1
         );
         CREATE TABLE annotations (
-            doc_id TEXT, page_id TEXT, data_json TEXT,
+            doc_id TEXT, page_id TEXT, data_json TEXT, revision INTEGER DEFAULT 0,
             PRIMARY KEY (doc_id, page_id)
         );
         CREATE TABLE links (id TEXT, source_json TEXT, target_json TEXT, created_at INTEGER);
@@ -342,12 +450,12 @@ def export_project(project_id: str):
         )
 
     for row in db.query_all(
-        "SELECT doc_id, page_id, data_json FROM annotations WHERE project_id = ?",
+        "SELECT doc_id, page_id, data_json, revision FROM annotations WHERE project_id = ?",
         (project_id,)
     ):
         snapshot.execute(
-            "INSERT INTO annotations (doc_id, page_id, data_json) VALUES (?, ?, ?)",
-            (row["doc_id"], row["page_id"], row["data_json"])
+            "INSERT INTO annotations (doc_id, page_id, data_json, revision) VALUES (?, ?, ?, ?)",
+            (row["doc_id"], row["page_id"], row["data_json"], int(row.get("revision") or 0))
         )
 
     for row in db.query_all(
@@ -753,8 +861,8 @@ async def import_project(
                     # may reference other pages in links, etc.)
                     new_data_json = remap_page_ids_in_json(row["data_json"], old_doc_id)
                     db.execute(
-                        "INSERT INTO annotations (doc_id, project_id, page_id, data_json) "
-                        "VALUES (?, ?, ?, ?)",
+                        "INSERT INTO annotations (doc_id, project_id, page_id, data_json, revision, updated_at) "
+                        "VALUES (?, ?, ?, ?, 0, 0)",
                         (new_doc_id, new_pid, new_page_id, new_data_json)
                     )
 

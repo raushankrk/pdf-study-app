@@ -10,7 +10,12 @@
 async function ensureDocLoaded(docId) {
     if (!state.documents[docId]) return;
     const doc = state.documents[docId];
-    if (doc.pdfDoc) return;  // already loaded
+    if (doc.pdfDoc) {
+        // Already loaded — but make sure the Yjs room is connected (in case
+        // we got here via a different path).
+        _ensureYjsConnected(docId);
+        return;
+    }
 
     try {
         // Fetch the PDF bytes from the server.
@@ -30,9 +35,30 @@ async function ensureDocLoaded(docId) {
         if (!state.annotations[docId]) {
             await loadAnnotationsFromServer(docId);
         }
+
+        // Connect to the Yjs collaboration room for this (project, doc).
+        // After connection, Yjs becomes the source of truth for annotations
+        // and will overwrite the REST-loaded state with the merged CRDT state.
+        await _ensureYjsConnected(docId);
     } catch (err) {
         console.error('Failed to load document:', docId, err);
         showModal('Load Error', `Could not load PDF: ${escapeHtml(String(err))}`);
+    }
+}
+
+/**
+ * Connect to the Yjs room for the given doc, if not already connected.
+ * This is a thin wrapper around yjsConnect that handles the case where
+ * the yjs-collab.js module isn't loaded (graceful degradation).
+ */
+async function _ensureYjsConnected(docId) {
+    if (typeof yjsConnect !== 'function') return;
+    const projectId = getProjectId();
+    if (!projectId || !docId) return;
+    try {
+        await yjsConnect(projectId, docId);
+    } catch (err) {
+        console.warn('[yjs] failed to connect:', err);
     }
 }
 

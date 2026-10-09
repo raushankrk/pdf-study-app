@@ -157,9 +157,31 @@ function followLink(link, fromSide, isSourceMarker) {
 async function deleteLink(linkId) {
     const idx = state.links.findIndex(l => l.id === linkId);
     if(idx !== -1) {
-        state.links.splice(idx,1);
+        const removedLink = state.links.splice(idx, 1)[0];
         await deleteLinkFromDB(linkId);
         renderMarkersForView('left');
         renderMarkersForView('right');
+        // Push history so link deletion can be undone.
+        pushHistoryAction(`link delete`,
+            () => {
+                if (state.links.findIndex(l => l.id === removedLink.id) === -1) {
+                    state.links.splice(idx, 0, removedLink);
+                }
+                saveLinkToDB(removedLink).catch(() => {});
+                if (typeof renderMarkersForView === 'function') {
+                    renderMarkersForView('left');
+                    renderMarkersForView('right');
+                }
+            },
+            () => {
+                const i = state.links.findIndex(l => l.id === removedLink.id);
+                if (i !== -1) state.links.splice(i, 1);
+                deleteLinkFromDB(removedLink.id).catch(() => {});
+                if (typeof renderMarkersForView === 'function') {
+                    renderMarkersForView('left');
+                    renderMarkersForView('right');
+                }
+            }
+        );
     }
 }

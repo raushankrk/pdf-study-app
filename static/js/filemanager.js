@@ -349,42 +349,27 @@ function _renderFolderNode(folder, depth, isLast, parentLines) {
     nameSpan.innerText = folder.name;
     row.appendChild(nameSpan);
 
-    // Hover actions
+    // Kebab (⋮) menu — replaces the row of inline action buttons.
+    // Reason: inline action buttons took horizontal space, forced truncation of
+    // long folder names, and were hard to tap on touch devices (each was ~18px).
+    // A single 28px kebab button is much easier to hit, and the dropdown menu
+    // it opens has full-size 36px-tall rows. Works the same on mouse + touch.
     const actionsWrap = document.createElement('div');
-    actionsWrap.className = 'folder-actions';
-    const addSubBtn = document.createElement('button');
-    addSubBtn.className = 'action-btn action-add';
-    addSubBtn.title = 'New subfolder';
-    addSubBtn.innerHTML = '<i class="fa-solid fa-folder-plus"></i>';
-    addSubBtn.onclick = (e) => { e.stopPropagation(); promptForNewFolder(folder.id); };
-    const renameBtn = document.createElement('button');
-    renameBtn.className = 'action-btn action-rename';
-    renameBtn.title = 'Rename folder';
-    renameBtn.innerHTML = '<i class="fa-solid fa-pen"></i>';
-    renameBtn.onclick = (e) => { e.stopPropagation(); promptForFolderRename(folder.id); };
-    // NEW: Move-to button (same icon as PDFs use). Not shown for Root — Root has no actions at all
-    // because it's rendered via _renderRootNode (which has no action buttons).
-    const moveBtn = document.createElement('button');
-    moveBtn.className = 'action-btn action-move';
-    moveBtn.title = 'Move folder to...';
-    moveBtn.innerHTML = '<i class="fa-solid fa-folder-tree"></i>';
-    moveBtn.onclick = (e) => {
+    actionsWrap.className = 'folder-actions kebab-wrap';
+    const kebab = document.createElement('button');
+    kebab.className = 'kebab-btn';
+    kebab.title = 'Folder actions';
+    kebab.setAttribute('aria-label', `Actions for ${folder.name}`);
+    kebab.innerHTML = '<i class="fa-solid fa-ellipsis-vertical"></i>';
+    kebab.onclick = (e) => {
         e.stopPropagation();
-        // Single-folder move: select it first so the move dialog knows what to move.
-        state.fileSelection.folderIds.clear();
-        state.fileSelection.docIds.clear();
-        state.fileSelection.folderIds.add(folder.id);
-        showMoveDialog([], [folder.id]);
+        e.preventDefault();
+        // Position the menu at the kebab's bottom-right corner so it doesn't
+        // cover the row the user just tapped.
+        const r = kebab.getBoundingClientRect();
+        showFolderContextMenu(r.right, r.bottom, folder.id);
     };
-    const delBtn = document.createElement('button');
-    delBtn.className = 'action-btn action-delete';
-    delBtn.title = 'Delete folder';
-    delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
-    delBtn.onclick = (e) => { e.stopPropagation(); showDeleteFolderDialog(folder.id); };
-    actionsWrap.appendChild(addSubBtn);
-    actionsWrap.appendChild(renameBtn);
-    actionsWrap.appendChild(moveBtn);
-    actionsWrap.appendChild(delBtn);
+    actionsWrap.appendChild(kebab);
     row.appendChild(actionsWrap);
 
     // Row interactions
@@ -507,32 +492,33 @@ function _renderDocLeaf(doc, depth, isLast, parentLines) {
         row.appendChild(fav);
     }
 
-    // Hover actions
+    // Kebab (⋮) menu — replaces the row of inline action buttons.
+    // Same rationale as the folder row: one easy-to-tap 28px button instead
+    // of six cramped 18px buttons. The dropdown has Open / Open-other /
+    // Rename / Duplicate / Move / Star / Properties / Delete.
     const actionsWrap = document.createElement('div');
-    actionsWrap.className = 'file-actions';
-    actionsWrap.innerHTML = `
-        <button class="action-btn action-fav" title="Toggle favorite">
-            <i class="${doc.favorite ? 'fa-solid' : 'fa-regular'} fa-star ${doc.favorite ? 'text-yellow-400' : 'text-gray-400'}"></i>
-        </button>
-        <button class="action-btn action-rename" title="Rename"><i class="fa-solid fa-pen"></i></button>
-        <button class="action-btn action-duplicate" title="Duplicate"><i class="fa-solid fa-clone"></i></button>
-        <button class="action-btn action-move" title="Move to..."><i class="fa-solid fa-folder-tree"></i></button>
-        <button class="action-btn action-info" title="Properties"><i class="fa-solid fa-circle-info"></i></button>
-        <button class="action-btn action-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
-    `;
-    actionsWrap.querySelector('.action-fav').onclick = (e) => { e.stopPropagation(); toggleFavorite(doc.id); };
-    actionsWrap.querySelector('.action-rename').onclick = (e) => { e.stopPropagation(); enableRename(doc.id); };
-    actionsWrap.querySelector('.action-duplicate').onclick = (e) => { e.stopPropagation(); duplicateDocument(doc.id); };
-    actionsWrap.querySelector('.action-move').onclick = (e) => { e.stopPropagation(); showMoveDialog([doc.id], []); };
-    actionsWrap.querySelector('.action-info').onclick = (e) => { e.stopPropagation(); showFileProperties(doc.id); };
-    actionsWrap.querySelector('.action-delete').onclick = (e) => {
+    actionsWrap.className = 'file-actions kebab-wrap';
+    const kebab = document.createElement('button');
+    kebab.className = 'kebab-btn';
+    kebab.title = 'File actions';
+    kebab.setAttribute('aria-label', `Actions for ${doc.name}`);
+    kebab.innerHTML = '<i class="fa-solid fa-ellipsis-vertical"></i>';
+    kebab.onclick = (e) => {
         e.stopPropagation();
-        if (state.fileSelection.docIds.has(doc.id) && state.fileSelection.docIds.size > 1) {
-            showBulkDeleteDialog();
-        } else {
-            deleteDocument(doc.id);
+        e.preventDefault();
+        // If the file isn't currently selected, select JUST it so the menu's
+        // "Move" / "Delete" actions operate on this single file (matches the
+        // behavior of the old inline buttons).
+        if (!state.fileSelection.docIds.has(doc.id)) {
+            state.fileSelection.docIds.clear();
+            state.fileSelection.folderIds.clear();
+            state.fileSelection.docIds.add(doc.id);
+            renderDocList();
         }
+        const r = kebab.getBoundingClientRect();
+        showDocContextMenu(r.right, r.bottom, doc.id);
     };
+    actionsWrap.appendChild(kebab);
     row.appendChild(actionsWrap);
 
     // Row interactions

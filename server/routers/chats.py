@@ -59,6 +59,7 @@ def create_chat(chat: ChatCreate, project_id: str = Depends(get_current_project)
         "INSERT INTO chats (id, project_id, title, messages_json, created_at) VALUES (?, ?, ?, ?, ?)",
         (cid, project_id, chat.title, "[]", int(time.time() * 1000)),
     )
+    db.bump_project_revision(project_id)
     return {"id": cid, "title": chat.title, "messages": []}
 
 
@@ -79,6 +80,7 @@ def update_chat(chat_id: str, update: ChatUpdate, project_id: str = Depends(get_
             "UPDATE chats SET messages_json = ? WHERE id = ? AND project_id = ?",
             (json.dumps(update.messages), chat_id, project_id)
         )
+    db.bump_project_revision(project_id)
     return {"status": "ok"}
 
 
@@ -87,4 +89,5 @@ def delete_chat(chat_id: str, project_id: str = Depends(get_current_project)):
     db.execute(
         "DELETE FROM chats WHERE id = ? AND project_id = ?", (chat_id, project_id)
     )
+    db.bump_project_revision(project_id)
     return {"status": "deleted"}

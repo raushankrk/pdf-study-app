@@ -127,14 +127,53 @@ const Api = {
     },
 
     // ---- Annotations ----
+    // The server returns `{ pages, revisions, docRevision }` so the client
+    // can remember the revision of each page for conflict-detection on save.
+    // `getAnnotations` returns that whole object; callers that only need the
+    // page-data map should read `.pages`.
     async getAnnotations(docId) {
         return _fetch(`/annotations/${docId}`);
     },
     async getAnnotation(docId, pageId) {
         return _fetch(`/annotations/${docId}/${pageId}`);
     },
-    async saveAnnotation(docId, pageId, data) {
-        return _fetch(`/annotations/${docId}/${pageId}`, { method: 'PUT', body: { data } });
+    /**
+     * Save a single page's annotations.
+     * @param expectedRevision — the revision we last loaded for this page; the
+     *   server compares and returns HTTP 409 if it doesn't match.
+     * @param force — if true, skip the revision check (user chose "Overwrite").
+     */
+    async saveAnnotation(docId, pageId, data, expectedRevision = null, force = false) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (expectedRevision !== null) {
+            headers['X-Expected-Revision'] = String(expectedRevision);
+        }
+        if (force) {
+            headers['X-Force-Write'] = '1';
+        }
+        const resp = await fetch(`${API_BASE}/annotations/${docId}/${pageId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify({ data }),
+        });
+        if (resp.status === 409) {
+            // Conflict — parse the structured detail so the caller can show
+            // a modal asking what to do.
+            let errBody;
+            try { errBody = await resp.json(); } catch { errBody = {}; }
+            const err = new Error('conflict');
+            err.conflict = true;
+            err.status = 409;
+            err.detail = errBody.detail || errBody;
+            throw err;
+        }
+        if (!resp.ok) {
+            let msg = `HTTP ${resp.status}`;
+            try { const err = await resp.json(); msg = err.detail || err.error || msg; }
+            catch (e) { /* keep default */ }
+            throw new Error(msg);
+        }
+        return resp.json();
     },
     async saveAllAnnotations(docId, annotationsByPageId) {
         return _fetch(`/annotations/${docId}`, { method: 'PUT', body: annotationsByPageId });
@@ -144,6 +183,13 @@ const Api = {
     },
     async deleteAllAnnotations(docId) {
         return _fetch(`/annotations/${docId}`, { method: 'DELETE' });
+    },
+
+    // ---- Projects: lightweight revision polling ----
+    async getProjectRevision(projectId) {
+        const resp = await fetch(`${API_BASE}/projects/${projectId}/revision`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json();
     },
 
     // ---- Links ----

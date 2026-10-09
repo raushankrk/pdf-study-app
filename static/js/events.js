@@ -1,6 +1,10 @@
 // ==========================================
 // 📁 11. events.js
 // ==========================================
+
+// Diagnostic banner — proves this is the NEW comment-feature code.
+console.log('%c[events.js] Comment Feature v9 loaded ✓', 'color:#10b981;font-weight:bold;font-size:13px;');
+
 function getMousePosInViewport(evt, side) {
     const rect = els[side + 'Wrapper'].getBoundingClientRect();
     return {
@@ -10,7 +14,33 @@ function getMousePosInViewport(evt, side) {
 }
 
 function handlePointerDown(e) {
-    if (e.target.closest('#vertical-resizer') || e.target.closest('button') || e.target.closest('input')) return;
+    // ---- Comment overlay guards (CRITICAL) ----
+    // 1. If the pointer landed inside the comment overlay panel or its
+    //    backdrop, bail out immediately — we don't want to create a new
+    //    comment, start a marquee selection, or do anything else. The
+    //    overlay has its own click/keyboard handlers.
+    if (e.target.closest('#comment-editor-panel') || e.target.closest('#comment-backdrop')) return;
+
+    // 2. If the comment overlay is currently OPEN, don't start any new
+    //    annotation/comment action on the PDF. The user should close the
+    //    overlay first (by clicking the backdrop, pressing Esc, or clicking
+    //    the X button). This prevents accidental comment creation when the
+    //    user taps outside the overlay but the tap lands on the PDF behind
+    //    the dimmed backdrop.
+    if (state.activeComment && state.activeComment.id) return;
+
+    // 3. Standard early-return guards — now also includes TEXTAREA so that
+    //    tapping the markdown editor on touch devices doesn't trigger
+    //    comment creation. Without this, the pointerdown event bubbles up
+    //    from the textarea to window, handlePointerDown runs, sees the
+    //    click is in the right-panel area, and creates a new comment —
+    //    stealing focus from the textarea and making typing impossible.
+    if (e.target.closest('#vertical-resizer') ||
+        e.target.closest('button') ||
+        e.target.closest('input') ||
+        e.target.closest('textarea') ||
+        e.target.closest('[contenteditable]') ||
+        e.target.closest('.comment-icon-wrapper')) return;
 
     // Two-finger gesture (pan/zoom) is active — don't start any drawing/annotation.
     // The touch-based two-finger handler sets _twoFingerState before the second
@@ -107,7 +137,7 @@ function handlePointerDown(e) {
         if (!state.linkCreation.active) {
             // First click: Set Start
             state.linkCreation.active = true;
-            state.linkCreation.sourceData = { 
+            state.linkCreation.sourceData = {
                 docId: state.view[clickedSide].docId,
                 pageId: state.view[clickedSide].pageId,
                 x: pos.x, y: pos.y
@@ -122,27 +152,50 @@ function handlePointerDown(e) {
                 pageId: state.view[clickedSide].pageId,
                 x: pos.x, y: pos.y
             };
-            
+
             const newLink = {
                 id: 'link_' + Date.now(),
                 source: state.linkCreation.sourceData,
                 target: targetData,
-                path: '' 
+                path: ''
             };
-            
+
             state.links.push(newLink);
             saveLinkToDB(newLink);
-            
+
+            // Push history so the link creation can be undone.
+            pushHistoryAction(`link add (${clickedSide})`,
+                () => {
+                    const idx = state.links.findIndex(l => l.id === newLink.id);
+                    if (idx !== -1) state.links.splice(idx, 1);
+                    deleteLinkFromDB(newLink.id).catch(() => {});
+                    if (typeof renderMarkersForView === 'function') {
+                        renderMarkersForView('left');
+                        renderMarkersForView('right');
+                    }
+                },
+                () => {
+                    if (state.links.findIndex(l => l.id === newLink.id) === -1) {
+                        state.links.push(newLink);
+                    }
+                    saveLinkToDB(newLink).catch(() => {});
+                    if (typeof renderMarkersForView === 'function') {
+                        renderMarkersForView('left');
+                        renderMarkersForView('right');
+                    }
+                }
+            );
+
             state.linkCreation.active = false;
             state.linkCreation.sourceData = null;
             els.currentPath.style.display = 'none';
             els.currentPath.setAttribute('d', '');
-            
+
             renderMarkersForView('left');
             renderMarkersForView('right');
         }
         return; // Prevent passing to drawing/annotation logic
-    } 
+    }
     else if (state.appMode === 'annotation') {
         state.drawing.active = true;
         state.drawing.pointerId = e.pointerId;
@@ -163,14 +216,24 @@ function handlePointerDown(e) {
 
             if (state.selection.active && state.selection.side === clickedSide) {
                 const bbox = state.selection.boundingBox;
-                const handleSize = 0.02; 
+                // Hit area for the resize handle. Bigger on touch devices so
+                // fingers can actually grab it (Apple HIG recommends 44px).
+                //
+                // NOTE: iPadOS reports `pointer: fine` (because of Apple
+                // Pencil), so `(pointer: coarse)` doesn't match iPad. We use
+                // `hover: none` instead — that's the reliable signal for a
+                // touch-primary device.
+                const isTouch = (window.matchMedia &&
+                    (window.matchMedia('(hover: none)').matches ||
+                     window.matchMedia('(pointer: coarse)').matches));
+                const handleSize = isTouch ? 0.05 : 0.02;
                 const right = bbox.x + bbox.w;
                 const bottom = bbox.y + bbox.h;
-                
+
                 if (pos.x >= right - handleSize && pos.x <= right + handleSize &&
                     pos.y >= bottom - handleSize && pos.y <= bottom + handleSize) {
                     state.selection.mode = 'resizing';
-                    state.selection.dragStartMouse = { x: pos.x, y: pos.y }; 
+                    state.selection.dragStartMouse = { x: pos.x, y: pos.y };
                     state.selection.dragStartPositions = {
                         bbox: { ...bbox },
                         images: state.selection.selectedImages.map(img => ({ ...img })),
@@ -178,12 +241,45 @@ function handlePointerDown(e) {
                         textBoxes: state.selection.selectedTextBoxes.map(tb => ({ ...tb }))
                     };
                     actionTaken = true;
-                } 
+                    // ---- Yjs: claim edit locks on the selected annotations
+                    // so other users see we're resizing them.
+                    if (typeof yjsClaimLock === 'function') {
+                        state.selection.selectedImages.forEach(img => img.id && yjsClaimLock(img.id, 'resize'));
+                        state.selection.selectedTextBoxes.forEach(tb => tb.id && yjsClaimLock(tb.id, 'resize'));
+                        state.selection.selectedStrokes.forEach(stk => stk.id && yjsClaimLock(stk.id, 'resize'));
+                    }
+                    // ---- BUG FIX (Annotation movement rendering) ----
+                    // Mark these annotations as IN-FLIGHT so a Yjs remote
+                    // update arriving mid-resize doesn't replace the local
+                    // objects with clones (which would break our selected
+                    // object references and cause the visible object to
+                    // stay at its old position while the selection
+                    // bounding box moves).
+                    if (typeof yjsBeginInFlight === 'function') {
+                        state.selection.selectedImages.forEach(img => img.id && yjsBeginInFlight(img.id));
+                        state.selection.selectedTextBoxes.forEach(tb => tb.id && yjsBeginInFlight(tb.id));
+                        state.selection.selectedStrokes.forEach(stk => stk.id && yjsBeginInFlight(stk.id));
+                    }
+                }
                 else if (pos.x >= bbox.x && pos.x <= bbox.x + bbox.w &&
                             pos.y >= bbox.y && pos.y <= bbox.y + bbox.h) {
                     state.selection.mode = 'dragging';
                     state.selection.dragStartMouse = { x: pos.x, y: pos.y };
                     actionTaken = true;
+                    // ---- Yjs: claim edit locks on the selected annotations
+                    // so other users see we're moving them.
+                    if (typeof yjsClaimLock === 'function') {
+                        state.selection.selectedImages.forEach(img => img.id && yjsClaimLock(img.id, 'move'));
+                        state.selection.selectedTextBoxes.forEach(tb => tb.id && yjsClaimLock(tb.id, 'move'));
+                        state.selection.selectedStrokes.forEach(stk => stk.id && yjsClaimLock(stk.id, 'move'));
+                    }
+                    // ---- BUG FIX (Annotation movement rendering) ----
+                    // Same in-flight protection as for resizing above.
+                    if (typeof yjsBeginInFlight === 'function') {
+                        state.selection.selectedImages.forEach(img => img.id && yjsBeginInFlight(img.id));
+                        state.selection.selectedTextBoxes.forEach(tb => tb.id && yjsBeginInFlight(tb.id));
+                        state.selection.selectedStrokes.forEach(stk => stk.id && yjsBeginInFlight(stk.id));
+                    }
                 }
             }
 
@@ -203,6 +299,14 @@ function handlePointerDown(e) {
                                 dragStartMouse: { x: pos.x, y: pos.y }
                             };
                             actionTaken = true;
+                            // ---- BUG FIX (Annotation movement rendering) ----
+                            // Mark as in-flight so a remote Yjs update
+                            // arriving mid-drag doesn't replace this image
+                            // with a clone (which would leave our selection
+                            // reference pointing at an orphan).
+                            if (typeof yjsBeginInFlight === 'function' && img.id) {
+                                yjsBeginInFlight(img.id);
+                            }
                             renderAnnotations(clickedSide);
                             renderTextLayer(clickedSide);
                             break;
@@ -230,6 +334,11 @@ function handlePointerDown(e) {
                                 dragStartMouse: { x: pos.x, y: pos.y }
                             };
                             actionTaken = true;
+                            // ---- BUG FIX (Annotation movement rendering) ----
+                            // Same in-flight protection as for images above.
+                            if (typeof yjsBeginInFlight === 'function' && tb.id) {
+                                yjsBeginInFlight(tb.id);
+                            }
                             renderAnnotations(clickedSide);
                             setTimeout(() => renderTextLayer(clickedSide), 0);
                             break;
@@ -253,14 +362,11 @@ function handlePointerDown(e) {
         } else if (state.annoTool === 'text') {
             const pos = getMousePosInViewport(e, clickedSide);
             state.drawing.startPointData = { x: pos.x, y: pos.y };
-            
-            els.textCreationRect.style.left = e.clientX + 'px';
-            els.textCreationRect.style.top = e.clientY + 'px';
-            els.textCreationRect.style.width = '0px';
-            els.textCreationRect.style.height = '0px';
-            els.textCreationRect.style.display = 'block';
-            els.textCreationRect.style.borderColor = '#3b82f6'; 
-            els.textCreationRect.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+            // New behaviour: clicking with the text tool places a comment icon
+            // at that point. We don't drag-rect anymore — the comment is
+            // created on pointerup at the original click position.
+            state.drawing.mode = 'comment-create';
+            console.log('[events.js] text-tool pointer-down at', pos, '— will create comment on pointer-up');
         }
         else if (e.pointerType === 'pen' || e.button === 0) {
                 if (state.annoTool === 'eraser-stroke') {
@@ -405,16 +511,9 @@ function handlePointerMove(e) {
             }
             return;
         }
-        
-        const pos = getMousePosInViewport(e, side);
-        const start = state.drawing.startPointData;
-        const dx = e.clientX - (els[side+'Wrapper'].getBoundingClientRect().left + start.x * els[side+'Wrapper'].offsetWidth);
-        const dy = e.clientY - (els[side+'Wrapper'].getBoundingClientRect().top + start.y * els[side+'Wrapper'].offsetHeight);
-
-        els.textCreationRect.style.width = Math.abs(dx) + 'px';
-        els.textCreationRect.style.height = Math.abs(dy) + 'px';
-        els.textCreationRect.style.left = (e.clientX - Math.max(0, dx)) + 'px';
-        els.textCreationRect.style.top = (e.clientY - Math.max(0, dy)) + 'px';
+        // Comment-create mode: no drag handling — comment is placed on pointerup
+        // at the click position. Just return so we don't try to update a drag rect.
+        return;
     }
     else if (state.appMode === 'linking' && state.linkCreation && state.linkCreation.active) {
         const source = state.linkCreation.sourceData;
@@ -448,6 +547,17 @@ function handlePointerMove(e) {
                 renderAnnotations(side);
             }
             else if (state.selection.mode === 'dragging') {
+                // ---- BUG FIX (Annotation movement rendering) ----
+                // Defensive: ensure the selection's object references still
+                // point at the canonical objects in state.annotations. If a
+                // Yjs remote update arrived between pointerdown and this
+                // pointermove (e.g. another user edited a *different*
+                // annotation on the same page, triggering a full page
+                // rebuild), the references might be stale. The primary
+                // protection is `yjsBeginInFlight` at drag-start, but this
+                // re-link is a belt-and-suspenders safety net.
+                _refreshSelectionReferences(side);
+
                 const dx = pos.x - state.selection.dragStartMouse.x;
                 const dy = pos.y - state.selection.dragStartMouse.y;
                 
@@ -495,6 +605,10 @@ function handlePointerMove(e) {
                 renderMarkersForView(side);
             }
             else if (state.selection.mode === 'resizing') {
+                // ---- BUG FIX (Annotation movement rendering) ----
+                // Same defensive re-link as in 'dragging' mode above.
+                _refreshSelectionReferences(side);
+
                 const originalState = state.selection.dragStartPositions;
                 const originX = originalState.bbox.x;
                 const originY = originalState.bbox.y;
@@ -603,7 +717,7 @@ async function handlePointerUp(e) {
 
     const side = state.drawing.startSide;
 
-    // Handle Text Annotation Finishing
+    // Handle Text Annotation Finishing (now: comment creation)
     if (state.appMode === 'annotation' && state.annoTool === 'text') {
         if (state.drawing.mode === 'text-move' || state.drawing.mode === 'text-resize') {
             const docId = state.view[side].docId;
@@ -614,39 +728,41 @@ async function handlePointerUp(e) {
             return;
         }
 
+        // New behaviour: a single click places a comment icon at the click
+        // point. If the click landed on an existing comment icon, the icon's
+        // own click handler already opened the sidebar — we just bail out
+        // without creating a duplicate.
+        if (state.drawing.mode === 'comment-create') {
+            els.textCreationRect.style.display = 'none';
+            const startData = state.drawing.startPointData;
+            state.drawing.active = false;
+            state.drawing.mode = null;
+
+            // If the pointerup target was a comment icon, the icon's own
+            // pointerdown stopPropagation should have prevented us from
+            // reaching here — but double-check just in case.
+            if (e.target && e.target.closest && e.target.closest('.comment-icon-wrapper')) {
+                console.log('[events.js] pointer-up on existing comment icon — letting icon click handler run');
+                return;
+            }
+
+            console.log('[events.js] text-tool pointer-up — calling createCommentAt', startData);
+            await createCommentAt(side, startData.x, startData.y);
+            return;
+        }
+
+        // Legacy drag-create path (kept for safety but not used).
         els.textCreationRect.style.display = 'none';
-        
         const startData = state.drawing.startPointData;
         const endPos = getMousePosInViewport(e, side);
-        
         let w = endPos.x - startData.x;
         let h = endPos.y - startData.y;
         let x = startData.x;
         let y = startData.y;
-        
         if (w < 0) { x += w; w = Math.abs(w); }
         if (h < 0) { y += h; h = Math.abs(h); }
-
         if (w > 0.01 && h > 0.01) {
-            const docId = state.view[side].docId;
-            const pageId = state.view[side].pageId;
-            
-            if (!state.annotations[docId]) state.annotations[docId] = {};
-            if (!state.annotations[docId][pageId]) state.annotations[docId][pageId] = { strokes: [], images: [], textBoxes: [] };
-
-            const newBox = {
-                id: 'tb_' + Date.now(),
-                x: x, y: y, w: w, h: h,
-                content: '',
-                color: state.annoColor,
-                fontSize: 14,
-                _editing: true
-            };
-
-            state.annotations[docId][pageId].textBoxes.push(newBox);
-            await saveAnnotationsToDB(docId, state.annotations[docId]);
-            setTimeout(() => renderTextLayer(side), 0);
-
+            await createCommentAt(side, x + w / 2, y + h / 2);
         }
     }
 
@@ -743,16 +859,53 @@ async function handlePointerUp(e) {
             else if (state.selection.mode === 'dragging' || state.selection.mode === 'resizing') {
                 state.selection.mode = 'idle';
                 const docId = state.view[side].docId;
+                const pageId = state.view[side].pageId;
                 if (docId) saveAnnotationsToDB(docId, state.annotations[docId]);
-                
+
                 state.selection.selectedImages.forEach(img => {
                     if (img.linkId) {
                         const link = state.links.find(l => l.id === img.linkId);
                         if (link) saveLinkToDB(link);
                     }
                 });
+
+                // ---- Yjs: push the moved/resized annotations to the room.
+                // After a drag/resize, the data has changed — broadcast it.
+                if (docId && pageId && typeof yjsSetAnnotation === 'function' &&
+                    typeof yjsIsConnected === 'function' &&
+                    yjsIsConnected(getProjectId(), docId)) {
+                    state.selection.selectedImages.forEach(img => {
+                        if (img.id) yjsSetAnnotation(docId, pageId, img.id, img);
+                    });
+                    state.selection.selectedTextBoxes.forEach(tb => {
+                        if (tb.id) yjsSetAnnotation(docId, pageId, tb.id, tb);
+                    });
+                    state.selection.selectedStrokes.forEach(stk => {
+                        if (stk.id) yjsSetAnnotation(docId, pageId, stk.id, stk);
+                    });
+                    // Release locks on the just-edited annotations.
+                    if (typeof yjsReleaseLock === 'function') {
+                        state.selection.selectedImages.forEach(img => img.id && yjsReleaseLock(img.id));
+                        state.selection.selectedTextBoxes.forEach(tb => tb.id && yjsReleaseLock(tb.id));
+                        state.selection.selectedStrokes.forEach(stk => stk.id && yjsReleaseLock(stk.id));
+                    }
+                }
+                // ---- BUG FIX (Annotation movement rendering) ----
+                // End the in-flight marker we set at drag/resize start. Now
+                // that the drag is done and the final data is pushed to Yjs,
+                // future remote updates for these annotations can safely
+                // clobber the local state (which matches the remote state).
+                // Doing this AFTER the yjsSetAnnotation calls above is
+                // important: the in-flight marker also suppresses our own
+                // echo during the just-pushed update, which avoids a
+                // wasteful re-render of the just-dragged object.
+                if (typeof yjsEndInFlight === 'function') {
+                    state.selection.selectedImages.forEach(img => img.id && yjsEndInFlight(img.id));
+                    state.selection.selectedTextBoxes.forEach(tb => tb.id && yjsEndInFlight(tb.id));
+                    state.selection.selectedStrokes.forEach(stk => stk.id && yjsEndInFlight(stk.id));
+                }
             } else {
-                state.selection.mode = 'idle'; 
+                state.selection.mode = 'idle';
             }
         } 
         else {
@@ -823,7 +976,17 @@ function handleKeyDown(e) {
 
     // Ctrl shortcuts
     if (e.ctrlKey) {
-        if (e.key === 'z') { e.preventDefault(); undoLastStroke(); }
+        // Undo / Redo: unified chronological history across BOTH canvases.
+        // - Ctrl+Z        → undo
+        // - Ctrl+Y        → redo
+        // - Ctrl+Shift+Z  → redo (alternative binding)
+        if (e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            if (typeof undoLastAction === 'function') undoLastAction();
+        } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+            e.preventDefault();
+            if (typeof redoNextAction === 'function') redoNextAction();
+        }
         if (e.key === '/') { e.preventDefault(); toggleAiSidebar(); }
         if (e.key === 'b') { e.preventDefault(); toggleLeftSidebar(); }
         if (e.shiftKey && e.key === 'S') { e.preventDefault(); exportProject(); }
@@ -1319,6 +1482,37 @@ function _cancelDrawingAndCleanStroke() {
     state.drawing.active = false;
     if (typeof clearSelection === 'function') clearSelection();
 }
+
+// ---- BUG FIX (Annotation movement rendering) ------------------------------
+// Helper: ensure the selection's image / textbox / stroke references still
+// point at the canonical objects in state.annotations. Called from the drag
+// and resize handlers in handlePointerMove before any mutation.
+//
+// WHY: state.annotations[docId][pageId] is rebuilt from the Yjs room state by
+// _yjsOnUpdate whenever a remote update arrives. The rebuild creates fresh
+// object instances via { ...annoData, id: annoId }. If a remote update
+// arrives mid-drag (e.g. another user is editing a DIFFERENT annotation on
+// the same page, which still triggers a full page rebuild), the user's
+// selectedImages/selectedTextBoxes/selectedStrokes arrays would hold STALE
+// references — the dragged object's x/y mutations would land on an orphan,
+// and the visible (rendered) object would stay at its old position. This
+// helper detects that situation and re-links the references by ID, copying
+// the in-progress drag state onto the live object so the drag continues
+// smoothly.
+//
+// This is the "defensive layer 2" safety net. Layer 1 is the
+// `yjsBeginInFlight` marker set at drag-start, which prevents the rebuild
+// from replacing the in-flight annotations in the first place.
+function _refreshSelectionReferences(side) {
+    if (!state.selection || !state.selection.active) return;
+    if (typeof _relinkSelectionAfterYjsUpdate !== 'function') return;
+    const selSide = state.selection.side;
+    if (!selSide || selSide !== side) return;
+    const docId = state.view[selSide] && state.view[selSide].docId;
+    if (!docId) return;
+    _relinkSelectionAfterYjsUpdate(docId);
+}
+window._refreshSelectionReferences = _refreshSelectionReferences;
 
 // Expose for app.js to call
 window.initTwoFingerGestures = initTwoFingerGestures;

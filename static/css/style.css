@@ -435,6 +435,10 @@ body.cursor-none .pdf-canvas-container {
     border: none;
     background: transparent;
     position: relative;
+    /* touch-action: manipulation removes the iOS 300ms click delay without
+       disabling tap highlights. Buttons stay responsive on tablets. */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 .tool-btn:hover {
     background-color: #e5e7eb;
@@ -962,15 +966,81 @@ body.cursor-none .pdf-canvas-container {
 }
 .tree-file-name .doc-name-text { color: inherit; }
 
-/* Folder/file hover actions */
+/* Folder/file hover actions
+   ----
+   Each tree row now has a SINGLE kebab (⋮) button instead of a row of inline
+   action buttons. Tapping/clicking it opens a dropdown with all actions
+   (Open, Rename, Move, Duplicate, Star, Properties, Delete).
+   Benefits:
+   - Long folder/file names are no longer truncated by action buttons.
+   - One 28px target is far easier to hit on touch than six 18px targets.
+   - The dropdown items are full-width rows (36px tall on touch), so each
+     action is easy to tap on iPad/Android.
+*/
 .folder-actions, .file-actions {
-    display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s;
-    flex-shrink: 0; margin-left: auto;
+    display: flex; gap: 2px;
+    flex-shrink: 0;
+    margin-left: auto;
+    /* Always visible — no more hover-only opacity trick (touch has no hover). */
+    opacity: 1;
 }
 .tree-row:hover .folder-actions,
 .tree-row:hover .file-actions,
 .tree-row.selected .folder-actions,
-.tree-row.selected .file-actions { opacity: 1; }
+.tree-row.selected .file-actions {
+    opacity: 1;
+}
+.kebab-wrap {
+    display: flex; align-items: center;
+    margin-left: auto;
+}
+.kebab-btn {
+    width: 28px;
+    height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+    font-size: 14px;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+.kebab-btn:hover {
+    background: #e5e7eb;
+    color: #1f2937;
+}
+.tree-row.selected .kebab-btn {
+    color: #1d4ed8;
+}
+
+/* The dropdown menu (rendered by showDocContextMenu / showFolderContextMenu).
+   Already has `.context-menu` styles above; here we ensure menu items are
+   big enough to tap on touch screens. */
+.context-menu .cm-item {
+    min-height: 32px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    font-size: 0.82rem;
+}
+@media (hover: none), (pointer: coarse) {
+    .context-menu .cm-item {
+        min-height: 40px;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        font-size: 0.9rem;
+    }
+    .kebab-btn {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+    }
+}
+
+/* Legacy inline action buttons (kept for the legacy file-actions markup if
+   any caller still uses it; the new kebab markup doesn't render these). */
 .action-btn {
     width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
     border-radius: 3px; cursor: pointer; font-size: 9px; transition: background 0.12s;
@@ -1066,3 +1136,755 @@ body.cursor-none .pdf-canvas-container {
 
 /* ---- Bulk action bar visibility toggle ---- */
 #bulk-action-bar:not(.hidden) { display: flex !important; }
+
+/* ============================================================ */
+/* ---- Multi-device conflict banner + modal ---- */
+/* ============================================================ */
+.remote-change-banner {
+    position: fixed;
+    top: 60px;
+    right: 16px;
+    z-index: 9999;
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    padding: 10px 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 460px;
+    transform: translateX(120%);
+    transition: transform 0.3s ease-out;
+    pointer-events: none;
+    opacity: 0;
+}
+.remote-change-banner.visible {
+    transform: translateX(0);
+    pointer-events: auto;
+    opacity: 1;
+}
+.remote-change-banner .rcb-icon {
+    font-size: 22px;
+    color: #b45309;
+    flex-shrink: 0;
+}
+.remote-change-banner .rcb-body {
+    flex: 1;
+    min-width: 0;
+}
+.remote-change-banner .rcb-title {
+    font-weight: 600;
+    color: #92400e;
+    font-size: 0.85rem;
+    line-height: 1.2;
+}
+.remote-change-banner .rcb-sub {
+    color: #78350f;
+    font-size: 0.75rem;
+    margin-top: 2px;
+    line-height: 1.3;
+}
+.remote-change-banner .rcb-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.remote-change-banner .rcb-btn {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-weight: 500;
+}
+.remote-change-banner .rcb-reload {
+    background: #059669;
+    color: white;
+}
+.remote-change-banner .rcb-reload:hover { background: #047857; }
+.remote-change-banner .rcb-reload:disabled {
+    background: #9ca3af;
+    cursor: wait;
+    opacity: 0.85;
+}
+.remote-change-banner .rcb-dismiss {
+    background: transparent;
+    color: #92400e;
+    font-size: 1rem;
+    padding: 2px 6px;
+}
+.remote-change-banner .rcb-dismiss:hover { background: rgba(0,0,0,0.06); }
+
+/* ============================================================ */
+/* ---- Smart Refresh Toast (bottom-center notification) ----- */
+/* ============================================================ */
+/* Small pill-shaped toast that appears at the bottom-center of the screen
+   after a smart refresh completes. Auto-dismisses after 3s (success) or
+   5s (error). Slides up from below with a fade-in. */
+.refresh-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(120%);
+    z-index: 10000;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-left: 4px solid #10b981;
+    border-radius: 8px;
+    padding: 10px 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    color: #1f2937;
+    max-width: 90vw;
+    opacity: 0;
+    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+    pointer-events: none;
+}
+.refresh-toast.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+.refresh-toast.refresh-toast-error {
+    border-left-color: #ef4444;
+}
+.refresh-toast i {
+    font-size: 1rem;
+}
+
+/* ============================================================ */
+/* ---- Header: hide brand text on ALL devices ---- */
+/* ============================================================ */
+/*
+ * The user wants the header to show ONLY the annotation tools + action
+ * buttons — no "Dashboard" label, no "PDF Linker Studio" title, no
+ * "PDF Linker Studio — My First Project" inline title. The dashboard
+ * button itself stays (just the back-arrow icon), and the sidebar-toggle
+ * button stays. The H1 stays in the DOM for screen readers but is hidden
+ * visually.
+ *
+ * We hide:
+ *   - .header-dashboard-text  (the "Dashboard" word next to the back arrow)
+ *   - .header-divider         (the vertical gray line)
+ *   - .header-pdf-icon        (the red PDF-file icon)
+ *   - .header-title           (the H1 text "PDF Linker Studio")
+ * On ALL viewports (desktop + touch), per the user's request.
+ */
+.header-dashboard-text,
+.header-divider,
+.header-pdf-icon,
+.header-title {
+    display: none !important;
+}
+/* The dashboard button keeps just the back arrow now — tighten its padding. */
+.header-dashboard-btn {
+    padding: 0.375rem 0.5rem !important;
+    gap: 0 !important;
+}
+
+/* ============================================================ */
+/* ---- Yjs real-time collaboration: presence banner + locks ---- */
+/* ============================================================ */
+/*
+ * Presence banner (top-right of the editor) shows the avatars of every
+ * user currently editing the same document. Avatars are colored circles
+ * with the user's first initial.
+ */
+.yjs-presence-banner {
+    position: fixed;
+    top: 64px;
+    right: 16px;
+    z-index: 9998;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    padding: 4px 12px 4px 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+.yjs-presence-banner.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+.yjs-presence-banner .yjs-presence-label {
+    font-size: 0.7rem;
+    color: #6b7280;
+    font-weight: 500;
+}
+.yjs-presence-banner .yjs-avatars {
+    display: flex;
+    align-items: center;
+}
+.yjs-presence-banner .yjs-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    margin-left: -6px;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+.yjs-presence-banner .yjs-avatar:first-child {
+    margin-left: 0;
+}
+
+/* When an annotation is being edited by another user, we draw a colored
+   outline around it. The actual drawing happens in renderAnnotations()
+   (annotations.js) — this CSS just defines the colors used. */
+.yjs-lock-overlay {
+    position: absolute;
+    pointer-events: none;
+    border: 2px dashed #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
+    border-radius: 2px;
+    z-index: 58;
+}
+.yjs-lock-overlay .yjs-lock-label {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    background: #f59e0b;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+
+/* Touch-friendly: bigger avatar + label. */
+@media (hover: none), (pointer: coarse) {
+    .yjs-presence-banner {
+        top: 70px;
+        right: 8px;
+        padding: 6px 14px 6px 10px;
+    }
+    .yjs-presence-banner .yjs-avatar {
+        width: 32px;
+        height: 32px;
+        font-size: 13px;
+    }
+    .yjs-presence-banner .yjs-presence-label {
+        font-size: 0.75rem;
+    }
+}
+
+/* ============================================================ */
+/* ---- Touch / tablet UX improvements ---- */
+/* ============================================================ */
+/*
+ * CRITICAL iPad detection note:
+ *   iPadOS 13+ reports itself as a Mac desktop UA, and reports
+ *   `pointer: fine` (because of Apple Pencil support) — so a naive
+ *   `@media (pointer: coarse)` query does NOT match iPad!
+ *
+ *   The reliable signal for "this is a touch device" is `hover: none`,
+ *   which matches iPad, iPhone, Android phones, AND Android tablets,
+ *   but NOT desktops with a mouse.
+ *
+ *   We use `(hover: none) or (pointer: coarse)` so the rules apply to
+ *   every touch device, regardless of how it reports its pointer.
+ *
+ * Desktop mice (hover: hover, pointer: fine) keep the smaller, denser
+ * layout — so the existing desktop look is preserved exactly.
+ */
+@media (hover: none), (pointer: coarse) {
+    /* ---- Tool buttons: 40px on touch (Apple HIG recommends 44px, but 40
+       is the largest we can fit while still showing all tools in one row on
+       a 1024px-wide iPad portrait view). ---- */
+    .tool-btn {
+        width: 40px !important;
+        height: 40px !important;
+        font-size: 16px;
+    }
+
+    /* ---- Header layout fix ----
+       The editor header has 4 groups of buttons (modes, draw tools, pen
+       customization, actions) plus brand/sidebar/save/ai on the sides. On
+       a narrow touch screen, instead of wrapping (which caused the toolbar
+       rows to overlap with the zoom bar below), we make the header SCROLL
+       HORIZONTALLY so all buttons stay on one row and remain tappable.
+       The header height stays at 56px — no overlap. */
+    body > header {
+        /* Allow horizontal scrolling within the header when it overflows. */
+        overflow-x: auto;
+        overflow-y: hidden;
+        /* Disable horizontal page-scroll when the user drags inside the header. */
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        /* Hide the scrollbar visually but keep it functional. */
+        scrollbar-width: none;
+        /* Keep the header at its fixed 56px (h-14 from Tailwind). */
+        height: 56px !important;
+        max-height: 56px !important;
+        min-height: 56px !important;
+        flex-wrap: nowrap !important;
+        /* Disable flex-shrink on items so they keep their natural width and
+           scroll instead of being squished. */
+        align-items: center;
+    }
+    body > header::-webkit-scrollbar {
+        display: none;
+    }
+    /* Don't let any group inside the header wrap to a second row. */
+    body > header > * {
+        flex-wrap: nowrap !important;
+        flex-shrink: 0;
+    }
+    /* The center toolbar (modes + draw tools + actions) — keep on one row
+       and let it overflow-scroll with the header. */
+    body > header > .flex.items-center.gap-1,
+    body > header > div.flex.items-center.justify-between > div.flex.items-center.gap-1 {
+        flex-wrap: nowrap !important;
+        flex-shrink: 0;
+    }
+    /* The left + right groups of the header also stay fixed-width. */
+    body > header > div:first-child,
+    body > header > div:last-child {
+        flex-shrink: 0;
+    }
+
+    /* Lock button: easier to tap. */
+    .lock-btn {
+        width: 36px;
+        height: 36px;
+    }
+
+    /* Modal buttons: bigger tap targets. */
+    #modal button,
+    #conflict-modal button,
+    #move-dialog button,
+    #ai-settings-modal button {
+        min-height: 40px;
+        padding: 8px 16px;
+        font-size: 14px;
+    }
+
+    /* Resize handles on text boxes: bigger so fingers can grab them. */
+    .text-box-rendered .resize-handle-e,
+    .text-box-rendered .resize-handle-s,
+    .text-box .resize-handle-e,
+    .text-box .resize-handle-s {
+        width: 14px;
+        height: 44px;
+    }
+    .text-box-rendered .resize-handle-se,
+    .text-box .resize-handle-se {
+        width: 22px;
+        height: 22px;
+    }
+    /* Always show resize handles on touch (no hover state to reveal them). */
+    .text-box-rendered .resize-handle-e,
+    .text-box-rendered .resize-handle-s,
+    .text-box-rendered .resize-handle-se,
+    .text-box .resize-handle-e,
+    .text-box .resize-handle-s,
+    .text-box .resize-handle-se {
+        opacity: 0.7;
+    }
+
+    /* Sidebar tree rows: bigger tap target. */
+    .tree-row {
+        padding: 8px 4px;
+        min-height: 36px;
+    }
+    .action-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+    }
+    /* File-explorer top-bar buttons (New folder, Import, Sort, Home). */
+    #left-sidebar > div:first-child button,
+    #left-sidebar > div:first-child label {
+        min-width: 36px;
+        min-height: 36px;
+    }
+
+    /* Modal: full-width on small portrait screens. */
+    #modal > div,
+    #conflict-modal > div,
+    #move-dialog > div,
+    #ai-settings-modal > div {
+        max-width: 95vw;
+    }
+
+    /* Page-input field — easier to tap. */
+    #left-page-input,
+    #right-page-input {
+        width: 44px !important;
+        font-size: 14px;
+        padding: 4px 4px;
+        min-height: 28px;
+    }
+    /* Search inputs in viewport headers. */
+    #left-search-input,
+    #right-search-input {
+        font-size: 14px;
+        padding: 6px 10px;
+    }
+    /* Zoom buttons and page-nav buttons in the sub-header. */
+    #left-panel > div:first-child button,
+    #right-panel > div:first-child button {
+        min-width: 32px;
+        min-height: 32px;
+        padding: 4px 6px;
+    }
+
+    /* Vertical resizer — give it a wider hit area on touch so users can
+       actually grab it. The visual bar is still 6px wide. */
+    #vertical-resizer {
+        width: 14px;
+    }
+
+    /* Link markers: easier to tap (they're 28px by default — bump to 36). */
+    .link-marker {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+
+    /* AI sidebar chat input — taller for thumb-typing. */
+    #chat-input {
+        min-height: 60px;
+        font-size: 14px;
+        padding: 10px 12px;
+    }
+
+    /* Disable text-selection callout (iOS long-press menu) globally when in
+       annotation mode — buttons / toolbars also need this to avoid showing
+       "Copy/Select" when the user holds a tool button too long. */
+    body.annotation-mode header,
+    body.annotation-mode header button,
+    body.annotation-mode header label,
+    body.linking-mode header,
+    body.snip-link-mode header {
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-touch-callout: none;
+    }
+
+    /* The viewport's per-side toolbar (zoom controls + page nav) wraps on
+       narrow viewports. Let it wrap and give the row a sensible height so
+       it doesn't overlap. */
+    #left-panel > div:first-child,
+    #right-panel > div:first-child {
+        flex-wrap: wrap;
+        min-height: 48px;
+        height: auto !important;
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    /* Sidebar default widths — narrower so the PDF gets more space on a tablet. */
+    #left-sidebar { width: 14rem !important; }
+    #ai-sidebar  { width: 280px !important; }
+
+    /* (Brand text + Dashboard label + PDF icon are already hidden on ALL
+       devices — see the .header-* rules above.) */
+}
+
+/* On very narrow viewports (phones), collapse the sidebars by default so the
+   PDF gets the full width. The user can still toggle them via the toolbar. */
+@media (max-width: 640px) {
+    #left-sidebar {
+        width: 0 !important;
+        min-width: 0 !important;
+        border: none !important;
+        overflow: hidden;
+    }
+    #ai-sidebar {
+        width: 0 !important;
+        border: none !important;
+        overflow: hidden;
+    }
+    body:not(.left-sidebar-collapsed) #left-sidebar {
+        position: absolute;
+        z-index: 50;
+        width: 80vw !important;
+        min-width: 200px !important;
+        border-right: 1px solid #e5e7eb !important;
+        height: 100%;
+        box-shadow: 4px 0 16px rgba(0,0,0,0.18);
+    }
+    body:not(.ai-sidebar-collapsed) #ai-sidebar {
+        position: absolute;
+        z-index: 50;
+        right: 0;
+        width: 90vw !important;
+        max-width: 360px;
+        border-left: 1px solid #e5e7eb !important;
+        height: 100%;
+        box-shadow: -4px 0 16px rgba(0,0,0,0.18);
+    }
+}
+
+/* iPad in portrait is typically 810px / 1024px CSS pixels wide. In landscape
+   it's 1024px / 1366px. Hide the AI sidebar by default below 1024px so the
+   editor gets enough horizontal space. The user can re-open it from the toolbar. */
+@media (hover: none) and (max-width: 1024px) {
+    body:not(.ai-sidebar-collapsed) #ai-sidebar {
+        width: 0 !important;
+        border: none !important;
+        overflow: hidden;
+        padding: 0 !important;
+    }
+    body:not(.ai-sidebar-collapsed) .toggle-ai-btn i {
+        transform: rotate(180deg);
+    }
+}
+
+
+/* ====================================================================== */
+/* --- Real-time sync indicator (header) -------------------------------- */
+/* ====================================================================== */
+/* A small green dot in the header that shows when the real-time sync
+   WebSocket is connected. When disconnected (network issue), it turns
+   amber and pulses. No user interaction — sync is always ON. */
+.sync-status-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
+    cursor: default;
+    transition: all 0.2s;
+}
+.sync-status-indicator::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+}
+.sync-status-indicator.disconnected {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #f59e0b;
+}
+.sync-status-indicator.disconnected::before {
+    background: #f59e0b;
+    animation: sync-disconnected-pulse 1.5s ease-in-out infinite;
+}
+@keyframes sync-disconnected-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+}
+@media (max-width: 640px) {
+    .sync-status-indicator .sync-label { display: none; }
+}
+
+/* ============================================================ */
+/* ---- Comment Feature Styles -------------------------------- */
+/* ============================================================ */
+/* Comment icon on the PDF canvas — small circular bubble with comment glyph.
+   Positioned at the (x, y) where the user clicked. The icon is rendered
+   inside the canvas wrapper (same layer as text boxes were), and uses
+   transform: translate(-50%, -50%) so the icon's CENTER sits at (x, y). */
+.comment-icon-wrapper {
+    position: absolute;
+    z-index: 60;
+    width: 28px;
+    height: 28px;
+    transform: translate(-50%, -50%);
+    background: #3b82f6;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 12px;
+    transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+.comment-icon-wrapper:hover {
+    transform: translate(-50%, -50%) scale(1.15);
+    background: #2563eb;
+    box-shadow: 0 4px 10px rgba(37,99,235,0.45);
+}
+.comment-icon-wrapper.comment-active {
+    background: #f59e0b;
+    box-shadow: 0 0 0 3px rgba(245,158,11,0.35), 0 4px 10px rgba(245,158,11,0.4);
+}
+.comment-icon-wrapper.comment-active:hover {
+    background: #d97706;
+}
+/* Brief "pop" animation when a new comment is placed. */
+@keyframes comment-pop {
+    0%   { transform: translate(-50%, -50%) scale(0); }
+    60%  { transform: translate(-50%, -50%) scale(1.25); }
+    100% { transform: translate(-50%, -50%) scale(1); }
+}
+.comment-icon-wrapper.comment-new {
+    animation: comment-pop 0.25s ease-out;
+}
+
+/* ====================================================================== */
+/* --- Comment Overlay Sidebar ------------------------------------------ */
+/* ====================================================================== */
+/* The comment editor is a FIXED-POSITION floating panel that overlays    */
+/* everything else on the screen. It does NOT push, resize, or modify the  */
+/* AI chat sidebar — the AI chat stays wherever it was (collapsed or open) */
+/* and this panel simply covers the right side of the screen with a       */
+/* higher z-index.                                                        */
+/*                                                                       */
+/* A semi-transparent backdrop (#comment-backdrop) sits behind the panel  */
+/* to dim the rest of the UI and focus attention on the comment. Clicking */
+/* the backdrop closes the comment (handled in annotations.js).          */
+/* ====================================================================== */
+
+/* The backdrop — a full-screen dim overlay behind the comment panel. */
+#comment-backdrop {
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    transition: opacity 0.2s ease;
+}
+#comment-backdrop.hidden { opacity: 0; pointer-events: none; }
+
+/* The comment editor panel itself — a floating right-side sidebar. */
+#comment-editor-panel {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.18);
+    transition: transform 0.25s ease, opacity 0.2s ease;
+    transform: translateX(0);
+}
+#comment-editor-panel.hidden {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+}
+/* On very narrow screens (phones), the panel takes the full width. */
+@media (max-width: 640px) {
+    #comment-editor-panel { width: 100% !important; }
+}
+#comment-preview-area {
+    line-height: 1.6;
+    font-size: 0.85rem;
+    color: #1f2937;
+    overflow-y: auto;
+    word-wrap: break-word;
+    min-height: 80px;
+}
+/* Reuse markdown styling similar to text-box-rendered-inner / ai-bubble */
+#comment-preview-area h1 { font-size: 1.3em; font-weight: bold; margin: 0 0 6px 0; }
+#comment-preview-area h2 { font-size: 1.15em; font-weight: bold; margin: 0 0 6px 0; }
+#comment-preview-area h3 { font-size: 1em;     font-weight: bold; margin: 0 0 6px 0; }
+#comment-preview-area p  { margin: 0 0 8px 0; }
+#comment-preview-area ul, #comment-preview-area ol { margin: 0 0 8px 0; padding-left: 20px; }
+#comment-preview-area li { margin-bottom: 4px; }
+#comment-preview-area strong { font-weight: 700; }
+#comment-preview-area em { font-style: italic; }
+#comment-preview-area code {
+    background: #f3f4f6;
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+    font-size: 0.9em;
+}
+#comment-preview-area pre {
+    background: #1f2937;
+    color: #f8fafc;
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 0 0 8px 0;
+    position: relative;
+}
+#comment-preview-area pre .code-lang-label {
+    position: absolute;
+    top: 4px;
+    right: 8px;
+    color: #94a3b8;
+    font-size: 0.75em;
+    font-family: monospace;
+}
+#comment-preview-area pre code.hljs {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    font-size: 0.85em;
+    line-height: 1.5;
+}
+#comment-preview-area blockquote {
+    border-left: 3px solid #cbd5e1;
+    padding: 4px 12px;
+    margin: 0 0 8px 0;
+    color: #475569;
+    background: #f8fafc;
+    border-radius: 0 4px 4px 0;
+}
+#comment-preview-area a { color: #2563eb; text-decoration: underline; }
+#comment-preview-area hr { border: none; border-top: 1px solid #e5e7eb; margin: 8px 0; }
+#comment-preview-area table { border-collapse: collapse; font-size: 0.9em; margin-bottom: 8px; }
+#comment-preview-area th, #comment-preview-area td {
+    border: 1px solid #e5e7eb;
+    padding: 4px 8px;
+}
+#comment-preview-area th { background: #f3f4f6; font-weight: 600; }
+#comment-preview-area .katex-display {
+    margin: 8px 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+#comment-preview-area .katex { font-size: 1.05em; }
+#comment-preview-area .math-error {
+    color: #ef4444;
+    background: #fef2f2;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+#comment-preview-area .comment-empty-hint {
+    color: #9ca3af;
+    font-style: italic;
+    text-align: center;
+    margin-top: 40%;
+    transform: translateY(-50%);
+}
+#comment-markdown-input {
+    line-height: 1.5;
+    min-height: 120px;
+}
+
+/* When the comment editor area is hidden (preview-only mode), the preview
+   area should expand to fill all available space. */
+#comment-editor-panel.preview-mode #comment-editor-area { display: none; }
+#comment-editor-panel.preview-mode #comment-edit-button-area { display: block; }
+#comment-editor-panel.split-mode #comment-editor-area { display: flex; }
+#comment-editor-panel.split-mode #comment-edit-button-area { display: none; }
+
+/* The comment editor area takes ~50% of the panel height in split mode. */
+#comment-editor-panel.split-mode #comment-preview-area {
+    flex: 1 1 50%;
+    border-bottom: 1px solid #e5e7eb;
+}
+#comment-editor-panel.split-mode #comment-editor-area {
+    flex: 0 0 auto;
+    max-height: 55%;
+}

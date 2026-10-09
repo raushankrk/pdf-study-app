@@ -104,6 +104,7 @@ def create_folder(folder: FolderCreate, project_id: str = Depends(get_current_pr
         "INSERT INTO folders (id, project_id, name, parent_id, created_at, expanded) VALUES (?, ?, ?, ?, ?, 1)",
         (fid, project_id, folder.name, parent_param, int(time.time() * 1000)),
     )
+    db.bump_project_revision(project_id)
     return {"id": fid, "name": folder.name, "parentId": folder.parent_id}
 
 
@@ -125,6 +126,7 @@ def rename_folder(folder_id: str, update: FolderUpdate, project_id: str = Depend
         "UPDATE folders SET name = ? WHERE id = ? AND project_id = ?",
         (update.name.strip(), folder_id, project_id)
     )
+    db.bump_project_revision(project_id)
     return {"status": "ok"}
 
 
@@ -162,6 +164,7 @@ def move_folder(folder_id: str, req: FolderMove, project_id: str = Depends(get_c
         "UPDATE folders SET parent_id = ? WHERE id = ? AND project_id = ?",
         (target_param, folder_id, project_id)
     )
+    db.bump_project_revision(project_id)
     return {"status": "moved"}
 
 
@@ -173,6 +176,9 @@ def set_expanded(folder_id: str, expanded: bool, project_id: str = Depends(get_c
         "UPDATE folders SET expanded = ? WHERE id = ? AND project_id = ?",
         (1 if expanded else 0, folder_id, project_id)
     )
+    # Don't bump project revision for expand/collapse — it's a purely cosmetic
+    # UI state, not project data. Otherwise every folder click would notify
+    # other devices as if data had changed.
     return {"status": "ok"}
 
 
@@ -220,4 +226,5 @@ def delete_folder(folder_id: str, move_contents_to_root: bool = False, project_i
                 "DELETE FROM folders WHERE id = ? AND project_id = ?", (fid, project_id)
             )
 
+    db.bump_project_revision(project_id)
     return {"status": "deleted", "documents_deleted": 0 if move_contents_to_root else len(docs)}

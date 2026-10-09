@@ -37,10 +37,9 @@ def save_settings(body: dict, project_id: str = Depends(get_current_project)):
         "INSERT OR REPLACE INTO settings (key, project_id, value) VALUES ('appState', ?, ?)",
         (project_id, json.dumps(body)),
     )
-    # Update the project's modified_at timestamp (settings include view state, recent docs, etc.)
-    import time
-    db.execute(
-        "UPDATE projects SET modified_at = ? WHERE id = ?",
-        (int(time.time() * 1000), project_id)
-    )
+    # Bump the project's revision + modified_at so other devices polling
+    # the project detect the change. (View state, recent docs, sidebar
+    # collapse state, etc. are all part of settings — a change here means
+    # the project has been interacted with.)
+    db.bump_project_revision(project_id)
     return {"status": "ok"}

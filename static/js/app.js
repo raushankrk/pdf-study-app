@@ -44,12 +44,20 @@ async function init() {
     if (pathMatch) {
         const projectId = decodeURIComponent(pathMatch[1]);
         setProjectId(projectId);
-        // Update the editor header to show the project name.
+        // Update the document title (browser tab) with the project name so
+        // users can identify the tab — but DON'T overwrite the visible H1
+        // in the header (which would push the annotation tools off-screen
+        // on narrow / touch devices).
         try {
             const proj = await Api.getProject(projectId);
-            const titleEl = document.querySelector('h1.text-base.font-bold');
-            if (titleEl) titleEl.innerText = `PDF Linker Studio — ${proj.name}`;
-            document.title = `PDF Linker Studio — ${proj.name}`;
+            document.title = `${proj.name} — PDF Linker Studio`;
+            // Seed the conflict-detection baseline. This is the revision we
+            // consider "ours" — any future change to it means another device
+            // saved something to the project.
+            if (typeof conflictState !== 'undefined' && proj.revision !== undefined) {
+                conflictState.projectRevision = parseInt(proj.revision, 10) || 0;
+                conflictState.projectRevisionLoadedAt = Date.now();
+            }
         } catch (err) {
             console.warn('Could not load project info:', err);
         }
@@ -282,6 +290,9 @@ async function init() {
     document.addEventListener('touchstart', (e) => {
         // Only intercept in non-navigation modes
         if (state.appMode === 'navigation') return;
+        // Don't intercept touches inside the comment overlay — the textarea
+        // and buttons need normal touch behavior to work.
+        if (e.target.closest('#comment-editor-panel') || e.target.closest('#comment-backdrop')) return;
         // Check if any of the touches are inside a viewport
         const target = e.target;
         if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
@@ -299,6 +310,9 @@ async function init() {
     // pan/zoom (the two-finger gesture handler in initTwoFingerGestures handles it).
     document.addEventListener('touchmove', (e) => {
         if (state.appMode === 'navigation') return;
+        // Don't intercept touchmove inside the comment overlay — the textarea
+        // needs normal scroll/text-selection behavior.
+        if (e.target.closest('#comment-editor-panel')) return;
         // 2-finger touches are pan/zoom — let the gesture handler deal with them
         if (e.touches.length >= 2) return;
         if (state.drawing && state.drawing.active) {
@@ -365,6 +379,62 @@ async function init() {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleChat();
+        }
+    });
+
+    // ---- Comment sidebar: live preview + keyboard shortcuts ----
+    if (els.commentMarkdownInput) {
+        // Live preview updates as the user types in split mode.
+        els.commentMarkdownInput.addEventListener('input', () => {
+            if (typeof _onCommentInput === 'function') _onCommentInput();
+        });
+        // Ctrl+Enter to save, Escape to cancel (matches the old text-box editor).
+        els.commentMarkdownInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Tab') {
+                // Tab inserts 4 spaces instead of changing focus.
+                e.preventDefault();
+                const ta = e.target;
+                const start = ta.selectionStart;
+                const end = ta.selectionEnd;
+                ta.value = ta.value.substring(0, start) + '    ' + ta.value.substring(end);
+                ta.selectionStart = ta.selectionEnd = start + 4;
+                if (typeof _onCommentInput === 'function') _onCommentInput();
+            } else if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                if (typeof saveCommentFromSidebar === 'function') saveCommentFromSidebar();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                if (typeof cancelCommentEdit === 'function') cancelCommentEdit();
+            }
+        });
+    }
+
+    // ---- Comment overlay backdrop: click outside the panel to close ----
+    // The backdrop sits behind the floating comment panel. Clicking/tapping
+    // it (i.e. clicking outside the panel) closes the comment — UNLESS
+    // we're in split mode with unsaved changes, in which case we treat
+    // it as a cancel (which removes empty comments or keeps non-empty ones).
+    //
+    // We use pointerdown (not click) for faster response on touch devices.
+    // This is safe because handlePointerDown in events.js already bails out
+    // when the target is inside #comment-backdrop, so there's no conflict.
+    const commentBackdrop = document.getElementById('comment-backdrop');
+    if (commentBackdrop) {
+        commentBackdrop.addEventListener('pointerdown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof cancelCommentEdit === 'function') cancelCommentEdit();
+        });
+    }
+
+    // ---- Global Escape key: also closes the comment overlay ----
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' &&
+            state.activeComment && state.activeComment.id &&
+            document.activeElement !== els.commentMarkdownInput) {
+            // Only fire if focus is NOT inside the textarea (the textarea's
+            // own Escape handler already calls cancelCommentEdit).
+            if (typeof cancelCommentEdit === 'function') cancelCommentEdit();
         }
     });
 
@@ -444,6 +514,17 @@ async function init() {
             !e.target.closest('[onclick*="toggleSortMenu"]')) {
             dd.classList.add('hidden');
         }
+    });
+
+    // ---- Multi-device conflict detection ----
+    // Poll the server's project revision every 30s; if it changes, show a banner
+    // telling the user another device has modified the project. Stopped in
+    // beforeunload / pagehide so we don't keep firing requests after navigation.
+    if (typeof startProjectRevisionPolling === 'function') {
+        startProjectRevisionPolling();
+    }
+    window.addEventListener('pagehide', () => {
+        if (typeof stopProjectRevisionPolling === 'function') stopProjectRevisionPolling();
     });
 }
 

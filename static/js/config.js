@@ -90,5 +90,12 @@ const els = {
     aiSettingSimVal: document.getElementById('ai-setting-sim-val'),
     aiSettingBudget: document.getElementById('ai-setting-budget'),
     aiSettingMaxChunks: document.getElementById('ai-setting-max-chunks'),
-    aiSettingChunkSize: document.getElementById('ai-setting-chunk-size')
+    aiSettingChunkSize: document.getElementById('ai-setting-chunk-size'),
+
+    // Comment Editor Panel (overlay inside #ai-sidebar)
+    commentEditorPanel: document.getElementById('comment-editor-panel'),
+    commentPreviewArea: document.getElementById('comment-preview-area'),
+    commentEditorArea: document.getElementById('comment-editor-area'),
+    commentEditButtonArea: document.getElementById('comment-edit-button-area'),
+    commentMarkdownInput: document.getElementById('comment-markdown-input')
 };

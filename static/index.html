@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- viewport: maximum-scale=1 prevents iOS Safari's double-tap zoom from
+         hijacking taps inside the editor (we manage our own pinch-zoom). The
+         viewport-fit=cover lets us use safe-area insets on notched devices. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>PDF Linker Studio (AI + SQLite Storage)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -16,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/style.css?v=comment-v9">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -27,7 +30,15 @@
 
     <!-- Highlight.js for code blocks -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+    <!-- Yjs CRDT + y-websocket + y-protocols (for real-time collaboration).
+         These are loaded from CDN so we don't have to ship them locally.
+         They're lazy-loaded by yjs-collab.js so they don't block page render. -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/yjs/13.6.18/yjs.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/y-protocols/1.0.6/y-protocols.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/y-websocket/2.0.4/y-websocket.min.js" defer></script>
+
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const { PDFDocument } = PDFLib;
@@ -38,18 +49,25 @@
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
 
-        <!-- Left: Brand + Dashboard button -->
+        <!-- Left: Brand + Dashboard button
+             NOTE: The visible text "Dashboard" and the "PDF Linker Studio" title
+             are hidden via CSS on touch / narrow screens to free horizontal
+             space for the annotation tools. On desktop they remain visible.
+             The dashboard button itself is kept (just the arrow icon).
+             The H1 is kept in the DOM for screen readers but visually hidden
+             on touch screens. -->
         <div class="flex items-center gap-3">
-            <button onclick="goToDashboard()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm font-medium" title="Back to Dashboard">
+            <button onclick="goToDashboard()" class="header-dashboard-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm font-medium" title="Back to Dashboard">
                 <i class="fa-solid fa-arrow-left"></i>
-                <span class="hidden sm:inline">Dashboard</span>
+                <span class="header-dashboard-text hidden sm:inline">Dashboard</span>
             </button>
-            <span class="w-px h-6 bg-gray-200"></span>
+            <span class="header-divider w-px h-6 bg-gray-200"></span>
             <button onclick="toggleLeftSidebar()" class="toggle-left-btn w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-all" title="Toggle Sidebar (Ctrl+B)">
                 <i class="fa-solid fa-bars"></i>
             </button>
-            <i class="fa-solid fa-file-pdf text-red-500 text-xl"></i>
-            <h1 class="text-base font-bold text-gray-800">PDF Linker Studio</h1>
+            <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
+            <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
+            <span class="hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Comment feature loaded">comment-v9</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -100,8 +118,8 @@
                 </button>
                 <button id="tool-text" onclick="setAnnoTool('text')"
                     class="tool-btn"
-                    title="Text Box (T)">
-                    <i class="fa-solid fa-font"></i>
+                    title="Add Comment (T)">
+                    <i class="fa-solid fa-comment-medical"></i>
                 </button>
                 <button id="tool-eraser-pixel" onclick="setAnnoTool('eraser-pixel')"
                     class="tool-btn"
@@ -147,10 +165,15 @@
 
             <!-- Group 4: Actions -->
             <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
-                <button onclick="undoLastStroke()"
+                <button onclick="undoLastAction()"
                     class="tool-btn"
                     title="Undo (Ctrl+Z)">
                     <i class="fa-solid fa-rotate-left"></i>
+                </button>
+                <button onclick="redoNextAction()"
+                    class="tool-btn"
+                    title="Redo (Ctrl+Y / Ctrl+Shift+Z)">
+                    <i class="fa-solid fa-rotate-right"></i>
                 </button>
                 <button onclick="deleteSelection()"
                     class="tool-btn text-red-400 hover:text-red-600 hover:bg-red-50"
@@ -181,6 +204,9 @@
                 <input type="file" id="import-project-input" class="hidden" accept=".sqlite">
             </label>
             <div class="w-px h-6 bg-gray-300"></div>
+            <span id="sync-status-indicator" class="sync-status-indicator disconnected" title="Connecting to real-time sync…">
+                <span class="sync-label hidden sm:inline">Live</span>
+            </span>
             <button onclick="toggleAiSidebar()"
                 class="toggle-ai-btn flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 border border-indigo-200 text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
                 title="Toggle AI Panel (Ctrl+/)">
@@ -474,6 +500,57 @@
         </main>
     </div>
 
+    <!-- ============================================ -->
+    <!-- Comment Editor Overlay (floating sidebar)    -->
+    <!-- ============================================ -->
+    <!-- This is a FIXED-POSITION overlay that floats -->
+    <!-- on top of everything else. It does NOT push  -->
+    <!-- or resize the AI chat sidebar — the AI chat  -->
+    <!-- stays wherever it was (collapsed or open),  -->
+    <!-- and this panel simply covers the right side  -->
+    <!-- of the screen with a higher z-index.        -->
+    <!-- A semi-transparent backdrop dims the rest    -->
+    <!-- of the UI to focus attention on the comment.-->
+    <div id="comment-backdrop" class="hidden fixed inset-0 bg-black/30 z-[1999]"></div>
+
+    <div id="comment-editor-panel" class="hidden fixed top-0 right-0 bottom-0 w-full sm:w-[400px] bg-white shadow-2xl flex flex-col z-[2000]">
+        <!-- Header -->
+        <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 bg-gradient-to-r from-blue-50 to-indigo-50 shrink-0 shadow-sm">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-comment-dots text-blue-600"></i>
+                <span class="text-sm font-bold text-gray-700">Comment</span>
+            </div>
+            <button onclick="closeCommentSidebar()" class="text-gray-400 hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center rounded hover:bg-white" title="Close (Esc)">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        <!-- Top: Rendered Markdown Preview -->
+        <div id="comment-preview-area" class="flex-1 overflow-y-auto p-4 bg-white"></div>
+
+        <!-- Bottom: Raw Markdown Editor (hidden in preview-only mode) -->
+        <div id="comment-editor-area" class="border-t border-gray-200 bg-gray-50 shrink-0 flex flex-col">
+            <div class="px-3 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                <span>Markdown Editor</span>
+                <span class="text-gray-400 font-normal normal-case tracking-normal">Ctrl+Enter to save</span>
+            </div>
+            <textarea id="comment-markdown-input" rows="6" class="mx-3 mb-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none font-mono" placeholder="Type markdown here...&#10;**bold**, *italic*, # heading&#10;$math$, ```code```"></textarea>
+            <div class="flex justify-end gap-2 px-3 pb-3 pt-1">
+                <button onclick="cancelCommentEdit()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded text-sm transition-colors">Cancel</button>
+                <button onclick="saveCommentFromSidebar()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-medium shadow-sm transition-colors">
+                    <i class="fa-solid fa-floppy-disk mr-1"></i>Save
+                </button>
+            </div>
+        </div>
+
+        <!-- Edit button bar (only shown in preview-only mode) -->
+        <div id="comment-edit-button-area" class="hidden border-t border-gray-200 bg-gray-50 shrink-0 p-3">
+            <button onclick="setCommentSidebarMode('split')" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                <i class="fa-solid fa-pen mr-1"></i> Edit
+            </button>
+        </div>
+    </div>
+
     <div id="tool-cursor" class="hidden fixed pointer-events-none z-[100] flex items-center justify-center">
         <i id="tool-cursor-icon" class="fa-thin fa-pen"></i>
     </div>
@@ -608,22 +685,44 @@
         </div>
     </div>
 
-    <script src="/js/utils.js"></script>
-    <script src="/js/config.js"></script>
-    <script src="/js/api.js"></script>
-    <script src="/js/state.js"></script>
-    <script src="/js/database.js"></script>
-    <script src="/js/ui.js"></script>
-    <script src="/js/ai.js"></script>
-    <script src="/js/pdf.js"></script>
-    <script src="/js/search.js"></script>
-    <script src="/js/annotations.js"></script>
-    <script src="/js/links.js"></script>
+    <!-- Multi-device Conflict Modal (used by conflict.js → showPageConflictModal) -->
+    <div id="conflict-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="conflict-title text-base font-bold text-gray-800">
+                    <i class="fa-solid fa-triangle-exclamation mr-2 text-amber-500"></i>Conflict
+                </h3>
+            </div>
+            <div class="conflict-body text-sm text-gray-700 mb-4"></div>
+            <div class="flex justify-end gap-2">
+                <button class="conflict-cancel bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded text-sm">Cancel</button>
+                <button class="conflict-overwrite bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded text-sm font-medium">Overwrite</button>
+                <button class="conflict-reload bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded text-sm font-medium">Reload from server</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/utils.js?v=comment-v9"></script>
+    <script src="/js/config.js?v=comment-v9"></script>
+    <script src="/js/api.js?v=comment-v9"></script>
+    <script src="/js/state.js?v=comment-v9"></script>
+    <script src="/js/database.js?v=comment-v9"></script>
+    <script src="/js/ui.js?v=comment-v9"></script>
+    <script src="/js/ai.js?v=comment-v9"></script>
+    <script src="/js/pdf.js?v=comment-v9"></script>
+    <script src="/js/search.js?v=comment-v9"></script>
+    <script src="/js/annotations.js?v=comment-v9"></script>
+    <script src="/js/links.js?v=comment-v9"></script>
+    <!-- NEW: undo/redo history + multi-device conflict detection -->
+    <script src="/js/undo.js?v=comment-v9"></script>
+    <script src="/js/conflict.js?v=comment-v9"></script>
+    <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
+    <script src="/js/yjs-collab.js?v=comment-v9"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js"></script>
-    <script src="/js/filemanager.js"></script>
-    <script src="/js/events.js"></script>
-    <script src="/js/app.js"></script>
+    <script src="/js/folders.js?v=comment-v9"></script>
+    <script src="/js/filemanager.js?v=comment-v9"></script>
+    <script src="/js/events.js?v=comment-v9"></script>
+    <script src="/js/app.js?v=comment-v9"></script>
 
 </body>
 </html>

@@ -127,6 +127,18 @@ function setAppMode(mode, save = true) {
 }
 
 function setAnnoTool(tool, save = true) {
+    // ---- BUG FIX (Pen/Highlighter tool switching) ----
+    // `state.annoTool` is per-device UI state. It MUST NEVER be overwritten
+    // by remote collaboration (Yjs awareness, project revision changes,
+    // smartRefreshFromServer). The remote sync layer syncs annotation DATA
+    // (each stroke/image/textbox already carries its own `tool`/`color`/
+    // `thickness` fields), not UI state.
+    //
+    // This function is the ONLY place that mutates state.annoTool — and it
+    // is only called from local user input (button taps, keyboard
+    // shortcuts 'p'/'h'/'t'/'e'/'d'/'i'/'s', or programmatic tool switches
+    // that simulate a user action). Remote sync code paths must NOT call
+    // this function.
     state.annoTool = tool;
     if (save) saveSettings();
 
@@ -196,6 +208,23 @@ function setAnnoTool(tool, save = true) {
     }
     if (penSep) {
         penSep.classList.toggle('hidden', !isLineTool);
+    }
+
+    // ---- Image tool: open file picker immediately ----
+    // On touch devices (iPad Safari), calling `imageInput.click()` from inside
+    // a pointerdown handler on the canvas sometimes gets silently blocked
+    // because iOS treats it as not-a-direct-user-gesture by the time the
+    // async target resolution finishes. Triggering the picker directly from
+    // the tool-button tap (which is the current call stack) is reliable on
+    // every browser. The image is then placed at the center of the
+    // last-active viewport (or wherever the user clicked last).
+    if (tool === 'image' && els.imageInput) {
+        // Defer the click() to the next microtask so the button's active
+        // styling has time to apply first — also avoids reentrancy if the
+        // picker is opened from a click handler that's still bubbling.
+        setTimeout(() => {
+            try { els.imageInput.click(); } catch (e) { /* ignore */ }
+        }, 0);
     }
 
     // Show/hide line mode button
