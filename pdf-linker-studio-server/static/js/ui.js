@@ -223,8 +223,49 @@ function toggleLeftSidebar() {
     saveSettings();
 }
 
+// ---- Floating tool sidebar (AI Chat + Comments) --------------------------
+// ONE fully transparent overlay that floats above the PDF. The PDF canvas
+// never resizes or moves — the sidebar is absolutely positioned and takes no
+// flex space. Visibility is driven by body.float-sidebar-open; the shown pane
+// (AI Chat OR Comments, never both) is driven by exactly one of
+// body.fs-mode-chat / body.fs-mode-comments (CSS in style.css).
 function toggleAiSidebar() {
-    document.body.classList.toggle('ai-sidebar-collapsed');
+    document.body.classList.toggle('float-sidebar-open');
+    saveSettings();
+}
+
+// Which pane is currently shown ('chat' | 'comments'). Defaults to 'chat'
+// whenever neither class is set (e.g. a fresh profile before boot).
+function getFloatSidebarMode() {
+    return document.body.classList.contains('fs-mode-comments') ? 'comments' : 'chat';
+}
+
+function setFloatSidebarMode(mode) {
+    if (mode !== 'chat' && mode !== 'comments') return;
+    document.body.classList.toggle('fs-mode-chat', mode === 'chat');
+    document.body.classList.toggle('fs-mode-comments', mode === 'comments');
+    saveSettings();
+}
+
+// Open the floating sidebar and optionally switch to a mode. Used by the
+// comment feature (opening a comment reveals the sidebar in comments mode)
+// and available for any future tool that wants the floating layer.
+function openFloatSidebar(mode) {
+    document.body.classList.add('float-sidebar-open');
+    if (mode) setFloatSidebarMode(mode);
+    else saveSettings();
+}
+
+// Close the whole floating sidebar. If a comment is currently being edited,
+// close the comment first — same semantics as the old comment panel's X
+// (a brand-new empty comment is removed instead of leaving a stray icon).
+function closeFloatSidebar() {
+    if (state.activeComment && state.activeComment.id &&
+        typeof cancelCommentEdit === 'function') {
+        cancelCommentEdit();
+    }
+    document.body.classList.remove('float-sidebar-open');
+    if (typeof closeChatHistory === 'function') closeChatHistory();
     saveSettings();
 }
 

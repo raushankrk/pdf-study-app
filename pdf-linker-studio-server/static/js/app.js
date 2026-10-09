@@ -264,9 +264,19 @@ async function init() {
                 if (savedData.settings.leftSidebarCollapsed) {
                     document.body.classList.add('left-sidebar-collapsed');
                 }
-                if (savedData.settings.aiSidebarCollapsed) {
-                    document.body.classList.add('ai-sidebar-collapsed');
+                // ---- Floating tool sidebar (AI Chat + Comments) ----
+                // The <body> tag defaults to open + chat mode. Restore the
+                // persisted state: new blobs carry floatSidebarOpen /
+                // floatSidebarMode; older blobs only carry aiSidebarCollapsed
+                // (true = sidebar closed) — map it so returning users keep
+                // their previous layout. Exactly one mode class is always set.
+                if (savedData.settings.floatSidebarOpen !== undefined) {
+                    document.body.classList.toggle('float-sidebar-open', !!savedData.settings.floatSidebarOpen);
+                } else if (savedData.settings.aiSidebarCollapsed !== undefined) {
+                    document.body.classList.toggle('float-sidebar-open', !savedData.settings.aiSidebarCollapsed);
                 }
+                document.body.classList.toggle('fs-mode-comments', savedData.settings.floatSidebarMode === 'comments');
+                document.body.classList.toggle('fs-mode-chat', savedData.settings.floatSidebarMode !== 'comments');
                 // Restore AI settings
                 if (savedData.settings.aiSettings) {
                     state.aiSettings = { ...state.aiSettings, ...savedData.settings.aiSettings };
@@ -362,9 +372,12 @@ async function init() {
     document.addEventListener('touchstart', (e) => {
         // Only intercept in non-navigation modes
         if (state.appMode === 'navigation') return;
-        // Don't intercept touches inside the comment overlay — the textarea
-        // and buttons need normal touch behavior to work.
-        if (e.target.closest('#comment-editor-panel') || e.target.closest('#comment-backdrop')) return;
+        // Don't intercept touches inside the floating tool sidebar — the
+        // composer, chat bubbles and comment editor need normal touch
+        // behavior. (The sidebar container itself is pointer-events:none, so
+        // touches on the transparent gaps fall through to the PDF on purpose
+        // — annotate-while-open must keep working on touch devices too.)
+        if (e.target.closest('#float-sidebar')) return;
         // Check if any of the touches are inside a viewport
         const target = e.target;
         if (target.closest('#left-viewport') || target.closest('#right-viewport')) {
@@ -382,9 +395,9 @@ async function init() {
     // pan/zoom (the two-finger gesture handler in initTwoFingerGestures handles it).
     document.addEventListener('touchmove', (e) => {
         if (state.appMode === 'navigation') return;
-        // Don't intercept touchmove inside the comment overlay — the textarea
-        // needs normal scroll/text-selection behavior.
-        if (e.target.closest('#comment-editor-panel')) return;
+        // Don't intercept touchmove inside the floating tool sidebar — the
+        // textarea / chat list need normal scroll behavior.
+        if (e.target.closest('#float-sidebar')) return;
         // 2-finger touches are pan/zoom — let the gesture handler deal with them
         if (e.touches.length >= 2) return;
         if (state.drawing && state.drawing.active) {
@@ -481,25 +494,13 @@ async function init() {
         });
     }
 
-    // ---- Comment overlay backdrop: click outside the panel to close ----
-    // The backdrop sits behind the floating comment panel. Clicking/tapping
-    // it (i.e. clicking outside the panel) closes the comment — UNLESS
-    // we're in split mode with unsaved changes, in which case we treat
-    // it as a cancel (which removes empty comments or keeps non-empty ones).
-    //
-    // We use pointerdown (not click) for faster response on touch devices.
-    // This is safe because handlePointerDown in events.js already bails out
-    // when the target is inside #comment-backdrop, so there's no conflict.
-    const commentBackdrop = document.getElementById('comment-backdrop');
-    if (commentBackdrop) {
-        commentBackdrop.addEventListener('pointerdown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (typeof cancelCommentEdit === 'function') cancelCommentEdit();
-        });
-    }
+    // ---- (No sidebar backdrop) ----
+    // The floating tool sidebar is fully transparent and pointer-events:none
+    // on its container — there is no dimming backdrop anymore, so the PDF
+    // stays interactive while the sidebar is open. No click-outside-to-close
+    // handler is needed: the sidebar is closed via its X button or Ctrl+/.
 
-    // ---- Global Escape key: also closes the comment overlay ----
+    // ---- Global Escape key: also closes the active comment ----
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' &&
             state.activeComment && state.activeComment.id &&

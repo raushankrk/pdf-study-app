@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=tagrail-v15">
+    <link rel="stylesheet" href="/css/style.css?v=floatside-v16">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -46,8 +46,11 @@
 </head>
 <!-- data-active-pdf drives the single-toolbar visibility: the header shows
      the lock/find/zoom/page controls of the ACTIVE PDF only (see style.css).
-     ui.js updateViewportActiveVisuals() keeps this in sync at runtime. -->
-<body data-active-pdf="left" class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans">
+     ui.js updateViewportActiveVisuals() keeps this in sync at runtime.
+     Default body classes: floating tool sidebar OPEN in CHAT mode (matches
+     the old default of a visible AI sidebar) — boot restores the persisted
+     state (app.js) by toggling float-sidebar-open / fs-mode-comments. -->
+<body data-active-pdf="left" class="bg-gray-100 h-screen flex flex-col overflow-hidden text-gray-800 font-sans fs-mode-chat float-sidebar-open">
 
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
@@ -70,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Comment feature loaded">comment-v9</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Floating AI Chat + Comments sidebar">floatside-v16</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -505,115 +508,166 @@
             <!-- Floating Snip Preview Layer -->
             <img id="snip-preview" class="hidden fixed pointer-events-none z-[9999] opacity-80 border-2 border-blue-500 border-dashed shadow-xl object-contain bg-white">
 
-            <!-- AI Sidebar -->
-            <aside id="ai-sidebar" class="bg-white border-l border-gray-200 flex flex-col shrink-0 z-20 relative overflow-hidden">
-                <!-- Header -->
-                <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 bg-gray-50 shrink-0 relative z-40 shadow-sm">
-                    <div class="flex items-center gap-2">
-                        <button onclick="toggleChatHistory()" class="text-gray-500 hover:text-blue-600 transition-colors w-6 h-6 flex items-center justify-center rounded hover:bg-gray-200" title="Chat History">
-                            <i class="fa-solid fa-bars-staggered"></i>
-                        </button>
-                        <i class="fa-solid fa-robot text-blue-600"></i>
-                        <span class="text-sm font-bold text-gray-700">AI Assistant</span>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <button onclick="createNewChat()" class="text-gray-400 hover:text-blue-600 transition-colors" title="New Chat">
-                            <i class="fa-solid fa-plus"></i>
-                        </button>
-                        <!-- AI Settings Button -->
-                        <button onclick="openAiSettings()" class="text-gray-400 hover:text-blue-600 transition-colors" title="AI Settings">
-                            <i class="fa-solid fa-gear"></i>
-                        </button>
-                    </div>
-                </div>
+            <!-- ================================================================
+                 FLOATING TOOL SIDEBAR — AI Chat + Comments, one at a time
+                 ---------------------------------------------------------------
+                 This is a FULLY TRANSPARENT overlay:
+                   * The PDF canvas NEVER resizes or moves — this aside is
+                     absolutely positioned and takes NO flex space.
+                   * The container has NO background (no blur / tint / glass)
+                     and pointer-events: none, so only the actual UI elements
+                     (mode pills, chat bubbles, composer card, comment card)
+                     capture the pointer. Everything else passes straight
+                     through to the PDF underneath — the user can scroll,
+                     zoom, draw and annotate the PDF while the sidebar is
+                     open.
+                 Mode switcher shows AI Chat OR Comments (never both).
+                 Business logic stays completely separate:
+                   * AI Chat  → js/ai.js           (chats, RAG, streaming)
+                   * Comments → js/annotations.js  (openCommentSidebar etc.)
+                 ================================================================ -->
+            <aside id="float-sidebar" aria-label="AI Chat and Comments">
 
-                <!-- Chat History Drawer (Overlay) -->
-                <div id="chat-history-drawer" class="absolute top-12 left-0 w-full bottom-0 bg-white shadow-xl transform -translate-x-full transition-transform duration-300 z-30 flex flex-col border-r border-gray-200">
-                    <div class="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center shrink-0">
-                        <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">Chat History</span>
-                        <div class="flex gap-2">
-                            <button onclick="toggleChatHistory()" class="text-gray-400 hover:text-gray-600 px-2 py-1 transition-colors" title="Close">
-                                <i class="fa-solid fa-xmark"></i>
+                <!-- Header: mode switcher + contextual actions (transparent strip) -->
+                <div id="fs-header">
+                    <div id="fs-mode-switch" role="tablist" aria-label="Sidebar mode">
+                        <button id="fs-tab-chat" class="fs-tab" onclick="setFloatSidebarMode('chat')" role="tab" aria-label="Show AI Chat" title="AI Chat (Ctrl+/ toggles sidebar)">
+                            <i class="fa-solid fa-robot"></i><span>AI Chat</span>
+                        </button>
+                        <button id="fs-tab-comments" class="fs-tab" onclick="setFloatSidebarMode('comments')" role="tab" aria-label="Show Comments" title="Comments">
+                            <i class="fa-regular fa-comment-dots"></i><span>Comments</span>
+                        </button>
+                    </div>
+                    <div id="fs-header-actions">
+                        <!-- Chat-mode quick actions (hidden in comments mode via CSS) -->
+                        <div id="fs-chat-actions">
+                            <button onclick="toggleChatHistory()" title="Chat History">
+                                <i class="fa-solid fa-bars-staggered"></i>
+                            </button>
+                            <button onclick="createNewChat()" title="New Chat">
+                                <i class="fa-solid fa-plus"></i>
+                            </button>
+                            <button onclick="openAiSettings()" title="AI Settings">
+                                <i class="fa-solid fa-gear"></i>
                             </button>
                         </div>
-                    </div>
-                    <div id="chat-list" class="flex-1 overflow-y-auto bg-gray-50/50">
-                        <!-- Chat items injected here -->
-                    </div>
-                </div>
-
-                <!-- Chat Area (Middle) -->
-                <div id="chat-history" class="p-4 space-y-4 bg-white overflow-y-auto flex-1 z-10 relative">
-                    <div class="text-center text-xs text-gray-400 mt-4">
-                        Ask a question about the loaded PDFs.
-                        <br>Uses <span class="font-mono">nomic-embed-text</span> & local LLM.
-                    </div>
-                </div>
-
-                <!-- Input Area (Bottom) -->
-                <div class="p-3 border-t border-gray-200 bg-gray-50 shrink-0">
-                    <div class="relative">
-                        <textarea id="chat-input" rows="2" class="w-full p-2 pr-10 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none" placeholder="Ask about this document..."></textarea>
-                        <button id="send-chat-btn" class="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
-                            <i class="fa-solid fa-paper-plane text-xs"></i>
+                        <button id="fs-close" onclick="closeFloatSidebar()" title="Close sidebar (Ctrl+/)">
+                            <i class="fa-solid fa-xmark"></i>
                         </button>
                     </div>
-                    <div id="ai-status" class="text-[10px] text-gray-500 mt-1 h-4"></div>
+                </div>
+
+                <div id="fs-body">
+
+                    <!-- ======================================
+                         AI CHAT PANE  (business logic: ai.js)
+                         ====================================== -->
+                    <div id="fs-chat-pane">
+
+                        <!-- Chat History Drawer (overlay card) -->
+                        <div id="chat-history-drawer" class="absolute top-0 left-0 w-full bottom-0 bg-white shadow-xl transform -translate-x-full transition-transform duration-300 z-30 flex flex-col rounded-xl border border-gray-200 overflow-hidden">
+                            <div class="p-3 bg-gray-50 border-b border-gray-100 flex justify-between items-center shrink-0">
+                                <span class="text-xs font-bold text-gray-600 uppercase tracking-wider">Chat History</span>
+                                <div class="flex gap-2">
+                                    <button onclick="toggleChatHistory()" class="text-gray-400 hover:text-gray-600 px-2 py-1 transition-colors" title="Close">
+                                        <i class="fa-solid fa-xmark"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="chat-list" class="flex-1 overflow-y-auto bg-gray-50/50 rounded-b-xl">
+                                <!-- Chat items injected here -->
+                            </div>
+                        </div>
+
+                        <!-- Chat Area (Middle): transparent scroll list — only the
+                             bubbles themselves capture the pointer, so the user can
+                             still scroll / zoom / draw the PDF "between" messages. -->
+                        <div id="chat-history" class="p-3 space-y-3 overflow-y-auto flex-1 relative">
+                            <div class="fs-hint-card text-center text-xs text-gray-500">
+                                Ask a question about the loaded PDFs.
+                                <br>Uses <span class="font-mono">nomic-embed-text</span> & local LLM.
+                            </div>
+                        </div>
+
+                        <!-- Input Area (Bottom): floating composer card -->
+                        <div id="fs-composer" class="shrink-0 px-1.5 pb-1.5">
+                            <div class="fs-composer-card">
+                                <div class="relative">
+                                    <textarea id="chat-input" rows="2" class="w-full p-2 pr-10 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-none" placeholder="Ask about this document..."></textarea>
+                                    <button id="send-chat-btn" class="absolute bottom-2 right-2 p-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors">
+                                        <i class="fa-solid fa-paper-plane text-xs"></i>
+                                    </button>
+                                </div>
+                                <div id="ai-status" class="text-[10px] text-gray-600 mt-1 px-1 h-4"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ==========================================
+                         COMMENTS PANE  (business logic: annotations.js)
+                         ==========================================
+                         Reuses the SAME comment editor UI as before
+                         (#comment-editor-panel with preview + markdown editor).
+                         When no comment is active the panel keeps its `hidden`
+                         class and the empty-state hint shows instead (CSS:
+                         #comment-editor-panel.hidden ~ #fs-comments-empty). -->
+                    <div id="fs-comment-pane">
+
+                        <div id="comment-editor-panel" class="hidden">
+                            <!-- Header -->
+                            <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 shrink-0">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-comment-dots text-blue-600"></i>
+                                    <span class="text-sm font-bold text-gray-700">Comment</span>
+                                </div>
+                                <button onclick="closeCommentSidebar()" class="text-gray-400 hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center rounded hover:bg-white" title="Close comment (Esc)">
+                                    <i class="fa-solid fa-xmark text-xl"></i>
+                                </button>
+                            </div>
+
+                            <!-- Top: Rendered Markdown Preview -->
+                            <div id="comment-preview-area" class="flex-1 overflow-y-auto p-4"></div>
+
+                            <!-- Bottom: Raw Markdown Editor (hidden in preview-only mode) -->
+                            <div id="comment-editor-area" class="border-t border-gray-200 shrink-0 flex flex-col">
+                                <div class="px-3 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between">
+                                    <span>Markdown Editor</span>
+                                    <span class="text-gray-400 font-normal normal-case tracking-normal">Ctrl+Enter to save</span>
+                                </div>
+                                <textarea id="comment-markdown-input" rows="6" class="mx-3 mb-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none font-mono" placeholder="Type markdown here...&#10;**bold**, *italic*, # heading&#10;$math$, ```code```"></textarea>
+                                <div class="flex justify-end gap-2 px-3 pb-3 pt-1">
+                                    <button onclick="cancelCommentEdit()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded text-sm transition-colors">Cancel</button>
+                                    <button onclick="saveCommentFromSidebar()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-medium shadow-sm transition-colors">
+                                        <i class="fa-solid fa-floppy-disk mr-1"></i>Save
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Edit button bar (only shown in preview-only mode) -->
+                            <div id="comment-edit-button-area" class="hidden border-t border-gray-200 shrink-0 p-3">
+                                <button onclick="setCommentSidebarMode('split')" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                                    <i class="fa-solid fa-pen mr-1"></i> Edit
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Empty state (pointer-events: none — taps pass through to
+                             the PDF so the user can immediately click a comment icon
+                             or place a new one with the T tool). -->
+                        <div id="fs-comments-empty">
+                            <div class="fs-hint-card">
+                                <i class="fa-regular fa-comment-dots text-2xl mb-2 block"></i>
+                                No comment selected.
+                                <br>Click a comment icon on the PDF — or pick the
+                                <b>T</b> tool and tap the page to add one.
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </aside>
 
         </main>
-    </div>
-
-    <!-- ============================================ -->
-    <!-- Comment Editor Overlay (floating sidebar)    -->
-    <!-- ============================================ -->
-    <!-- This is a FIXED-POSITION overlay that floats -->
-    <!-- on top of everything else. It does NOT push  -->
-    <!-- or resize the AI chat sidebar — the AI chat  -->
-    <!-- stays wherever it was (collapsed or open),  -->
-    <!-- and this panel simply covers the right side  -->
-    <!-- of the screen with a higher z-index.        -->
-    <!-- A semi-transparent backdrop dims the rest    -->
-    <!-- of the UI to focus attention on the comment.-->
-    <div id="comment-backdrop" class="hidden fixed inset-0 bg-black/30 z-[1999]"></div>
-
-    <div id="comment-editor-panel" class="hidden fixed top-0 right-0 bottom-0 w-full sm:w-[400px] bg-white shadow-2xl flex flex-col z-[2000]">
-        <!-- Header -->
-        <div class="h-12 border-b border-gray-200 flex items-center justify-between px-4 bg-gradient-to-r from-blue-50 to-indigo-50 shrink-0 shadow-sm">
-            <div class="flex items-center gap-2">
-                <i class="fa-solid fa-comment-dots text-blue-600"></i>
-                <span class="text-sm font-bold text-gray-700">Comment</span>
-            </div>
-            <button onclick="closeCommentSidebar()" class="text-gray-400 hover:text-red-500 transition-colors w-8 h-8 flex items-center justify-center rounded hover:bg-white" title="Close (Esc)">
-                <i class="fa-solid fa-xmark text-xl"></i>
-            </button>
-        </div>
-
-        <!-- Top: Rendered Markdown Preview -->
-        <div id="comment-preview-area" class="flex-1 overflow-y-auto p-4 bg-white"></div>
-
-        <!-- Bottom: Raw Markdown Editor (hidden in preview-only mode) -->
-        <div id="comment-editor-area" class="border-t border-gray-200 bg-gray-50 shrink-0 flex flex-col">
-            <div class="px-3 pt-2 pb-1 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center justify-between">
-                <span>Markdown Editor</span>
-                <span class="text-gray-400 font-normal normal-case tracking-normal">Ctrl+Enter to save</span>
-            </div>
-            <textarea id="comment-markdown-input" rows="6" class="mx-3 mb-1 p-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none font-mono" placeholder="Type markdown here...&#10;**bold**, *italic*, # heading&#10;$math$, ```code```"></textarea>
-            <div class="flex justify-end gap-2 px-3 pb-3 pt-1">
-                <button onclick="cancelCommentEdit()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1.5 rounded text-sm transition-colors">Cancel</button>
-                <button onclick="saveCommentFromSidebar()" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-medium shadow-sm transition-colors">
-                    <i class="fa-solid fa-floppy-disk mr-1"></i>Save
-                </button>
-            </div>
-        </div>
-
-        <!-- Edit button bar (only shown in preview-only mode) -->
-        <div id="comment-edit-button-area" class="hidden border-t border-gray-200 bg-gray-50 shrink-0 p-3">
-            <button onclick="setCommentSidebarMode('split')" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded text-sm font-medium transition-colors">
-                <i class="fa-solid fa-pen mr-1"></i> Edit
-            </button>
-        </div>
     </div>
 
     <div id="tool-cursor" class="hidden fixed pointer-events-none z-[100] flex items-center justify-center">
@@ -767,27 +821,27 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=panelmin-v13"></script>
-    <script src="/js/config.js?v=panelmin-v13"></script>
-    <script src="/js/api.js?v=panelmin-v13"></script>
-    <script src="/js/state.js?v=panelmin-v13"></script>
-    <script src="/js/database.js?v=panelmin-v13"></script>
-    <script src="/js/ui.js?v=panelmin-v13"></script>
-    <script src="/js/ai.js?v=panelmin-v13"></script>
-    <script src="/js/pdf.js?v=panelmin-v13"></script>
-    <script src="/js/search.js?v=panelmin-v13"></script>
-    <script src="/js/annotations.js?v=panelmin-v13"></script>
-    <script src="/js/links.js?v=panelmin-v13"></script>
+    <script src="/js/utils.js?v=floatside-v16"></script>
+    <script src="/js/config.js?v=floatside-v16"></script>
+    <script src="/js/api.js?v=floatside-v16"></script>
+    <script src="/js/state.js?v=floatside-v16"></script>
+    <script src="/js/database.js?v=floatside-v16"></script>
+    <script src="/js/ui.js?v=floatside-v16"></script>
+    <script src="/js/ai.js?v=floatside-v16"></script>
+    <script src="/js/pdf.js?v=floatside-v16"></script>
+    <script src="/js/search.js?v=floatside-v16"></script>
+    <script src="/js/annotations.js?v=floatside-v16"></script>
+    <script src="/js/links.js?v=floatside-v16"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=panelmin-v13"></script>
-    <script src="/js/conflict.js?v=panelmin-v13"></script>
+    <script src="/js/undo.js?v=floatside-v16"></script>
+    <script src="/js/conflict.js?v=floatside-v16"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=panelmin-v13"></script>
+    <script src="/js/yjs-collab.js?v=floatside-v16"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=panelmin-v13"></script>
-    <script src="/js/filemanager.js?v=panelmin-v13"></script>
-    <script src="/js/events.js?v=panelmin-v13"></script>
-    <script src="/js/app.js?v=panelmin-v13"></script>
+    <script src="/js/folders.js?v=floatside-v16"></script>
+    <script src="/js/filemanager.js?v=floatside-v16"></script>
+    <script src="/js/events.js?v=floatside-v16"></script>
+    <script src="/js/app.js?v=floatside-v16"></script>
 
 </body>
 </html>

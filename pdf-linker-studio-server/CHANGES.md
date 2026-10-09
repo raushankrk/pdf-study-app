@@ -587,3 +587,113 @@ Full battery re-run green: position_resume 18, minimize_panel 30,
 active_pdf_toolbar 23, touch_slider_space 8, frontend_bugs 10,
 stroke_continuity 23, undo_yjs_rebuild 5, realtime_sync 7,
 annotation_movement 4.
+
+## Feature — One fully transparent floating sidebar for AI Chat + Comments
+
+**Requested**: Replace the separate AI Chat sidebar (a flex child that
+resized the PDF canvas when toggled) and the Comments overlay (a fixed
+panel with a dimming backdrop that blocked all PDF interaction) with ONE
+fully transparent floating overlay sidebar. The PDF canvas must never
+resize or move; the sidebar is only a transparent floating tool layer.
+
+**Implementation**:
+- **New `#float-sidebar` overlay** (`static/index.html`) — an absolutely
+  positioned `<aside>` INSIDE `#workspace-main` (no flex space taken). The
+  PDF panels keep their exact sizes; live-verified canvas/panel rects are
+  byte-identical with the sidebar open, closed and re-opened.
+- **100% transparent container** — `background: transparent`, no border,
+  no shadow, `backdrop-filter: none` (explicitly no blur / tint / glass).
+  PDF content is fully visible behind the sidebar column.
+- **pointer-events strategy** — the container, header strip, panes and the
+  chat message list are `pointer-events: none`; only real UI elements opt
+  in (`pointer-events: auto`): mode pills, header action buttons, chat
+  bubbles / hint cards, composer card, comment editor card. Taps on the
+  transparent gaps fall straight through to the PDF — scroll, zoom, draw,
+  erase and comment placement all work while the sidebar is open (verified
+  live with a pen stroke that crosses INTO the sidebar column and a
+  comment placed "under" it).
+- **Mode switcher** — two pills ("AI Chat" / "Comments") driven purely by
+  body classes (`fs-mode-chat` / `fs-mode-comments`, exactly one set):
+  pane visibility AND pill active styling are CSS-only. Chat-only header
+  actions (history / new chat / AI settings) hide in comments mode; the
+  X closes the whole sidebar.
+- **Business logic untouched & separate** — AI Chat (ai.js) and Comments
+  (annotations.js) keep every element ID and function; the comment editor
+  card is the SAME `#comment-editor-panel` markup relocated into the
+  comments pane. `openCommentSidebar()` now calls `openFloatSidebar
+  ('comments')` (reveals the sidebar in comments mode); `closeComment
+  Sidebar()` drops the backdrop and returns the sidebar to the chat pane
+  (the original "closing the comment restores the chat view" behavior).
+- **No more interaction blockers** — the dimming `#comment-backdrop` and
+  the `handlePointerDown` "activeComment open ⇒ do nothing" guard are
+  GONE: annotating while a comment is open is now the intended behavior
+  (tapping the page with the T tool opens the next comment in the same
+  sidebar). Touch handlers (`touchstart` / `touchmove`) skip only real
+  sidebar UI, keeping pass-through gaps live on tablets.
+- **Comments empty state** — when no comment is active, the comments pane
+  shows a hint card (`#comment-editor-panel.hidden ~ #fs-comments-empty`,
+  pure CSS) that is itself pointer-events:none, so the user can
+  immediately click a comment icon on the PDF — even one sitting behind
+  the hint.
+- **Persistence + compat** — settings now save `floatSidebarOpen` +
+  `floatSidebarMode`; boot restores them and maps older blobs
+  (`aiSidebarCollapsed: true` → closed) so returning users keep their
+  previous layout. `<body>` defaults to open + chat mode (same default as
+  the old sidebar).
+- **Layout fixes** — the right panel's floating minimize button stays
+  visible/clickable (sidebar content starts below it via top padding);
+  the chat-history drawer is clipped by its pane (`overflow: hidden`) so
+  the closed drawer can no longer leak over the PDF (caught live); the
+  old narrow-viewport/iPad auto-collapse rules for the flex sidebar were
+  removed (an overlay needs no auto-collapse); touch devices get bigger
+  pills/buttons.
+- Header "AI" button and `Ctrl+/` keep toggling the sidebar; the button
+  dims while the sidebar is closed. Cache version → `floatside-v16`
+  (CSS + all scripts + header chip).
+
+**Files changed**:
+- `static/index.html` — `#ai-sidebar` flex child removed; `#float-sidebar`
+  overlay added (mode switcher, chat pane with the original chat DOM,
+  comments pane with the original `#comment-editor-panel` DOM);
+  `#comment-backdrop` deleted; body defaults; versions → `floatside-v16`.
+- `static/js/ui.js` — `toggleAiSidebar()` rewritten; new
+  `getFloatSidebarMode` / `setFloatSidebarMode` / `openFloatSidebar` /
+  `closeFloatSidebar` (close cancels an in-progress comment first — old
+  panel-X semantics).
+- `static/js/annotations.js` — `openCommentSidebar` / `closeCommentSidebar`
+  rewired to the floating sidebar; backdrop references removed.
+- `static/js/events.js` — `handlePointerDown` guards `#float-sidebar`
+  instead of the backdrop; the activeComment block-guard removed.
+- `static/js/app.js` — boot restores open/mode with old-key fallback;
+  touch handlers updated; backdrop click-to-close listener removed.
+- `static/js/database.js` — persists `floatSidebarOpen` / `floatSidebarMode`.
+- `static/js/ai.js` — chat empty-state uses the readable hint card.
+- `static/js/config.js` — comment els comment updated.
+- `static/css/style.css` — floating sidebar system (transparency,
+  pointer-events islands, pills, cards, empty state, touch targets),
+  comment panel restyled as a floating card, all old `#ai-sidebar` /
+  backdrop rules removed.
+
+**Live verification** (headless Chromium, real server + project):
+`#float-sidebar` computed `rgba(0,0,0,0)` + `pointer-events: none`; panel
+and canvas rects identical open/closed/reopened; `elementFromPoint` in
+transparent gaps hits the PDF (annotation canvas) while pills/composer hit
+the sidebar UI; real click on Comments pill switches panes + shows the
+empty hint; comment placed UNDER the sidebar via pass-through click →
+editor card opened in split mode → markdown saved → preview mode with
+rendered bold; pen stroke crossing into the sidebar column recorded all 5
+points; Esc closed the comment back to chat view; Ctrl+/ toggled the
+sidebar; comment icon clicked THROUGH the transparent layer; sidebar X
+preserved the saved comment; reload restored closed/open state + mode;
+minimize button clickable in the top padding zone; drawer opens exactly
+within its pane. Zero page errors. Screenshots: fs_chat_bubbles.png,
+fs_drawer_clipped.png.
+
+**Test**: `tests/test_float_sidebar.js` — 38 tests across 7 suites (HTML
+structure incl. overlay placement + preserved IDs, cache versioning,
+mode-switcher/open/close logic incl. invalid-mode + cancel-on-close,
+comments wiring with zero backdrop references, annotate-while-open guard
+removal, persistence + boot compat, CSS transparency/pointer-events/
+clipping contract). Full battery re-run green: position_resume 18,
+tag_rail 21, minimize_panel 30, active_pdf_toolbar 23, touch_slider_space
+8, frontend_bugs 10, stroke_continuity 23, undo_yjs_rebuild 5.

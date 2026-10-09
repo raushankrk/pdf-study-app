@@ -326,22 +326,217 @@ body.left-sidebar-collapsed #tag-rail { display: flex; }
     }
 }
 
-/* --- AI Sidebar Styles --- */
-#ai-sidebar {
-    width: 320px;
-    transition: width 0.3s ease-in-out;
-    display: flex; flex-direction: column;
-}
-body.ai-sidebar-collapsed #ai-sidebar { width: 0 !important; overflow: hidden; padding: 0; border: none; }
-body.ai-sidebar-collapsed .toggle-ai-btn i { transform: rotate(180deg); }
+/* ======================================================================== */
+/* --- Floating Tool Sidebar (AI Chat + Comments) -------------------------- */
+/* ======================================================================== */
+/* ONE fully transparent overlay hosting both the AI chat and the comment
+   editor (mode switcher shows exactly one pane at a time). Core rules:
+     * The PDF canvas NEVER resizes or moves — the sidebar is absolutely
+       positioned inside #workspace-main and takes NO flex space.
+     * The container background is 100% TRANSPARENT: no blur, no tint, no
+       glass. Only the real UI elements (mode pills, chat bubbles, composer
+       card, comment card) are visible.
+     * pointer-events: none on the container, pointer-events: auto on the
+       real UI elements → taps on transparent gaps fall straight through to
+       the PDF: scroll / zoom / draw / annotate keep working while the
+       sidebar is open.                                                      */
 
-#chat-history { scroll-behavior: smooth; flex: 1; overflow-y: auto; }
+#float-sidebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    /* Start below the right panel's floating minimize button (top-right
+       corner, 26px + margins) so both controls stay visible and clickable. */
+    padding: 44px 10px 10px;
+    width: min(380px, calc(100vw - 60px));
+    display: none;                /* shown only with body.float-sidebar-open */
+    flex-direction: column;
+    background: transparent;      /* 100% transparent — by design */
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;        /* explicitly NO glass effect */
+    -webkit-backdrop-filter: none;
+    pointer-events: none;         /* the container never captures the pointer */
+    z-index: 1200;                /* above canvas content; below modals (9999) */
+}
+body.float-sidebar-open #float-sidebar { display: flex; }
+/* Header AI toggle affordance: dimmed while the floating sidebar is closed. */
+body:not(.float-sidebar-open) .toggle-ai-btn { opacity: 0.7; }
+
+/* Header strip: mode switcher + contextual actions. The strip itself is
+   transparent — only the pills / buttons capture the pointer. */
+#fs-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+#fs-mode-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    pointer-events: auto;
+}
+.fs-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    border: 1px solid #d1d5db;
+    background: rgba(255, 255, 255, 0.92);
+    color: #4b5563;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.fs-tab:hover { background: #ffffff; color: #1f2937; }
+/* Active pill is driven purely by the body mode class — zero JS needed. */
+body.fs-mode-chat #fs-tab-chat,
+body.fs-mode-comments #fs-tab-comments {
+    background: #4f46e5;
+    border-color: #4f46e5;
+    color: #ffffff;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.4);
+}
+#fs-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    pointer-events: auto;
+}
+#fs-header-actions button {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    border: 1px solid #d1d5db;
+    background: rgba(255, 255, 255, 0.92);
+    color: #4b5563;
+    font-size: 0.75rem;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+#fs-header-actions button:hover { background: #ffffff; color: #1f2937; }
+#fs-close:hover { color: #dc2626 !important; border-color: #fca5a5 !important; }
+/* Chat-only quick actions disappear while the comments pane is shown. */
+body.fs-mode-comments #fs-chat-actions { display: none; }
+
+/* Body: the two panes stack in the same transparent column; exactly one is
+   displayed, driven by the body mode classes. */
+#fs-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    pointer-events: none;
+}
+#fs-chat-pane,
+#fs-comment-pane {
+    flex: 1;
+    min-height: 0;
+    display: none;
+    flex-direction: column;
+    position: relative;
+    pointer-events: none;
+    /* Clip at the pane edge: the chat-history drawer slides in from the
+       left via translateX(-100%) — without this it would leak out over the
+       PDF while "closed" (the old flex sidebar clipped it via its own
+       overflow rule). */
+    overflow: hidden;
+}
+body.fs-mode-chat #fs-chat-pane { display: flex; }
+body.fs-mode-comments #fs-comment-pane { display: flex; }
+
+/* --- Chat pane --- */
+/* The message list itself is a pass-through: only its direct children
+   (bubbles / hint cards) capture the pointer, so wheel & touch gestures
+   between messages scroll / zoom the PDF underneath. */
+#chat-history { scroll-behavior: smooth; flex: 1; overflow-y: auto; pointer-events: none; }
+#chat-history > * { pointer-events: auto; }
 .ai-message { display: flex; flex-direction: column; max-width: 90%; animation: fadeIn 0.3s ease; margin-bottom: 12px; }
 .ai-message.user { align-self: flex-end; align-items: flex-end; }
 .ai-message.assistant { align-self: flex-start; align-items: flex-start; }
 .ai-bubble { padding: 8px 12px; border-radius: 8px; font-size: 0.85rem; line-height: 1.4; word-wrap: break-word; }
 .ai-message.user .ai-bubble { background-color: #3b82f6; color: white; border-bottom-right-radius: 0; }
 .ai-message.assistant .ai-bubble { background-color: #f3f4f6; color: #1f2937; border-bottom-left-radius: 0; border: 1px solid #e5e7eb; }
+
+/* Floating hint / empty-state card (chat empty state, comments empty state).
+   White-ish so text stays readable over the PDF, but it is a CONTENT card —
+   the sidebar background itself stays fully transparent. */
+.fs-hint-card {
+    display: block;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+    line-height: 1.55;
+    pointer-events: auto;
+}
+
+/* Floating composer card at the bottom of the chat pane. */
+#fs-composer { flex-shrink: 0; pointer-events: none; }
+.fs-composer-card {
+    background: rgba(255, 255, 255, 0.96);
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+    pointer-events: auto;
+}
+
+/* Chat history drawer: floating white card sliding over the chat pane. */
+#chat-history-drawer { pointer-events: auto; border-radius: 12px; }
+
+/* --- Comments pane --- */
+/* The comment editor is reused as-is (#comment-editor-panel) but now lives
+   inside the transparent sidebar as a floating white card. When no comment
+   is active the panel keeps its `hidden` class and the empty-state hint
+   shows instead (sibling selector below). */
+#comment-editor-panel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    background: rgba(255, 255, 255, 0.97);
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.18);
+    overflow: hidden;
+    pointer-events: auto;
+}
+/* Real hide (ID specificity beats both Tailwind's .hidden and the flex
+   rule above). openCommentSidebar sets inline display:flex to show it. */
+#comment-editor-panel.hidden { display: none; }
+
+/* Empty state: shown only while the editor panel is hidden. It is
+   pointer-events:none so taps pass through — the user can immediately click
+   a comment icon on the PDF (even one sitting behind this hint). */
+#fs-comments-empty {
+    flex: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    pointer-events: none;
+}
+#comment-editor-panel.hidden ~ #fs-comments-empty { display: flex; }
+#fs-comments-empty .fs-hint-card {
+    pointer-events: none;
+    max-width: 260px;
+    text-align: center;
+    color: #4b5563;
+}
 
 /* Citation Buttons in Chat */
 .citation-chip {
@@ -1822,9 +2017,11 @@ body > header > * {
        desktops never matched this media query). The slider bar must keep
        its 4px height — do NOT re-add min-height/height overrides here. */
 
-    /* Sidebar default widths — narrower so the PDF gets more space on a tablet. */
+    /* Sidebar default widths — narrower so the PDF gets more space on a tablet.
+       The floating tool sidebar is an overlay (no flex space) — slightly
+       narrower on tablets so more of the PDF stays visible behind it. */
     #left-sidebar { width: 14rem !important; }
-    #ai-sidebar  { width: 280px !important; }
+    #float-sidebar { width: min(320px, calc(100vw - 24px)); padding: 46px 8px 8px; }
 
     /* Floating panel-minimize buttons: 36px tap target on touch
        (Apple HIG-friendly) with a slightly larger icon. */
@@ -1835,6 +2032,10 @@ body > header > * {
         top: 10px;
         right: 12px;
     }
+
+    /* Floating tool sidebar: finger-friendly mode pills + header buttons. */
+    .fs-tab { padding: 8px 14px; font-size: 0.85rem; }
+    #fs-header-actions button { width: 36px; height: 36px; font-size: 0.9rem; }
 
     /* (Brand text + Dashboard label + PDF icon are already hidden on ALL
        devices — see the .header-* rules above.) */
@@ -1849,11 +2050,10 @@ body > header > * {
         border: none !important;
         overflow: hidden;
     }
-    #ai-sidebar {
-        width: 0 !important;
-        border: none !important;
-        overflow: hidden;
-    }
+    /* The floating tool sidebar is already an overlay — on phones just make
+       it a bit narrower (and touch-friendlier tap targets come from the
+       base rules). No push/collapse behavior needed anymore. */
+    #float-sidebar { width: min(92vw, 360px); }
     body:not(.left-sidebar-collapsed) #left-sidebar {
         position: absolute;
         z-index: 50;
@@ -1863,32 +2063,12 @@ body > header > * {
         height: 100%;
         box-shadow: 4px 0 16px rgba(0,0,0,0.18);
     }
-    body:not(.ai-sidebar-collapsed) #ai-sidebar {
-        position: absolute;
-        z-index: 50;
-        right: 0;
-        width: 90vw !important;
-        max-width: 360px;
-        border-left: 1px solid #e5e7eb !important;
-        height: 100%;
-        box-shadow: -4px 0 16px rgba(0,0,0,0.18);
-    }
 }
 
-/* iPad in portrait is typically 810px / 1024px CSS pixels wide. In landscape
-   it's 1024px / 1366px. Hide the AI sidebar by default below 1024px so the
-   editor gets enough horizontal space. The user can re-open it from the toolbar. */
-@media (hover: none) and (max-width: 1024px) {
-    body:not(.ai-sidebar-collapsed) #ai-sidebar {
-        width: 0 !important;
-        border: none !important;
-        overflow: hidden;
-        padding: 0 !important;
-    }
-    body:not(.ai-sidebar-collapsed) .toggle-ai-btn i {
-        transform: rotate(180deg);
-    }
-}
+/* NOTE: the old "hide the AI sidebar by default below 1024px on touch
+   devices" rule was REMOVED — the floating tool sidebar is a transparent
+   overlay that takes no layout space, so there is no need to auto-collapse
+   it on tablets. The PDF canvas is never resized by the sidebar. */
 
 
 /* ====================================================================== */
@@ -1986,46 +2166,15 @@ body > header > * {
 }
 
 /* ====================================================================== */
-/* --- Comment Overlay Sidebar ------------------------------------------ */
+/* --- Comment Editor (inside the floating tool sidebar) ---------------- */
 /* ====================================================================== */
-/* The comment editor is a FIXED-POSITION floating panel that overlays    */
-/* everything else on the screen. It does NOT push, resize, or modify the  */
-/* AI chat sidebar — the AI chat stays wherever it was (collapsed or open) */
-/* and this panel simply covers the right side of the screen with a       */
-/* higher z-index.                                                        */
-/*                                                                       */
-/* A semi-transparent backdrop (#comment-backdrop) sits behind the panel  */
-/* to dim the rest of the UI and focus attention on the comment. Clicking */
-/* the backdrop closes the comment (handled in annotations.js).          */
-/* ====================================================================== */
+/* The comment editor UI (#comment-editor-panel) is reused unchanged but  */
+/* now lives inside the transparent floating sidebar (#float-sidebar) as  */
+/* a floating white card in the COMMENTS pane. There is NO backdrop       */
+/* anymore: the sidebar container is pointer-events:none, so the user can */
+/* keep annotating and interacting with the PDF while a comment is open.  */
+/* Visibility/hide rules are in the "Floating Tool Sidebar" block above.  */
 
-/* The backdrop — a full-screen dim overlay behind the comment panel. */
-#comment-backdrop {
-    background: rgba(15, 23, 42, 0.35);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-    transition: opacity 0.2s ease;
-}
-#comment-backdrop.hidden { opacity: 0; pointer-events: none; }
-
-/* The comment editor panel itself — a floating right-side sidebar. */
-#comment-editor-panel {
-    display: flex;
-    flex-direction: column;
-    background: white;
-    box-shadow: -8px 0 30px rgba(0, 0, 0, 0.18);
-    transition: transform 0.25s ease, opacity 0.2s ease;
-    transform: translateX(0);
-}
-#comment-editor-panel.hidden {
-    transform: translateX(100%);
-    opacity: 0;
-    pointer-events: none;
-}
-/* On very narrow screens (phones), the panel takes the full width. */
-@media (max-width: 640px) {
-    #comment-editor-panel { width: 100% !important; }
-}
 #comment-preview-area {
     line-height: 1.6;
     font-size: 0.85rem;

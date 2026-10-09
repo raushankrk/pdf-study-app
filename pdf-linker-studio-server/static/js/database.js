@@ -220,7 +220,10 @@ async function saveSettings() {
         taggedDocIds: (Array.isArray(state.taggedDocIds) ? state.taggedDocIds : [])
             .filter(id => state.documents[id]),
         leftSidebarCollapsed: document.body.classList.contains('left-sidebar-collapsed'),
-        aiSidebarCollapsed: document.body.classList.contains('ai-sidebar-collapsed'),
+        // Floating tool sidebar (AI Chat + Comments): open state + which pane
+        // is shown. Restored on boot; exactly one mode class is always set.
+        floatSidebarOpen: document.body.classList.contains('float-sidebar-open'),
+        floatSidebarMode: document.body.classList.contains('fs-mode-comments') ? 'comments' : 'chat',
         aiSettings: state.aiSettings,
         // File-explorer persistence
         currentFolderId: state.currentFolderId || ROOT_FOLDER_ID,
