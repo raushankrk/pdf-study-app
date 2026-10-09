@@ -440,17 +440,15 @@ function renderTextLayer(side) {
 //
 //   * On the PDF we render only a small comment-icon at (x, y). The full
 //     markdown is NEVER rendered on the PDF.
-//   * Clicking the icon opens the FLOATING TOOL SIDEBAR (#float-sidebar) in
-//     the COMMENTS pane, in one of two modes:
+//   * Clicking the icon opens the AI sidebar in one of two modes:
 //       - 'split'   : top = rendered preview, bottom = raw markdown editor.
 //                     Used when the comment has no content yet (just placed)
 //                     or after the user clicks Edit in preview mode.
 //       - 'preview' : full-width rendered markdown preview + Edit button.
 //                     Used when an existing (non-empty) comment is clicked.
-//   * The sidebar is a fully transparent overlay — the PDF canvas is never
-//     resized or moved, and the user can keep annotating the PDF while a
-//     comment is open. Closing the comment returns the sidebar to the chat
-//     pane (mode switcher); the sidebar itself stays available.
+//   * The sidebar reuses the existing #ai-sidebar — when a comment is open,
+//     the chat history / input are hidden and the comment editor panel is
+//     shown in their place. Closing the comment restores the chat view.
 // ======================================================================
 
 // Render the small clickable comment icon at (box.x, box.y) on the PDF.
@@ -530,15 +528,13 @@ function openCommentSidebar(commentId, mode, side) {
         isNew: false,
     };
 
-    console.log('[openCommentSidebar] Opening floating sidebar in', mode, 'mode');
+    console.log('[openCommentSidebar] Opening overlay sidebar in', mode, 'mode');
 
-    // Reveal the floating tool sidebar in COMMENTS mode. The sidebar may have
-    // been closed or showing the chat pane — openFloatSidebar handles both.
-    // The PDF canvas is NEVER resized or moved (transparent overlay) and the
-    // user can keep annotating the PDF while this comment stays open.
-    if (typeof openFloatSidebar === 'function') {
-        openFloatSidebar('comments');
-    }
+    // Show the floating overlay panel + backdrop. We do NOT touch the AI
+    // chat sidebar at all — it stays wherever it was (collapsed or open).
+    // The comment panel has a higher z-index so it sits on top of everything.
+    const backdrop = document.getElementById('comment-backdrop');
+    if (backdrop) backdrop.classList.remove('hidden');
 
     els.commentEditorPanel.classList.remove('hidden');
     els.commentEditorPanel.style.display = 'flex';
@@ -741,21 +737,15 @@ async function cancelCommentEdit() {
 }
 window.cancelCommentEdit = cancelCommentEdit;
 
-// Close the comment editor: clears the active comment and — if the floating
-// sidebar is showing the comments pane — switches the sidebar back to the
-// chat pane (the original "closing the comment restores the chat view"
-// behavior). The floating sidebar itself stays available; the user closes it
-// with its own X button or Ctrl+/.
+// Close the comment sidebar and restore the AI chat view.
 function closeCommentSidebar() {
     state.activeComment = {
         id: null, side: null, docId: null, pageId: null, mode: null, isNew: false,
     };
     els.commentEditorPanel.classList.add('hidden');
     els.commentEditorPanel.style.display = 'none';
-    if (typeof setFloatSidebarMode === 'function' &&
-        document.body.classList.contains('fs-mode-comments')) {
-        setFloatSidebarMode('chat');
-    }
+    const backdrop = document.getElementById('comment-backdrop');
+    if (backdrop) backdrop.classList.add('hidden');
     // Re-render comment icons so the previously-active one is no longer highlighted.
     ['left', 'right'].forEach(s => renderTextLayer(s));
 }

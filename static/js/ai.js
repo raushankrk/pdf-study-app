@@ -86,7 +86,7 @@ function renderChatMessages() {
 
     if (chat.messages.length === 0) {
         els.chatHistory.innerHTML = `
-            <div class="fs-hint-card text-center text-xs text-gray-500">
+            <div class="text-center text-xs text-gray-400 mt-4">
                 Ask a question about the loaded PDFs.
                 <br>Uses <span class="font-mono">nomic-embed-text</span> & local LLM.
             </div>`;
