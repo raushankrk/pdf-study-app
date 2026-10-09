@@ -563,6 +563,14 @@ function setAppMode(mode, save = true) {
 }
 
 function setAnnoTool(tool, save = true) {
+    // ---- Size flyout: any tool switch closes the size menu ----------------
+    // The flyout belongs to ONE tool button; selecting a different tool
+    // (button, keyboard shortcut, programmatic) always dismisses it.
+    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
+    // Same for the color flyout (#tool-color-menu, js/colormenu.js) — it
+    // edits ONE tool's color and must never outlive that tool.
+    if (typeof closeToolColorMenu === 'function') closeToolColorMenu();
+
     // ---- BUG FIX (Pen/Highlighter tool switching) ----
     // `state.annoTool` is per-device UI state. It MUST NEVER be overwritten
     // by remote collaboration (Yjs awareness, project revision changes,
@@ -601,17 +609,21 @@ function setAnnoTool(tool, save = true) {
             highlighter: { color: '#facc15', thickness: 20 }
         };
     }
-    if (state.toolSettings[tool]) {
-        const settings = state.toolSettings[tool];
+    const settingsKey = (typeof toolSettingsKeyFor === 'function') ? toolSettingsKeyFor(tool) : tool;
+    if (state.toolSettings[settingsKey] || state.toolSettings[tool]) {
+        // Eraser tool ids are hyphenated but their settings buckets are
+        // camelCase (toolSettingsKeyFor) — fall back to the raw id so blobs
+        // saved by older builds (which wrote 'eraser-pixel' keys) still load.
+        const settings = state.toolSettings[settingsKey] || state.toolSettings[tool];
         if (settings.color !== undefined) {
             state.annoColor = settings.color;
-            els.colorPicker.value = settings.color;
+            // Color readouts (preview canvas dot, color-menu chip) refresh
+            // via updateThicknessPreview() at the end of this function.
         }
         if (settings.thickness !== undefined) {
             state.annoThickness = settings.thickness;
-            els.thicknessPicker.value = settings.thickness;
-            const thicknessDisplay = document.getElementById('thickness-val');
-            if (thicknessDisplay) thicknessDisplay.innerText = settings.thickness;
+            // Numeric readouts (button badge + size-menu value chip) are
+            // refreshed by updateToolSizeBadge() at the end of this function.
         }
     }
 
@@ -634,16 +646,13 @@ function setAnnoTool(tool, save = true) {
         }
     }
 
-    // Show/hide pen customization panel
+    // Show/hide pen customization panel (no separator — the groups' own
+    // rounded trays separate them; separators were removed to save space)
     const isLineTool = (tool === 'pen' || tool === 'highlighter');
     const penCustomization = document.getElementById('pen-customization');
-    const penSep = document.getElementById('pen-customization-sep');
     if (penCustomization) {
         penCustomization.classList.toggle('hidden', !isLineTool);
         penCustomization.classList.toggle('flex', isLineTool);
-    }
-    if (penSep) {
-        penSep.classList.toggle('hidden', !isLineTool);
     }
 
     // ---- Image tool: open file picker immediately ----
@@ -668,6 +677,9 @@ function setAnnoTool(tool, save = true) {
     if (lineModeBtn) lineModeBtn.style.display = isLineTool ? '' : 'none';
 
     updateThicknessPreview();
+    // Numeric size badge on the active tool button (pen/highlighter/erasers
+    // only — floattools.js keeps it in sync with the size flyout).
+    if (typeof updateToolSizeBadge === 'function') updateToolSizeBadge();
 }
 
 // ---- Modals ----
@@ -894,8 +906,15 @@ function updateThicknessPreview() {
     const canvas = document.getElementById('thickness-preview-canvas');
     if (!canvas) return;
     canvas.style.cursor = 'pointer';
-    canvas.title = 'Click to change color';
-    canvas.onclick = () => document.getElementById('color-picker').click();
+    canvas.title = 'Tap to change color';
+    // iPad FIX: this used to programmatically click a hidden
+    // <input type="color">, which iOS Safari does not support — color
+    // selection silently did nothing on iPad (laptop/Android were fine).
+    // It now opens the custom #tool-color-menu palette (js/colormenu.js):
+    // plain DOM, so it works identically on every platform.
+    canvas.onclick = () => {
+        if (typeof toggleToolColorMenu === 'function') toggleToolColorMenu();
+    };
 
     const ctx = canvas.getContext('2d');
     const size = canvas.width;

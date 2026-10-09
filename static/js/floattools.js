@@ -154,6 +154,12 @@ function beginFloatToolbarDrag(e) {
     if (e.button !== undefined && e.button !== 0) return;
     const tb = document.getElementById('float-toolbar');
     if (!tb) return;
+    // Moving the toolbar moves the flyout anchors — always close both
+    // flyouts when a drag (or a double-tap re-dock) starts.
+    // (js/sizemenu.js + js/colormenu.js own them; typeof-guarded so this
+    // engine also runs without them.)
+    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
+    if (typeof closeToolColorMenu === 'function') closeToolColorMenu();
     // Double-tap / double-click on the grip (works for mouse AND touch)
     // re-docks the toolbar to its default spot.
     const now = Date.now();
@@ -247,6 +253,12 @@ function setFloatToolbarOrientation(orient, opts = {}) {
     if (orient !== 'horizontal' && orient !== 'vertical') return false;
     const tb = document.getElementById('float-toolbar');
     if (!tb) return false;
+    // The flip re-places the whole palette (orientation-specific default spot
+    // or re-clamped dragged spot) — the flyouts' anchors would move with it,
+    // so both close instead of following (js/sizemenu.js + js/colormenu.js
+    // own them).
+    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
+    if (typeof closeToolColorMenu === 'function') closeToolColorMenu();
     tb.classList.toggle('ft-vertical', orient === 'vertical');
     state.floatToolbarOrientation = orient;
     // The toggle always advertises the orientation the NEXT click produces:
@@ -285,6 +297,12 @@ function toggleFloatToolbarOrientation() {
 // a dragged bar is re-clamped, a never-dragged bar re-centers. Writing the
 // transform changes no layout, so the observers can never loop.
 function handleFloatToolbarResize() {
+    // A resize can move the toolbar under an open flyout — closing keeps
+    // both flyouts always visually anchored to their controls
+    // (js/sizemenu.js + js/colormenu.js own them; typeof-guarded so this
+    // engine also runs without them).
+    if (typeof closeToolSizeMenu === 'function') closeToolSizeMenu();
+    if (typeof closeToolColorMenu === 'function') closeToolColorMenu();
     applyFloatToolbarPos();
 }
 

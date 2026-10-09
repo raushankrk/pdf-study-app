@@ -19,7 +19,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="/css/style.css?v=ftorient-v20">
+    <link rel="stylesheet" href="/css/style.css?v=ipadcolor-v22">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 
@@ -73,7 +73,7 @@
             </button>
             <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
             <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable floating annotation toolbar (horizontal / vertical)">ftorient-v20</span>
+            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable annotation toolbar (horizontal / vertical) + tap-active-tool size menu + custom color palette">ipadcolor-v22</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -492,23 +492,28 @@
                     </button>
                 </div>
 
-                <div class="w-px h-6 bg-gray-300 mx-1"></div>
-
-                <!-- Annotation Draw Tools (moved from the header verbatim — same IDs) -->
+                <!-- Annotation Draw Tools (moved from the header verbatim — same IDs).
+                     NOTE: no separators between tool groups — each group's own
+                     rounded gray tray already separates them visually, and the
+                     user asked for the separators to go to save space. -->
                 <div class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5">
                     <button id="tool-select" onclick="setAnnoTool('select')"
                         class="tool-btn"
                         title="Select (Ctrl+S)">
                         <i class="fa-solid fa-object-group"></i>
                     </button>
-                    <button id="tool-pen" onclick="setAnnoTool('pen')"
+                    <!-- Pen/Highlighter/erasers route through handleToolBtnTap
+                         (floattools.js): the FIRST tap selects the tool, a
+                         SECOND tap on the already-active tool opens the
+                         floating size menu (Apple-Notes style flyout). -->
+                    <button id="tool-pen" onclick="handleToolBtnTap('pen')"
                         class="tool-btn"
-                        title="Pen (P)">
+                        title="Pen (P) — tap again for size">
                         <i class="fa-solid fa-pen-nib"></i>
                     </button>
-                    <button id="tool-highlighter" onclick="setAnnoTool('highlighter')"
+                    <button id="tool-highlighter" onclick="handleToolBtnTap('highlighter')"
                         class="tool-btn"
-                        title="Highlighter (H)">
+                        title="Highlighter (H) — tap again for size">
                         <i class="fa-solid fa-highlighter"></i>
                     </button>
                     <button id="tool-text" onclick="setAnnoTool('text')"
@@ -516,14 +521,14 @@
                         title="Add Comment (T)">
                         <i class="fa-solid fa-comment-medical"></i>
                     </button>
-                    <button id="tool-eraser-pixel" onclick="setAnnoTool('eraser-pixel')"
+                    <button id="tool-eraser-pixel" onclick="handleToolBtnTap('eraser-pixel')"
                         class="tool-btn"
-                        title="Pixel Eraser (E)">
+                        title="Pixel Eraser (E) — tap again for size">
                         <i class="fa-solid fa-eraser"></i>
                     </button>
-                    <button id="tool-eraser-stroke" onclick="setAnnoTool('eraser-stroke')"
+                    <button id="tool-eraser-stroke" onclick="handleToolBtnTap('eraser-stroke')"
                         class="tool-btn"
-                        title="Stroke Eraser (D)">
+                        title="Stroke Eraser (D) — tap again for size">
                         <i class="fa-solid fa-ban"></i>
                     </button>
                     <button id="tool-image" onclick="setAnnoTool('image')"
@@ -535,9 +540,7 @@
                 </div>
 
                 <!-- Pen/Highlighter Options (moved from the header verbatim —
-                     shown only when pen/highlighter is active; the separator
-                     visibility is toggled by setAnnoTool in ui.js) -->
-                <div id="pen-customization-sep" class="hidden w-px h-6 bg-gray-300 mx-1"></div>
+                     shown only when pen/highlighter is active) -->
                 <div id="pen-customization" class="hidden items-center bg-gray-100 rounded-lg p-1 gap-1">
                     <!-- Straight/Freehand toggle -->
                     <button id="tool-line-mode" onclick="toggleLineMode()"
@@ -545,15 +548,20 @@
                         title="Freehand / Straight Line (F)">
                         <i class="fa-solid fa-minus"></i>
                     </button>
-                    <div class="w-px h-5 bg-gray-300 mx-0.5"></div>
-                    <!-- Thickness slider -->
-                    <input type="range" id="thickness-picker" min="1" max="20" value="5"
-                        class="w-20 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 mx-1">
-                    <!-- Color + size preview canvas (click to pick color) -->
+                    <!-- Thickness lives in the floating SIZE MENU now
+                         (#tool-size-menu, opened by tapping the active
+                         pen/highlighter/eraser a second time) — no inline
+                         slider, so the vertical rail no longer carries a
+                         horizontal slider that looks out of place. -->
+                    <!-- Color + size preview canvas (tap to open the floating
+                         COLOR MENU, #tool-color-menu in js/colormenu.js).
+                         iPad FIX: this used to programmatically click a hidden
+                         <input type="color">, which iOS Safari does not
+                         support — nothing happened on iPad. The custom
+                         palette is plain DOM and works on every platform. -->
                     <canvas id="thickness-preview-canvas" width="32" height="32"
                         class="rounded cursor-pointer"
-                        title="Click to change color"></canvas>
-                    <input type="color" id="color-picker" class="hidden" value="#ef4444">
+                        title="Tap to change color"></canvas>
                 </div>
             </aside>
 
@@ -747,6 +755,69 @@
         </div>
     </div>
 
+    <!-- ================================================================
+         TOOL SIZE FLYOUT (Apple-Notes style secondary menu)
+         ---------------------------------------------------------------
+         Opens when the ALREADY-ACTIVE pen / highlighter / eraser button
+         is tapped a second time (handleToolBtnTap in js/floattools.js).
+         A direct child of <body>, position:fixed: it is anchored next to
+         the tool button (right of the vertical rail, below the horizontal
+         ribbon), clamped to the viewport, and can never be clipped by the
+         workspace overflow.
+         Contents: title + the CURRENT size value as a numeric chip, then
+         one row per preset size — each row draws a live stroke preview
+         with the tool's own color/opacity and shows its numeric value.
+         The active row is highlighted.
+         Closing: tap/click anywhere OUTSIDE the menu (the owning tool
+         button instead toggles it), Escape, switching tool, flipping the
+         toolbar orientation or dragging the toolbar.
+         ================================================================ -->
+    <div id="tool-size-menu" class="tsm-hidden" role="menu"
+         aria-label="Tool size options">
+        <div id="tsm-header">
+            <span id="tsm-title">Pen Size</span>
+            <span id="tsm-value" title="Current size">5</span>
+        </div>
+        <div id="tsm-options" role="group" aria-label="Sizes"></div>
+    </div>
+
+    <!-- ================================================================
+         FLOATING COLOR MENU (#tool-color-menu) — iPad / iOS FIX.
+         Opened by tapping the color preview canvas in #pen-customization
+         (js/colormenu.js). The old flow programmatically clicked a hidden
+         <input type="color">, which iOS Safari does not support — color
+         selection silently did nothing on iPad (fine on laptop/Android).
+         This custom palette is plain DOM (buttons + hex field) so it works
+         identically everywhere. Same liquid-glass flyout pattern as the
+         size menu: body-level position:fixed, anchored next to the canvas
+         (beside it in the vertical rail, below it in the horizontal
+         ribbon), viewport-clamped, never clipped by the workspace.
+         Contents: title + the CURRENT color as a swatch + exact hex value
+         chip, 15 preset swatches (check on the active one), and a custom
+         row with a hex text field (works on every platform) plus a native
+         <input type="color"> chip that is feature-detected and therefore
+         NOT rendered on iOS. Tapping a swatch applies immediately and
+         keeps the menu open; colors are per tool (pen / highlighter).
+         Closing: tap anywhere OUTSIDE (the canvas toggles), Escape,
+         switching tool, opening the size menu, orientation flip or drag.
+         ================================================================ -->
+    <div id="tool-color-menu" class="tcm-hidden" role="menu"
+         aria-label="Tool color options">
+        <div id="tcm-header">
+            <span id="tcm-title">Pen Color</span>
+            <span id="tcm-value" class="tcm-value-chip" title="Current color">
+                <span id="tcm-chip-swatch"></span><span id="tcm-value-text">#EF4444</span>
+            </span>
+        </div>
+        <div id="tcm-options" role="group" aria-label="Colors"></div>
+        <div id="tcm-custom-row">
+            <span class="tcm-custom-label" title="Type a hex color">Hex</span>
+            <input type="text" id="tcm-hex" maxlength="7" spellcheck="false"
+                   autocomplete="off" aria-label="Custom hex color"
+                   placeholder="#EF4444" value="#EF4444">
+        </div>
+    </div>
+
     <!-- AI Settings Modal -->
     <div id="ai-settings-modal" class="fixed inset-0 modal-backdrop hidden flex items-center justify-center z-[9999]">
         <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
@@ -879,28 +950,30 @@
         </div>
     </div>
 
-    <script src="/js/utils.js?v=ftorient-v20"></script>
-    <script src="/js/config.js?v=ftorient-v20"></script>
-    <script src="/js/api.js?v=ftorient-v20"></script>
-    <script src="/js/state.js?v=ftorient-v20"></script>
-    <script src="/js/database.js?v=ftorient-v20"></script>
-    <script src="/js/ui.js?v=ftorient-v20"></script>
-    <script src="/js/floattools.js?v=ftorient-v20"></script>
-    <script src="/js/ai.js?v=ftorient-v20"></script>
-    <script src="/js/pdf.js?v=ftorient-v20"></script>
-    <script src="/js/search.js?v=ftorient-v20"></script>
-    <script src="/js/annotations.js?v=ftorient-v20"></script>
-    <script src="/js/links.js?v=ftorient-v20"></script>
+    <script src="/js/utils.js?v=ipadcolor-v22"></script>
+    <script src="/js/config.js?v=ipadcolor-v22"></script>
+    <script src="/js/api.js?v=ipadcolor-v22"></script>
+    <script src="/js/state.js?v=ipadcolor-v22"></script>
+    <script src="/js/database.js?v=ipadcolor-v22"></script>
+    <script src="/js/ui.js?v=ipadcolor-v22"></script>
+    <script src="/js/floattools.js?v=ipadcolor-v22"></script>
+    <script src="/js/sizemenu.js?v=ipadcolor-v22"></script>
+    <script src="/js/colormenu.js?v=ipadcolor-v22"></script>
+    <script src="/js/ai.js?v=ipadcolor-v22"></script>
+    <script src="/js/pdf.js?v=ipadcolor-v22"></script>
+    <script src="/js/search.js?v=ipadcolor-v22"></script>
+    <script src="/js/annotations.js?v=ipadcolor-v22"></script>
+    <script src="/js/links.js?v=ipadcolor-v22"></script>
     <!-- NEW: undo/redo history + multi-device conflict detection -->
-    <script src="/js/undo.js?v=ftorient-v20"></script>
-    <script src="/js/conflict.js?v=ftorient-v20"></script>
+    <script src="/js/undo.js?v=ipadcolor-v22"></script>
+    <script src="/js/conflict.js?v=ipadcolor-v22"></script>
     <!-- NEW: Yjs real-time collaboration (CRDT sync over WebSocket). -->
-    <script src="/js/yjs-collab.js?v=ftorient-v20"></script>
+    <script src="/js/yjs-collab.js?v=ipadcolor-v22"></script>
     <!-- NEW: folder + file management modules -->
-    <script src="/js/folders.js?v=ftorient-v20"></script>
-    <script src="/js/filemanager.js?v=ftorient-v20"></script>
-    <script src="/js/events.js?v=ftorient-v20"></script>
-    <script src="/js/app.js?v=ftorient-v20"></script>
+    <script src="/js/folders.js?v=ipadcolor-v22"></script>
+    <script src="/js/filemanager.js?v=ipadcolor-v22"></script>
+    <script src="/js/events.js?v=ipadcolor-v22"></script>
+    <script src="/js/app.js?v=ipadcolor-v22"></script>
 
 </body>
 </html>

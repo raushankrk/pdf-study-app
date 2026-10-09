@@ -28,6 +28,15 @@ function handlePointerDown(e) {
     // there could start a stroke on the PDF underneath. The bar absorbs all
     // of its own interactions (buttons handle their own clicks).
     if (e.target.closest('#float-toolbar')) return;
+    // Same defense for the tool SIZE flyout (#tool-size-menu): it floats
+    // ABOVE the canvas next to the toolbar, so a pointerdown on it (or its
+    // padding) must never start a stroke on the PDF underneath. Its rows are
+    // buttons (covered by the button guard below) — this guards the glass
+    // container itself.
+    if (e.target.closest('#tool-size-menu')) return;
+    // Same defense for the tool COLOR flyout (#tool-color-menu,
+    // js/colormenu.js): body-level liquid glass card beside the toolbar.
+    if (e.target.closest('#tool-color-menu')) return;
 
     // 2. Standard early-return guards — also includes TEXTAREA so that
     //    tapping the markdown editor on touch devices doesn't trigger

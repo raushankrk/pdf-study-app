@@ -1506,8 +1506,13 @@ function deleteStrokeAt(side, x, y) {
 
 function deleteSelection() {
     if (!state.selection.active) return;
-    const side = state.selection.side;
+    const activeSide = state.lastActiveSide === 'right' ? 'right' : 'left';
+    // The global action toolbar belongs to the active PDF. Do not let a stale
+    // selection on the other viewport delete that PDF's annotations.
+    if (state.selection.side !== activeSide) return;
+    const side = activeSide;
     const docId = state.view[side].docId;
+    if (!docId) return;
     const pageId = state.view[side].pageId;
 
     if (!state.annotations[docId] || !state.annotations[docId][pageId]) return;
@@ -1685,87 +1690,81 @@ function clearSelection() {
 }
 
 function undoLastStroke() {
-    const docId = state.view.left.docId || state.view.right.docId;
-    if (!docId) return;
+    const side = state.lastActiveSide === 'right' ? 'right' : 'left';
+    const docId = state.view[side].docId;
+    const pageId = state.view[side].pageId;
+    if (!docId || !pageId) return;
 
-    const leftPageId = state.view.left.pageId;
-    const rightPageId = state.view.right.pageId;
-    
-    let changed = false;
-
-    const undoOnView = (side, dId, pId) => {
-        const pageData = state.annotations[dId] && state.annotations[dId][pId];
-        if (pageData && pageData.strokes && pageData.strokes.length > 0) {
-            pageData.strokes.pop();
-            saveAnnotationsToDB(dId, state.annotations[dId]);
-            renderAnnotations(side);
-            changed = true;
-        }
-    };
-
-    if (state.view.left.docId === docId) undoOnView('left', docId, leftPageId);
-    if (state.view.right.docId === docId) undoOnView('right', docId, rightPageId);
-
-    if (!changed) {
-            if(state.view.left.docId) undoOnView('left', state.view.left.docId, state.view.left.pageId);
-            if(state.view.right.docId) undoOnView('right', state.view.right.docId, state.view.right.pageId);
+    const pageData = state.annotations[docId] && state.annotations[docId][pageId];
+    if (!pageData || !pageData.strokes || pageData.strokes.length === 0) return;
+    pageData.strokes.pop();
+    if (!(typeof yjsIsConnected === 'function' && yjsIsConnected(getProjectId(), docId))) {
+        saveAnnotationsToDB(docId, state.annotations[docId]);
     }
+    renderAnnotations(side);
 }
 
 function clearCurrentPageAnnotations() {
-    if(!confirm("Clear all annotations and images on current page(s)?")) return;
+    const side = state.lastActiveSide === 'right' ? 'right' : 'left';
+    const dId = state.view[side].docId;
+    const pId = state.view[side].pageId;
+    if (!dId || !pId || !state.annotations[dId]) return;
+    if (!confirm('Clear all annotations and images on the current page of the active PDF?')) return;
 
-    const clearView = (side, dId, pId) => {
-        if (dId && state.annotations[dId]) {
-            const snapshot = state.annotations[dId][pId] ?
-                JSON.parse(JSON.stringify(state.annotations[dId][pId])) :
-                null;
-            state.annotations[dId][pId] = { strokes: [], images: [], textBoxes: [] };
-            // Skip REST save when Yjs is connected.
-            if (!(typeof yjsIsConnected === 'function' &&
-                  yjsIsConnected(getProjectId(), dId))) {
-                saveAnnotationsToDB(dId, state.annotations[dId]);
-            }
-            renderAnnotations(side);
-            renderTextLayer(side);
-            if (snapshot) {
-                pushHistoryAction(`clear page (${side})`,
-                    () => {
-                        state.annotations[dId][pId] = JSON.parse(JSON.stringify(snapshot));
-                        if (snapshot.images) {
-                            snapshot.images.forEach(img => {
-                                if (!state.imageCache[img.id]) {
-                                    const imageObj = new Image();
-                                    imageObj.src = img.src;
-                                    state.imageCache[img.id] = imageObj;
-                                }
-                            });
+    const snapshot = state.annotations[dId][pId]
+        ? JSON.parse(JSON.stringify(state.annotations[dId][pId]))
+        : null;
+    state.annotations[dId][pId] = { strokes: [], images: [], textBoxes: [] };
+
+    if (!(typeof yjsIsConnected === 'function' && yjsIsConnected(getProjectId(), dId))) {
+        saveAnnotationsToDB(dId, state.annotations[dId]);
+    }
+    renderAnnotations(side);
+    renderTextLayer(side);
+
+    if (snapshot) {
+        pushHistoryAction(`clear page (${side})`,
+            () => {
+                state.annotations[dId][pId] = JSON.parse(JSON.stringify(snapshot));
+                if (snapshot.images) {
+                    snapshot.images.forEach(img => {
+                        if (img.id && !state.imageCache[img.id]) {
+                            const imageObj = new Image();
+                            imageObj.src = img.src;
+                            state.imageCache[img.id] = imageObj;
                         }
-                        if (typeof yjsReplacePage === 'function' &&
-                            typeof yjsIsConnected === 'function' &&
-                            yjsIsConnected(getProjectId(), dId)) {
-                            yjsReplacePage(dId, pId, snapshot);
-                        }
-                    },
-                    () => {
-                        state.annotations[dId][pId] = { strokes: [], images: [], textBoxes: [] };
-                        if (typeof yjsClearPage === 'function' &&
-                            typeof yjsIsConnected === 'function' &&
-                            yjsIsConnected(getProjectId(), dId)) {
-                            yjsClearPage(dId, pId);
-                        }
-                    }
-                );
-            }
-            if (typeof yjsClearPage === 'function' &&
-                typeof yjsIsConnected === 'function' &&
-                yjsIsConnected(getProjectId(), dId)) {
-                yjsClearPage(dId, pId);
-            }
-        }
-    };
-    clearView('left', state.view.left.docId, state.view.left.pageId);
-    clearView('right', state.view.right.docId, state.view.right.pageId);
+                    });
+                }
+                if (typeof yjsReplacePage === 'function' &&
+                    typeof yjsIsConnected === 'function' &&
+                    yjsIsConnected(getProjectId(), dId)) {
+                    yjsReplacePage(dId, pId, snapshot);
+                } else {
+                    saveAnnotationsToDB(dId, state.annotations[dId]);
+                }
+                renderAnnotations(side);
+                renderTextLayer(side);
+            },
+            () => {
+                state.annotations[dId][pId] = { strokes: [], images: [], textBoxes: [] };
+                if (typeof yjsClearPage === 'function' &&
+                    typeof yjsIsConnected === 'function' &&
+                    yjsIsConnected(getProjectId(), dId)) {
+                    yjsClearPage(dId, pId);
+                } else {
+                    saveAnnotationsToDB(dId, state.annotations[dId]);
+                }
+                renderAnnotations(side);
+                renderTextLayer(side);
+            }, dId
+        );
+    }
+
+    if (typeof yjsClearPage === 'function' &&
+        typeof yjsIsConnected === 'function' &&
+        yjsIsConnected(getProjectId(), dId)) {
+        yjsClearPage(dId, pId);
+    }
 }
 
 function attachResizeHandles(el, box, side) {

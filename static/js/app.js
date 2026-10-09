@@ -247,6 +247,17 @@ async function init() {
                 }
 
                 if (savedData.settings.appMode) setAppMode(savedData.settings.appMode, false);
+                // Restore the per-tool customization buckets (color + size
+                // per tool) BEFORE setAnnoTool reads them — without this the
+                // tool resets to the in-code defaults on every reload
+                // (ipadcolor-v22: the color menu made the gap visible).
+                // MERGE (not replace) so buckets the blob doesn't know keep
+                // their in-code defaults.
+                if (savedData.settings.toolSettings &&
+                    typeof savedData.settings.toolSettings === 'object') {
+                    state.toolSettings = Object.assign({}, state.toolSettings,
+                        savedData.settings.toolSettings);
+                }
                 if (savedData.settings.annoTool) setAnnoTool(savedData.settings.annoTool, false);
                 const lineModeBtn = document.getElementById('tool-line-mode');
                 if (lineModeBtn && state.lineMode === 'straight') {
@@ -255,11 +266,13 @@ async function init() {
                 }
                 if (savedData.settings.annoColor) {
                     state.annoColor = savedData.settings.annoColor;
-                    els.colorPicker.value = savedData.settings.annoColor;
+                    // The preview dot / color-menu chip refresh via
+                    // updateThicknessPreview() after boot.
                 }
                 if (savedData.settings.annoThickness) {
                     state.annoThickness = savedData.settings.annoThickness;
-                    els.thicknessPicker.value = savedData.settings.annoThickness;
+                    // The inline slider is gone — the numeric badge + size
+                    // flyout (floattools.js) display the restored value.
                 }
                 if (savedData.settings.leftSidebarCollapsed) {
                     document.body.classList.add('left-sidebar-collapsed');
@@ -472,26 +485,18 @@ async function init() {
     // pan/zoom, never draw. The mode (pen/highlighter/etc.) is preserved.
     initPinchZoom();
 
-    els.colorPicker.addEventListener('input', (e) => {
-        state.annoColor = e.target.value;
-        if (state.toolSettings && state.toolSettings[state.annoTool]) {
-            state.toolSettings[state.annoTool].color = state.annoColor;
-        }
-        if (state.annoTool === 'pen') setAnnoTool('pen', false); 
-        saveSettings();
-        updateThicknessPreview();
-    });
+    // ---- Color selection lives in the floating COLOR MENU now ----
+    // (js/colormenu.js: tapping the preview canvas opens the custom
+    // #tool-color-menu palette — swatch grid + hex field — replacing the
+    // old hidden <input type="color">, which iOS Safari never supported
+    // and which therefore did nothing on iPad. applyToolColor performs the
+    // same state.annoColor + toolSettings[tool].color writes this listener
+    // used to, plus persistence.)
 
-    els.thicknessPicker.addEventListener('input', (e) => {
-        state.annoThickness = parseInt(e.target.value);
-        const display = document.getElementById('thickness-val');
-        if (display) display.innerText = state.annoThickness;
-        if (state.toolSettings && state.toolSettings[state.annoTool]) {
-            state.toolSettings[state.annoTool].thickness = state.annoThickness;
-        }
-        saveSettings();
-        updateThicknessPreview();
-    });
+    // ---- Tool size selection lives in the floating size menu now ----
+    // (js/floattools.js: applyToolSize applies preset/typed sizes from the
+    // Apple-Notes style flyout opened by tapping the active tool again. The
+    // old inline #thickness-picker slider was removed from the toolbar.)
 
     // AI Settings Range Sliders (live text update)
     if (els.aiSettingTemp) {
@@ -559,6 +564,12 @@ async function init() {
     // Draggable floating annotation toolbar: grip pointerdown + place at the
     // default/restored spot + workspace & toolbar size observation.
     initFloatToolbarDrag();
+    // Tool size flyout (tap the active pen/highlighter/eraser again):
+    // Escape closer + badge for a restored size-adjustable active tool.
+    initToolSizeMenu();
+    // Tool color flyout (tap the color preview canvas): hex-field bindings
+    // + Escape closer. iPad-safe replacement for the old native input.
+    initToolColorMenu();
     updateViewportActiveVisuals();
 
     // ---- Header horizontal scroll for mouse-wheel users ----

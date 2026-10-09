@@ -727,14 +727,16 @@ body.ft-dragging #ft-drag-handle { cursor: grabbing; color: #4f46e5; border-styl
 #ft-orient-toggle:hover { background: #ffffff; color: #4f46e5; }
 
 /* ---- Vertical orientation (#float-toolbar.ft-vertical) --------------------
-   The ribbon stands up as a slim single-column rail: the groups stack, every
-   group's buttons stack too, the separators turn into short horizontal
-   hairlines and the thickness slider stretches to the rail width so it stays
-   usable. The position engine (floattools.js) is orientation-agnostic: the
-   default spot is orientation-specific (ribbon = top-center, rail = flush
-   left-center like a classic toolbox) and a dragged position is re-clamped
-   the moment the class flips (measurement is synchronous) and afterwards by
-   the existing ResizeObserver (pen options / rail width changes). */
+   The ribbon stands up as a slim single-column rail: the groups stack and
+   every group's buttons stack too. Size selection lives in the floating size
+   menu (#tool-size-menu below), so no inline slider breaks the rail's
+   proportions. The position engine (floattools.js) is orientation-agnostic:
+   the default spot is orientation-specific (ribbon = top-center, rail =
+   flush left-center like a classic toolbox) and a dragged position is
+   re-clamped the moment the class flips (measurement is synchronous) and
+   afterwards by the existing ResizeObserver (pen options / rail width
+   changes). NOTE: no group separators — the groups' own rounded gray trays
+   separate them (user request: separators removed to save space). */
 #float-toolbar.ft-vertical {
     flex-direction: column;
     align-items: stretch;           /* groups span the full rail width */
@@ -756,17 +758,356 @@ body.ft-dragging #ft-drag-handle { cursor: grabbing; color: #4f46e5; border-styl
    (mode group, draw-tools group AND the pen-options group, which ui.js
    reveals by adding the flex class). */
 #float-toolbar.ft-vertical > div.flex { flex-direction: column; align-items: center; }
-/* Group separators (vertical 1px slivers in the ribbon) become short,
-   centered horizontal hairlines between the stacked sections. */
-#float-toolbar.ft-vertical .w-px { width: 1.5rem; height: 1px; margin: 3px auto; }
-/* Thickness slider: stretch to the rail width (64px min keeps it usable and
-   defines the rail width while the pen options are visible). */
-#float-toolbar.ft-vertical #thickness-picker { width: 100%; min-width: 64px; }
 /* The two round meta buttons (grip + orientation toggle) center on the rail
    instead of hugging the left edge (they have a fixed width, so the bar's
    align-items: stretch leaves them at cross-start without this). */
 #float-toolbar.ft-vertical > #ft-drag-handle,
 #float-toolbar.ft-vertical > #ft-orient-toggle { align-self: center; }
+
+/* ---- Tool Size Flyout (#tool-size-menu) ----------------------------------
+   Apple-Notes style secondary menu for pen / highlighter / eraser sizes.
+   Opened by tapping the ALREADY-ACTIVE tool a second time (floattools.js
+   handleToolBtnTap); never auto-opens on plain tool selection. A body-level
+   position:fixed card — same liquid glass material as the toolbar — placed
+   beside (rail) or below (ribbon) the owning tool button and clamped to the
+   viewport by JS. Header shows the tool name + the CURRENT numeric size;
+   each row is a live stroke preview of one preset size with its numeric
+   value; the active row carries a check. Any pointerdown outside the menu
+   (or Escape / tool switch / orientation flip / toolbar drag) closes it. */
+#tool-size-menu {
+    position: fixed;
+    left: 0;
+    top: 0;
+    min-width: 172px;
+    padding: 10px;
+    border-radius: 16px;
+    /* Liquid glass surface — same recipe as #float-toolbar, a touch denser
+       so the size rows stay readable over any PDF content. */
+    background: linear-gradient(155deg,
+        rgba(255, 255, 255, 0.82) 0%,
+        rgba(255, 255, 255, 0.64) 34%,
+        rgba(241, 245, 255, 0.68) 60%,
+        rgba(255, 255, 255, 0.78) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    box-shadow:
+        0 18px 44px rgba(15, 23, 42, 0.22),
+        0 4px 12px rgba(15, 23, 42, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px) saturate(1.7);
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
+    pointer-events: auto;           /* absorbs its own clicks — never passes through */
+    overscroll-behavior: contain;   /* no scroll chaining to the PDF underneath */
+    touch-action: manipulation;
+    z-index: 1210;                  /* above #float-toolbar (1150) AND the sidebar (1200): a transient popover floats above the persistent card; the panel-min-btn (1250) still wins */
+    opacity: 0;
+    transform: scale(0.9);
+    transform-origin: left center;  /* JS sets the origin per placement */
+    transition: opacity 0.16s ease-out,
+                transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+    will-change: opacity, transform;
+}
+#tool-size-menu.tsm-hidden { display: none; }
+#tool-size-menu.tsm-open { opacity: 1; transform: scale(1); }
+/* Graceful degradation: no backdrop-filter -> near-opaque surface, same
+   geometry and behavior, just no frost. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #tool-size-menu { background: rgba(255, 255, 255, 0.97); }
+}
+
+/* Header row: tool name on the left, CURRENT size as a numeric chip on the
+   right — the "which size am I using" readout (integer or float). */
+#tsm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 4px 8px;
+}
+#tsm-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+#tsm-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 700;
+    color: #3730a3;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 9999px;
+    padding: 1px 8px;
+    min-width: 30px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Size rows: stroke preview + numeric value + active check. */
+#tsm-options {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.tsm-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.tsm-row:hover { background: rgba(255, 255, 255, 0.92); }
+.tsm-row:active { background: #e0e7ff; }
+.tsm-row.tsm-active {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.tsm-canvas {
+    flex-shrink: 0;
+    display: block;
+    border-radius: 6px;
+}
+.tsm-val {
+    margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #475569;
+    font-variant-numeric: tabular-nums;
+}
+.tsm-check {
+    width: 14px;
+    text-align: center;
+    font-size: 11px;
+    color: #4f46e5;
+    visibility: hidden;
+    flex-shrink: 0;
+}
+.tsm-row.tsm-active .tsm-check { visibility: visible; }
+
+/* Numeric size badge on the ACTIVE tool button: the current tool size stays
+   readable even while the flyout is closed (e.g. "5" on the pen, "20" on the
+   highlighter when it is active). */
+.tool-size-badge {
+    position: absolute;
+    right: -5px;
+    bottom: -4px;
+    min-width: 15px;
+    height: 14px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #ffffff;
+    background: #4f46e5;
+    border: 1.5px solid #ffffff;
+    border-radius: 9999px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+    pointer-events: none;   /* never blocks the button's own clicks */
+    z-index: 5;
+}
+
+/* ---- Tool Color Flyout (#tool-color-menu) ---------------------------------
+   iPad / iOS FIX + Apple-Notes style palette. The old flow clicked a hidden
+   <input type="color">, which iOS Safari does not support — color selection
+   silently did nothing on iPad. This custom flyout is plain DOM (swatch
+   buttons + hex field) so it works identically on iPad, Android and desktop.
+   Opened by tapping the color preview canvas in #pen-customization
+   (js/colormenu.js). Same liquid glass material and pop animation as the
+   size flyout: body-level position:fixed card placed beside (rail) or below
+   (ribbon) the anchor canvas, clamped to the viewport by JS. Header shows
+   the CURRENT color as a swatch + exact hex value; 15 preset swatches with
+   a check on the active one; a custom row with a hex text field (every
+   platform) and a feature-detected native <input type="color"> chip that is
+   never rendered on iOS. Any pointerdown outside (or Escape / tool switch /
+   size-menu open / orientation flip / toolbar drag) closes it. */
+#tool-color-menu {
+    position: fixed;
+    left: 0;
+    top: 0;
+    min-width: 208px;
+    padding: 10px;
+    border-radius: 16px;
+    /* Liquid glass surface — same recipe as #tool-size-menu. */
+    background: linear-gradient(155deg,
+        rgba(255, 255, 255, 0.82) 0%,
+        rgba(255, 255, 255, 0.64) 34%,
+        rgba(241, 245, 255, 0.68) 60%,
+        rgba(255, 255, 255, 0.78) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.72);
+    box-shadow:
+        0 18px 44px rgba(15, 23, 42, 0.22),
+        0 4px 12px rgba(15, 23, 42, 0.10),
+        inset 0 1px 0 rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(20px) saturate(1.7);
+    -webkit-backdrop-filter: blur(20px) saturate(1.7);
+    pointer-events: auto;           /* absorbs its own clicks — never passes through */
+    overscroll-behavior: contain;   /* no scroll chaining to the PDF underneath */
+    touch-action: manipulation;
+    z-index: 1210;                  /* above #float-toolbar (1150) AND the sidebar (1200): a transient popover floats above the persistent card; the panel-min-btn (1250) still wins */
+    opacity: 0;
+    transform: scale(0.9);
+    transform-origin: left center;  /* JS sets the origin per placement */
+    transition: opacity 0.16s ease-out,
+                transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+    will-change: opacity, transform;
+}
+#tool-color-menu.tcm-hidden { display: none; }
+#tool-color-menu.tcm-open { opacity: 1; transform: scale(1); }
+/* Graceful degradation: no backdrop-filter -> near-opaque surface, same
+   geometry and behavior, just no frost. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    #tool-color-menu { background: rgba(255, 255, 255, 0.97); }
+}
+
+/* Header row: title on the left, CURRENT color as a swatch + exact hex value
+   chip on the right — the "which color am I using" readout. */
+#tcm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 4px 8px;
+}
+#tcm-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+.tcm-value-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #3730a3;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 9999px;
+    padding: 2px 8px 2px 4px;
+    font-variant-numeric: tabular-nums;
+}
+#tcm-chip-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 5px;
+    background: #ef4444;
+    border: 1px solid rgba(15, 23, 42, 0.18);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+    display: inline-block;
+    flex-shrink: 0;
+}
+#tcm-value-text { line-height: 1; }
+
+/* Preset swatch grid: 5 columns x 3 rows, tap targets roomy enough for
+   touch. The active swatch gets an indigo ring + check. */
+#tcm-options {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    margin-top: 2px;
+}
+.tcm-swatch {
+    position: relative;
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    border: 1px solid rgba(15, 23, 42, 0.16);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                0 1px 2px rgba(15, 23, 42, 0.12);
+    cursor: pointer;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.tcm-swatch:hover { transform: scale(1.08); }
+.tcm-swatch:active { transform: scale(0.92); }
+.tcm-swatch.tcm-active {
+    box-shadow: 0 0 0 2px #4f46e5,
+                inset 0 1px 0 rgba(255, 255, 255, 0.35),
+                0 1px 3px rgba(15, 23, 42, 0.2);
+}
+.tcm-check {
+    font-size: 10px;
+    line-height: 1;
+    color: #ffffff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+    visibility: hidden;
+    pointer-events: none;
+}
+.tcm-swatch.tcm-active .tcm-check { visibility: visible; }
+
+/* Custom row: hex field (every platform, iPad included) + optional native
+   <input type="color"> chip (feature-detected — never rendered on iOS). */
+#tcm-custom-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(148, 163, 184, 0.4);
+}
+.tcm-custom-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    flex-shrink: 0;
+}
+#tcm-hex {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: #1f2937;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 5px 8px;
+    outline: none;
+    transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+#tcm-hex:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.18);
+}
+/* Native chip (only exists where <input type="color"> is really supported):
+   styled as one more swatch so it reads as "pick ANY color". */
+.tcm-native {
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    border-radius: 9px;
+    border: 1px dashed rgba(15, 23, 42, 0.3);
+    background: conic-gradient(#ef4444, #f59e0b, #facc15, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899, #ef4444);
+    padding: 3px;
+    cursor: pointer;
+}
+.tcm-native::-webkit-color-swatch-wrapper { padding: 0; }
+.tcm-native::-webkit-color-swatch { border: none; border-radius: 6px; }
+.tcm-native::-moz-color-swatch { border: none; border-radius: 6px; }
 
 /* --- Tool Cursor Styles --- */
 #tool-cursor {
@@ -2247,6 +2588,17 @@ body > header > * {
     #ft-drag-handle { width: 34px; height: 34px; font-size: 0.85rem; }
     #ft-orient-toggle { width: 34px; height: 34px; font-size: 0.78rem; }
     #float-toolbar { gap: 8px; padding: 7px 8px; border-radius: 16px; }
+
+    /* Tool size flyout: roomier rows for finger taps. */
+    #tool-size-menu { min-width: 186px; padding: 12px; border-radius: 18px; }
+    .tsm-row { padding: 7px 8px; gap: 12px; }
+
+    /* Tool color flyout: roomier swatches + hex field for finger taps. */
+    #tool-color-menu { min-width: 224px; padding: 12px; border-radius: 18px; }
+    .tcm-swatch { width: 34px; height: 34px; border-radius: 10px; }
+    #tcm-options { gap: 8px; }
+    #tcm-hex { padding: 7px 9px; font-size: 13px; }
+    .tcm-native { width: 34px; height: 34px; }
 
     /* (Brand text + Dashboard label + PDF icon are already hidden on ALL
        devices — see the .header-* rules above.) */

@@ -52,11 +52,11 @@ assert.deepStrictEqual = (a, b, msg) => {
     if (sa !== sbb) throw new Error(msg || `expected ${sbb}, got ${sa}`);
 };
 
-// Version chain — ftorient-v20 must be new (never reuse a shipped string).
+// Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
-    'floattools-v19'];
-const CURRENT_VERSION = 'ftorient-v20';
+    'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
+const CURRENT_VERSION = 'ipadcolor-v22';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -284,12 +284,15 @@ test('1.2 all 4 App-Mode buttons moved with IDENTICAL ids + onclick handlers', (
 test('1.3 all 7 Annotation Draw Tool buttons + file input moved with IDENTICAL ids', () => {
     const i = html.indexOf('id="float-toolbar"');
     const block = html.slice(i, html.indexOf('</aside>', i));
+    // ftsize-v21: the four size-adjustable tools dispatch through
+    // handleToolBtnTap (first tap selects, second tap opens the size menu);
+    // the rest keep calling setAnnoTool directly. IDs are unchanged.
     [['tool-select', "setAnnoTool('select')"],
-     ['tool-pen', "setAnnoTool('pen')"],
-     ['tool-highlighter', "setAnnoTool('highlighter')"],
+     ['tool-pen', "handleToolBtnTap('pen')"],
+     ['tool-highlighter', "handleToolBtnTap('highlighter')"],
      ['tool-text', "setAnnoTool('text')"],
-     ['tool-eraser-pixel', "setAnnoTool('eraser-pixel')"],
-     ['tool-eraser-stroke', "setAnnoTool('eraser-stroke')"],
+     ['tool-eraser-pixel', "handleToolBtnTap('eraser-pixel')"],
+     ['tool-eraser-stroke', "handleToolBtnTap('eraser-stroke')"],
      ['tool-image', "setAnnoTool('image')"]].forEach(([id, fn]) => {
         assert(block.includes(`id="${id}"`), `${id} missing from the toolbar`);
         assert(block.includes(`onclick="${fn}"`), `${id} lost its ${fn} handler`);
@@ -297,15 +300,23 @@ test('1.3 all 7 Annotation Draw Tool buttons + file input moved with IDENTICAL i
     assert(block.includes('id="image-upload"'), '#image-upload input must move with the image tool');
 });
 
-test('1.4 pen-customization + its separator moved into the toolbar', () => {
+test('1.4 pen-customization moved into the toolbar; separators + native input GONE', () => {
     const i = html.indexOf('id="float-toolbar"');
     const block = html.slice(i, html.indexOf('</aside>', i));
     assert(block.includes('id="pen-customization"'), '#pen-customization missing');
-    assert(block.includes('id="pen-customization-sep"'), '#pen-customization-sep missing');
     assert(block.includes('id="tool-line-mode"'), 'line-mode button missing');
-    assert(block.includes('id="thickness-picker"'), 'thickness slider missing');
+    // ftsize-v21: the thickness slider moved into the floating size menu
+    // (#tool-size-menu, body level) — only the color preview remains inline.
+    assert(!block.includes('id="thickness-picker"'), 'inline thickness slider must be gone');
     assert(block.includes('id="thickness-preview-canvas"'), 'color preview canvas missing');
-    assert(block.includes('id="color-picker"'), 'color picker missing');
+    // ipadcolor-v22: the hidden native <input type="color"> is GONE — iOS
+    // Safari never supported it, which is why color selection did nothing
+    // on iPad. The preview canvas now opens the custom #tool-color-menu.
+    assert(!block.includes('id="color-picker"'), 'hidden native color input must be gone');
+    // ipadcolor-v22: the tool separators are GONE (user request) — the
+    // groups' own rounded trays separate them and the bar gets narrower.
+    assert(!block.includes('class="w-px'), 'no w-px separator may remain inside the toolbar');
+    assert(!block.includes('pen-customization-sep'), 'pen-customization-sep must be gone');
 });
 
 test('1.5 grip #ft-drag-handle is the FIRST control of the toolbar', () => {
@@ -679,7 +690,7 @@ test('5.7 business logic untouched: setAnnoTool / setAppMode still target the sa
     const anno = extractFunction(uiSrc, 'setAnnoTool');
     ['tool-select', 'tool-pen', 'tool-highlighter', 'tool-text',
      'tool-eraser-pixel', 'tool-eraser-stroke', 'tool-image',
-     'pen-customization', 'pen-customization-sep'].forEach(id => {
+     'pen-customization'].forEach(id => {
         assert(anno.includes(`'${id}'`), `setAnnoTool lost its reference to ${id}`);
     });
     const mode = extractFunction(uiSrc, 'setAppMode');

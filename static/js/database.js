@@ -202,6 +202,11 @@ async function saveSettings() {
         annoTool: state.annoTool,
         annoColor: state.annoColor,
         annoThickness: state.annoThickness,
+        // Per-tool customization buckets (color + thickness for pen /
+        // highlighter / erasers). ipadcolor-v22: without this the per-tool
+        // colors AND sizes reset to defaults on every reload — the color
+        // menu made the gap visible (user picks blue, reloads, it is red).
+        toolSettings: state.toolSettings || {},
         // Which PDF (left = A / right = B) is currently active — restored on
         // boot so the single header toolbar targets the same PDF again.
         activeSide: state.lastActiveSide === 'right' ? 'right' : 'left',

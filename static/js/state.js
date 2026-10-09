@@ -12,21 +12,12 @@ let modalResolve = null;
 const ROOT_FOLDER_ID = 'root';
 const MAX_RECENT_DOCS = 10;
 
-// ---- Unified chronological Undo/Redo history ----
-// A single shared history for the whole editor session — actions on BOTH
-// left and right canvases go into the same stack, so Undo always undoes the
-// most recent action regardless of which side it happened on.
-//
-// Each history entry is an object: { label, undo: Function, redo: Function }.
-// The closures capture enough state to revert / replay the action atomically.
-//
-// `pointer` points to the "current" position in the stack — entries at
-// indices < pointer are undo-able; entries at indices >= pointer are
-// redo-able. A new action truncates the redo tail (standard editor behavior).
+// ---- Per-document Undo/Redo history ----
+// Each PDF has its own stack and pointer. Undo/redo on the active PDF never
+// consumes history belonging to the other open PDF.
 const history = {
-    stack: [],
-    pointer: 0,        // index of next slot to write
-    maxLen: 200,       // cap to keep memory bounded
+    byDocId: {},
+    maxLen: 200,
 };
 
 // ---- Multi-device conflict-detection state ----

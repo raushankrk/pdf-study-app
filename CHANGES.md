@@ -1146,3 +1146,260 @@ scripts/e2e-deps, unrelated.) `node --check` clean; CSS braces balanced
 * Zero page errors (yjs CDN warning = pre-existing offline sandbox).
 * Screenshots: scripts/ori_vertical_rail.png (vertical rail with pen
   active), scripts/ori_horizontal_final.png (ribbon re-docked).
+
+---
+
+# Feature — Tool Size Flyout: Apple-Notes style secondary size menu (ftsize-v21)
+
+## Request
+> "i think for pen/highlighter size selection show the secondary menu because
+> it is looking wired when annotation tool is vertical also dont show always
+> show on second time click/tap — that is when first time click pen/highlighter
+> got selected on second time click same tool click show the size selection and
+> click any where except the tool selection will automatically close the size
+> selection menu. third design it like profession app (like apple notes) also
+> show the integer/float value of tool size for easy understanding which size
+> tool current user is using"
+
+The floating toolbar carried an inline thickness slider. Inside the vertical
+rail it stayed horizontal (awkward), showed no numeric value, and was always
+on screen.
+
+## What changed
+
+* **Inline slider removed** — `#thickness-picker` is gone from
+  `#pen-customization` (markup, CSS rule, `config.js` els entry, the app.js
+  `input` binding and the boot-restore write). `#pen-customization` keeps the
+  line-mode toggle + color swatch exactly as before.
+* **New body-level flyout `#tool-size-menu`** (shell in index.html, engine in
+  the NEW `static/js/sizemenu.js`, styles in style.css): a liquid glass card
+  (same material recipe as the toolbar — white gradient tint, backdrop blur
+  20px + saturate 1.7, hairline border, floating shadow, scale-pop
+  animation with placement-aware transform-origin). Header = tool title +
+  the CURRENT size as a numeric chip (`5`, `3.5`, `2.25` — integers exact,
+  floats trimmed). Below: one row per preset size (1, 3, 5, 8, 12, 20),
+  each row a live DPR-crisp stroke preview drawn with the tool's OWN color
+  and opacity (flat 0.45-alpha bar for the highlighter, neutral gray for
+  erasers) + its numeric value + a check on the active row.
+* **Two-tap behavior** — the four size tools (pen, highlighter,
+  eraser-pixel, eraser-stroke) now dispatch through `handleToolBtnTap`:
+  FIRST tap selects the tool (menu stays closed); a SECOND tap on the
+  already-active tool IN annotation mode opens the flyout; a third tap on
+  the same button toggles it closed. Non-size tools and keyboard shortcuts
+  keep calling `setAnnoTool` directly. The menu NEVER auto-opens on
+  selection.
+* **Auto-dismiss** — capture-phase `pointerdown` closer: any press outside
+  the flyout closes it (canvas taps close it AND still draw), EXCEPT the
+  owning tool button (its click toggles instead — closing on pointerdown
+  would re-open on click). Also closes on Escape, tool switch
+  (`setAnnoTool` calls `closeToolSizeMenu()`), orientation flip, toolbar
+  drag/re-dock and workspace resizes (guarded calls in floattools.js).
+* **Placement** — anchored to the owning tool button: vertical rail →
+  beside it (right preferred, left near the right viewport edge);
+  horizontal ribbon → below it (above near the bottom); always clamped to
+  the viewport with an 8px margin. Measured via offsetWidth/offsetHeight
+  (transform-independent) so the scale(0.9) hidden state cannot skew the
+  anchor math. Body-level `position: fixed` → the workspace overflow can
+  never clip it; z-index 1160 (above toolbar 1150, below sidebar 1200).
+* **Numeric size badge** — a tiny monospace chip (`.tool-size-badge`) on
+  the ACTIVE size tool's button shows the current size at all times
+  (menu closed or open); rebuilt on every tool switch and size change.
+* **Sizes apply + persist** — `applyToolSize` writes `state.annoThickness`
+  and the tool's `toolSettings` bucket (clamped 1..20), calls
+  `saveSettings()`, updates chip/rows/badge and the pen-options preview
+  dot; the menu STAYS OPEN so sizes can be compared (Apple Notes
+  behavior).
+* **Bug fix found on the way** — `setAnnoTool('eraser-pixel')` looked up
+  `state.toolSettings['eraser-pixel']` but the buckets are camelCase
+  (`eraserPixel`/`eraserStroke`), so erasers silently inherited the
+  previous tool's thickness. New `toolSettingsKeyFor()` (utils.js)
+  normalizes the lookup (with fallback to legacy hyphen keys written by
+  older builds) in both `setAnnoTool` (ui.js) and `applyToolSize`
+  (sizemenu.js).
+* **events.js** — `handlePointerDown` also ignores events targeting
+  `#tool-size-menu` (the flyout floats above the canvas; its container
+  padding is not a button).
+* **floattools.js stays position-only** — the size engine lives in its own
+  module (`sizemenu.js`, script tag after floattools.js, cache version
+  included); floattools keeps only typeof-guarded `closeToolSizeMenu()`
+  hooks in the drag/orientation/resize paths plus nothing else. app.js
+  boot calls the new `initToolSizeMenu()` (Escape binding + boot badge).
+* **Version bump** — `ftorient-v20` → `ftsize-v21` on the CSS link, all 21
+  script tags and the header chip (ftorient-v20 fully retired from shipped
+  files).
+
+## Files
+
+* static/index.html (slider removed, flyout shell, handleToolBtnTap
+  dispatch, sizemenu.js tag, v21)
+* static/js/sizemenu.js (NEW — the whole flyout engine)
+* static/js/floattools.js (guarded close hooks only; still position-only)
+* static/js/ui.js (setAnnoTool closes flyout + refreshes badge; eraser
+  settings key fix)
+* static/js/app.js (boot initToolSizeMenu; slider binding removed)
+* static/js/config.js (thicknessPicker entry removed)
+* static/js/utils.js (toolSettingsKeyFor helper)
+* static/js/events.js (#tool-size-menu pointer guard)
+* static/css/style.css (slider rule removed; flyout + badge styles; touch
+  media rows)
+
+## Tests
+
+* NEW tests/test_tool_size_menu.js — 45 assertions across 8 suites:
+  versioning (incl. ftorient-v20 retirement), markup contract (body-level
+  shell, slider gone, tap-again titles), CSS contract (fixed/1160/glass/
+  hidden+open/badge), VM engine tests (two-tap dispatch incl. non-
+  annotation-mode + non-size tools; render + apply + persistence + badge;
+  float formatting 3.5/2.25; clamping; highlighter/eraser preview
+  styles via ctx snapshots; outside-close + owner exemption + Escape +
+  unbind; placement math for rail/ribbon incl. flip and clamp), and
+  integration (real setAnnoTool restores eraser size; floattools
+  position-only intact; no thicknessPicker anywhere).
+* Sibling suites updated: version constants (SHIPPED += ftorient-v20,
+  CURRENT = ftsize-v21) in float_toolbar/float_drag/float_sidebar/
+  liquid_glass/orientation/position_resume/tag_rail; slider and onclick
+  assertions modernized.
+* Battery: 367 tests green across 14 JS suites (tool_size_menu 45,
+  toolbar_orientation 34, float_toolbar 49, float_drag 44, float_sidebar
+  38, liquid_glass 19, minimize_panel 30, position_resume 18, tag_rail 21,
+  active_pdf_toolbar 23, touch_slider_space 8, frontend_bugs 10,
+  stroke_continuity 23, undo_yjs_rebuild 5). node --check clean; CSS
+  braces 505/505.
+
+## Live verification (agent-browser, real server + test project)
+
+* Vertical rail: first tap selects pen (menu closed, badge "5" already on
+  the button); second tap pops the flyout RIGHT of the rail, vertically
+  anchored (clamped exactly as computed: top 244 == expected 244); header
+  "Pen Size" + chip "5"; rows 1/3/5/8/12/20 with red stroke previews and
+  the check on 5.
+* Tapping row 8 → thickness 8 everywhere (state + chip + badge), menu
+  stays open; canvas pointerdown → menu closes AND pen stays active;
+  third/fourth taps toggle; switching to text closes the flyout and no
+  badge leaks onto non-size tools.
+* Float value: applyToolSize(2.5) → chip + badge read "2.5"; highlighter
+  flyout shows "Highlighter Size" with flat yellow 0.45-alpha previews;
+  pen badge removed when highlighter active (zero stale badges); eraser
+  flyout titles "Pixel Eraser Size", badge shows the eraser's OWN size
+  (20 — after the camelCase fix), not the pen's.
+* Horizontal ribbon: single tap on the active tool opens the flyout BELOW
+  the button, horizontally centered, above the page; Escape closes.
+* Event isolation: elementFromPoint inside the flyout hits the flyout;
+  pointerdown on it starts NO stroke; left viewport dimensions + scrollTop
+  byte-identical before/after the whole flow (canvas never resizes);
+  drawing a pen stroke after flyout use works (annotations committed).
+* Zero page errors (yjs CDN warning = pre-existing offline sandbox).
+* Screenshots: scripts/sm_vertical_rail.png (rail + flyout, badge "5"),
+  scripts/sm_horizontal_ribbon.png (ribbon + flyout below, chip "12"),
+  scripts/sm_highlighter.png (highlighter yellow previews + "2.5").
+
+# Fix — Color selection did nothing on iPad + separator cleanup (ipadcolor-v22)
+
+## Request
+
+> "color selection is not working in working on ipad, it is working on laptop
+> and android tab/mobile but it is not working on ipad"
+> "also no need of tool seperator in between different catagory of annotation
+> tool this will save some space"
+
+## Root cause (iPad color bug)
+
+The editor's color flow was: tap the color preview canvas → programmatically
+`.click()` a **hidden `<input type="color">`**. iOS Safari has **never
+supported `<input type="color">`** (it degrades to a text-type input; no
+picker UI exists), so the tap did nothing on iPad — while laptops and Android
+(both with native color pickers) worked. Exactly the reported split.
+
+## Fix — custom color palette (`#tool-color-menu`, js/colormenu.js)
+
+The native-input dependency is GONE. Tapping the preview canvas now opens a
+custom, Apple-Notes-style liquid-glass palette that is plain DOM and behaves
+identically on iPad / Android / desktop:
+
+* Body-level `position:fixed` flyout (same proven pattern as the size menu):
+  anchored beside the canvas in the vertical rail (right, then left near the
+  right edge) and below it in the horizontal ribbon (then above near the
+  bottom), always viewport-clamped, never clipped by the workspace.
+* Header shows the tool name ("Pen Color" / "Highlighter Color") plus the
+  CURRENT color as a swatch + exact hex chip (e.g. `#3B82F6`) — same
+  "show the value" pattern as the size menu.
+* 15 professional preset swatches (includes the pen default `#ef4444` and
+  highlighter default `#facc15`); the active one carries a check; tapping
+  applies immediately and the menu stays open so colors compare.
+* Custom row: a hex TEXT field (works on every platform, iPad included; live
+  applies `#rgb`/`#rrggbb` while typing, invalid input reverts on
+  blur/Enter) plus a **feature-detected** native `<input type="color">` chip
+  that renders ONLY where that API actually exists — never on iOS.
+* Per-tool colors: writes `state.annoColor` +
+  `state.toolSettings[tool].color` (pen/highlighter keep independent colors).
+* Closing: pointerdown anywhere outside (the anchor canvas toggles instead),
+  Escape, tool switch (`setAnnoTool`), opening the size flyout (the two
+  flyouts are mutually exclusive), orientation flip, toolbar drag/re-dock/
+  resize (floattools.js guarded `closeToolColorMenu()` hooks).
+* `events.js` handlePointerDown ignores `#tool-color-menu` (same stroke
+  guard as `#tool-size-menu`).
+
+## Bonus fix — per-tool colors AND sizes now survive reloads
+
+While verifying persistence it turned out `state.toolSettings` (the per-tool
+color + thickness buckets) was **never included in the settings blob** — so
+every reload reset colors AND tool sizes to the in-code defaults. The blob
+now carries `toolSettings` and boot MERGES it back **before** `setAnnoTool`
+reads it. Pick blue once → reload → still blue (verified live).
+
+## Separators removed
+
+All separators inside the floating annotation toolbar are gone (the
+`w-px` sliver between the App-Modes and Draw-Tools groups, the
+`#pen-customization-sep` before the pen options, and the hairline inside
+pen-customization) — the groups' own rounded gray trays already separate
+them, and the bar gets measurably narrower. The dead
+`#float-toolbar.ft-vertical .w-px` hairline CSS rule is removed too.
+
+## Other changes
+
+* The dead hidden `<input type="color">` markup, the `config.js` els entry
+  and every `els.colorPicker` reference are removed; `ui.js`
+  `updateThicknessPreview` binds the canvas to `toggleToolColorMenu`.
+* z-index chain updated: toolbar 1150 < sidebar 1200 < **flyouts 1210**
+  (a transient popover floats above the persistent sidebar card; the panel
+  minimize button at 1250 still wins).
+* Touch media query grows the palette + swatches (34px targets) inside the
+  existing `(hover: none), (pointer: coarse)` block.
+* Cache version bumped `ftsize-v21` → **`ipadcolor-v22`** everywhere
+  (CSS link, all 22 script tags, header chip) + `colormenu.js` added after
+  `sizemenu.js`.
+
+## Tests
+
+* NEW `tests/test_tool_color_menu.js` — 37 tests / 5 suites: versioning
+  (incl. ftsize-v21 retirement from all shipped files), markup (body-level
+  shell, ids, native input + separators GONE, script order), CSS contract
+  (glass, z-1210, hidden/open states, @supports fallback, grid, touch), VM
+  engine (hex normalization, open/close/toggle, render + per-tool titles,
+  apply/persist/readouts, invalid rejection, owner switches, outside-close
+  semantics incl. anchor exemption, Escape, hex live-apply/revert/no-clobber,
+  iOS-vs-desktop native-chip feature detection, rail/ribbon placement math
+  incl. flips + clamps), wiring (ui.js/app.js/config.js/events.js/
+  sizemenu.js/floattools.js contracts).
+* Sibling suites updated: version constants (`CURRENT=ipadcolor-v22`,
+  `SHIPPED += ftsize-v21`), separator + color-picker absence assertions,
+  z-order expectation, script-tag list.
+* Battery: 404 JS tests green across 15 suites (+ 11 Python). Zero page
+  errors (yjs CDN warning pre-existing).
+
+## Live verification (agent-browser, real server)
+
+* Chip `ipadcolor-v22`; no `#color-picker`, no separators in the toolbar.
+* Pen → tap canvas → palette opens below the canvas in ribbon mode and
+  beside it (exactly anchor.right+8) in the rail; 15 swatches; active check;
+  chip + hex synced; native chip present on desktop Chromium.
+* Swatch tap → `state.annoColor`/pen bucket updated, highlighter bucket
+  untouched, menu stays open; real mouse-drawn stroke carries the picked
+  color end-to-end.
+* Hex typing live-applies; outside pointerdown closes; canvas toggles;
+  Escape closes; second pen tap opens the SIZE menu and closes the palette.
+* Reload → per-tool colors restored (`toolSettings` round-trip).
+* Menu floats above the docked AI sidebar (z-1210) — no clipped columns.
+* Screenshots: scripts/cm_ribbon_open2.png (palette over sidebar),
+  scripts/cm_rail_open.png (rail + palette right of pen), scripts/cm_pink_hex.png.

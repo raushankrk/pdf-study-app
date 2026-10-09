@@ -44,8 +44,10 @@ const els = {
     toolEraserPixel: document.getElementById('tool-eraser-pixel'),
     toolEraserStroke: document.getElementById('tool-eraser-stroke'),
     toolImage: document.getElementById('tool-image'),
-    colorPicker: document.getElementById('color-picker'),
-    thicknessPicker: document.getElementById('thickness-picker'),
+    // (colorPicker removed: color selection now lives in the custom
+    // #tool-color-menu palette, js/colormenu.js — the hidden native
+    // <input type="color"> was dropped because iOS Safari never
+    // supported it, which left iPad users unable to pick colors.)
     importInput: document.getElementById('import-project-input'),
     modal: document.getElementById('modal'),
     modalTitle: document.getElementById('modal-title'),
