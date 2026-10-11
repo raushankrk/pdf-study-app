@@ -381,7 +381,15 @@ async function init() {
     els.imageInput.addEventListener('change', handleImageUpload);
     els.importInput.addEventListener('change', handleProjectImport);
 
-    // PDF content search is handled by the unified sidebar search.
+    // Note: the unified search input listener is registered further below
+    // (it switches behavior based on state.searchMode: 'files' or 'content').
+    ['left', 'right'].forEach(side => {
+        document.getElementById(`${side}-search-input`).addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') performViewportSearch(side);
+            if (e.key === 'Escape') closeViewportSearch(side);
+        });
+        document.getElementById(`${side}-search-input`).addEventListener('input', debounce(() => performViewportSearch(side), 500));
+    });
 
     window.addEventListener('paste', handlePaste);
     window.addEventListener('pointerdown', handlePointerDown, { passive: false });
