@@ -1470,3 +1470,8 @@ them, and the bar gets measurably narrower. The dead
 * Menu floats above the docked AI sidebar (z-1210) — no clipped columns.
 * Screenshots: scripts/cm_ribbon_open2.png (palette over sidebar),
   scripts/cm_rail_open.png (rail + palette right of pen), scripts/cm_pink_hex.png.
+
+## Headerless compact right rail
+- Removed the main page header entirely and moved its existing controls into a compact, scrollable right-side rail.
+- Removed app branding, Dashboard navigation, and Save/Open Project buttons as requested.
+- Kept the original control elements and IDs (rather than duplicating them) so existing PDF, undo/redo, AI, and project import/export event wiring remains attached where applicable.

@@ -55,25 +55,11 @@
     <!-- Header -->
     <header class="bg-white border-b border-gray-200 h-14 flex items-center justify-between px-4 shrink-0 z-20 shadow-sm">
 
-        <!-- Left: Brand + Dashboard button
-             NOTE: The visible text "Dashboard" and the "PDF Linker Studio" title
-             are hidden via CSS on touch / narrow screens to free horizontal
-             space for the annotation tools. On desktop they remain visible.
-             The dashboard button itself is kept (just the arrow icon).
-             The H1 is kept in the DOM for screen readers but visually hidden
-             on touch screens. -->
-        <div class="flex items-center gap-3">
-            <button onclick="goToDashboard()" class="header-dashboard-btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm font-medium" title="Back to Dashboard">
-                <i class="fa-solid fa-arrow-left"></i>
-                <span class="header-dashboard-text hidden sm:inline">Dashboard</span>
-            </button>
-            <span class="header-divider w-px h-6 bg-gray-200"></span>
-            <button onclick="toggleLeftSidebar()" class="toggle-left-btn w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-all" title="Toggle Sidebar (Ctrl+B)">
+        <!-- Compact header controls; branding and dashboard navigation live in the right rail. -->
+        <div class="flex items-center gap-1">
+            <button onclick="toggleLeftSidebar()" class="toggle-left-btn w-8 h-8 rounded hover:bg-gray-100 text-gray-500 transition-all" title="Toggle Sidebar (Ctrl+B)" aria-label="Toggle file sidebar">
                 <i class="fa-solid fa-bars"></i>
             </button>
-            <i class="header-pdf-icon fa-solid fa-file-pdf text-red-500 text-xl"></i>
-            <h1 class="header-title text-base font-bold text-gray-800">PDF Linker Studio</h1>
-            <span class="header-version-chip hidden md:inline text-[10px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded ml-1" title="Liquid glass floating sidebar + draggable annotation toolbar (horizontal / vertical) + tap-active-tool size menu + custom color palette">ipadcolor-v23</span>
         </div>
 
         <!-- Center: All Tools -->
@@ -734,6 +720,11 @@
             </aside>
 
         </main>
+
+        <!-- Compact right-side command rail. Header controls are moved here at startup. -->
+        <aside id="right-mini-rail" aria-label="PDF tools and project actions">
+            <div id="right-rail-controls"></div>
+        </aside>
     </div>
 
     <div id="tool-cursor" class="hidden fixed pointer-events-none z-[100] flex items-center justify-center">
@@ -975,5 +966,25 @@
     <script src="/js/events.js?v=ipadcolor-v23"></script>
     <script src="/js/app.js?v=ipadcolor-v23"></script>
 
+<script>
+(function () {
+  const header = document.querySelector('body > header');
+  const rail = document.getElementById('right-mini-rail');
+  const mount = document.getElementById('right-rail-controls');
+  if (!header || !rail || !mount) return;
+  Array.from(header.children).forEach((node, index) => {
+    node.classList.add('right-rail-section', 'right-rail-section-' + index);
+    if (index === 2) {
+      const importInput = node.querySelector('#import-project-input');
+      if (importInput) document.body.appendChild(importInput);
+      node.querySelector('button[onclick="exportProject()"]')?.remove();
+      node.querySelector('label')?.remove();
+    }
+    mount.appendChild(node);
+  });
+  header.remove();
+  document.body.classList.add('right-rail-layout');
+})();
+</script>
 </body>
 </html>
