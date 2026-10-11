@@ -1548,13 +1548,9 @@ function deleteSelection() {
             pageData.textBoxes.splice(idx, 1);
         }
     });
-    // Skip REST save when Yjs is connected.
-    if (!(typeof yjsIsConnected === 'function' &&
-          yjsIsConnected(getProjectId(), state.view[side].docId))) {
-        saveAnnotationsToDB(state.view[side].docId, state.annotations[state.view[side].docId]);
-    }
+    // Remove selected strokes from this document's page before persisting.
+    // Saving before this loop would leave deleted strokes in the stored copy.
     setTimeout(() => renderTextLayer(side), 0);
-
 
     state.selection.selectedStrokes.forEach(strokeObj => {
         const idx = pageData.strokes.indexOf(strokeObj);
@@ -1574,7 +1570,8 @@ function deleteSelection() {
                 if (!pd.textBoxes) pd.textBoxes = [];
                 if (!pd.strokes) pd.strokes = [];
                 deletedImages.forEach(img => {
-                    if (pd.images.indexOf(img) === -1) pd.images.push(img);
+                    if (!pd.images.some(existing => existing === img ||
+                        (img.id && existing && existing.id === img.id))) pd.images.push(img);
                     if (img.id && !state.imageCache[img.id]) {
                         const imageObj = new Image();
                         imageObj.src = img.src;
@@ -1582,10 +1579,12 @@ function deleteSelection() {
                     }
                 });
                 deletedTextBoxes.forEach(tb => {
-                    if (pd.textBoxes.indexOf(tb) === -1) pd.textBoxes.push(tb);
+                    if (!pd.textBoxes.some(existing => existing === tb ||
+                        (tb.id && existing && existing.id === tb.id))) pd.textBoxes.push(tb);
                 });
                 deletedStrokes.forEach(stk => {
-                    if (pd.strokes.indexOf(stk) === -1) pd.strokes.push(stk);
+                    if (!pd.strokes.some(existing => existing === stk ||
+                        (stk.id && existing && existing.id === stk.id))) pd.strokes.push(stk);
                 });
                 // Restore links in their original positions (descending order so
                 // indices stay valid).
@@ -1607,16 +1606,19 @@ function deleteSelection() {
                 const pd = state.annotations[dId] && state.annotations[dId][pId];
                 if (!pd) return;
                 deletedImages.forEach(img => {
-                    const idx = pd.images.indexOf(img);
+                    const idx = pd.images.findIndex(existing => existing === img ||
+                        (img.id && existing && existing.id === img.id));
                     if (idx !== -1) pd.images.splice(idx, 1);
                     if (img.id && state.imageCache[img.id]) delete state.imageCache[img.id];
                 });
                 deletedTextBoxes.forEach(tb => {
-                    const idx = pd.textBoxes.indexOf(tb);
+                    const idx = pd.textBoxes.findIndex(existing => existing === tb ||
+                        (tb.id && existing && existing.id === tb.id));
                     if (idx !== -1) pd.textBoxes.splice(idx, 1);
                 });
                 deletedStrokes.forEach(stk => {
-                    const idx = pd.strokes.indexOf(stk);
+                    const idx = pd.strokes.findIndex(existing => existing === stk ||
+                        (stk.id && existing && existing.id === stk.id));
                     if (idx !== -1) pd.strokes.splice(idx, 1);
                 });
                 deletedLinkIds.forEach(({ link }) => {
@@ -1628,7 +1630,10 @@ function deleteSelection() {
                     renderMarkersForView('left');
                     renderMarkersForView('right');
                 }
-            }
+            },
+            // Explicitly bind this history entry to the document acted on.
+            // Never infer its owner from whichever viewport becomes active later.
+            docId
         );
     }
 

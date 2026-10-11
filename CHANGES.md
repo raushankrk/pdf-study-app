@@ -1,3 +1,45 @@
+# Undo/Redo reliability fix
+
+- Persist the post-undo/redo annotation snapshot after every history action.
+  When Yjs is connected, reconcile the affected document's pages to Yjs; when
+  it is not connected, save the final annotation snapshot to the backend.
+- This prevents stale shared or stored annotations from being replayed and
+  appearing again after undo/delete.
+- Made Delete Selection undo/redo find annotations by stable ID as well as
+  object identity, avoiding missed operations after Yjs rebuilds objects.
+- Extended the active-PDF regression test to cover persistence and Yjs sync.
+
+## Validation
+
+- Active-PDF history/persistence regression test passed.
+- Unified search regression test passed (7/7).
+- All frontend JavaScript syntax checks passed.
+- One existing end-to-end test remains blocked by a missing Node.js dependency.
+
+---
+
+# Active-PDF annotation action isolation
+
+- Kept undo/redo history scoped to the active PDF document and made active-side
+  resolution fall back only to the other occupied viewport when the remembered
+  side is empty.
+- Explicitly bind Delete Selection history entries to the document being
+  modified, rather than relying on the toolbar's active side later.
+- Fixed Delete Selection persistence ordering so selected strokes are removed
+  before the updated annotation state is saved.
+- Added `tests/test_active_pdf_action_isolation.js` to guard independent undo /
+  redo histories for two simultaneously open PDFs and document ownership for
+  destructive actions.
+
+## Validation
+
+- Active-PDF action-isolation regression test passed.
+- Unified-search regression tests passed (7/7).
+- JavaScript syntax checks and full standalone frontend test sweep run for this
+  build; see the delivery summary for results.
+
+---
+
 # Search UX Improvements
 
 ## Unified PDF-content search

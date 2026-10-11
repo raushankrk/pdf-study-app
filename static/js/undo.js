@@ -1,9 +1,19 @@
 // Per-PDF undo/redo history. Each document keeps an independent timeline so
 // toolbar actions only operate on the currently active PDF.
 
+function getActiveHistorySide() {
+    if (!state || !state.view) return null;
+    const preferred = state.lastActiveSide === 'right' ? 'right' : 'left';
+    if (state.view[preferred] && state.view[preferred].docId) return preferred;
+    // If the remembered side is empty, use the other occupied viewport rather
+    // than silently disabling actions or falling back to an unrelated PDF.
+    const other = preferred === 'right' ? 'left' : 'right';
+    return state.view[other] && state.view[other].docId ? other : null;
+}
+
 function getActiveHistoryDocId() {
-    const side = state && state.lastActiveSide === 'right' ? 'right' : 'left';
-    return state && state.view && state.view[side] ? state.view[side].docId : null;
+    const side = getActiveHistorySide();
+    return side && state.view[side] ? state.view[side].docId : null;
 }
 
 function getHistoryBucket(docId, create = true) {
@@ -47,32 +57,75 @@ function renderHistoryDocument(docId) {
     });
 }
 
+
+function persistHistoryDocument(docId) {
+    if (!docId || !state.annotations || !state.annotations[docId]) return;
+
+    const connected = typeof yjsIsConnected === 'function' &&
+        yjsIsConnected(getProjectId(), docId);
+
+    if (connected && typeof yjsReplacePage === 'function') {
+        // History callbacks do not all update Yjs themselves (notably
+        // Delete Selection). Reconcile every page after undo/redo so the
+        // collaboration store cannot restore the pre-action annotation.
+        const pages = state.annotations[docId];
+        Object.keys(pages).forEach(pageId => {
+            const page = pages[pageId] || { strokes: [], images: [], textBoxes: [] };
+            yjsReplacePage(docId, pageId, page);
+        });
+        return;
+    }
+
+    // Without Yjs, save the final post-action snapshot. Catch the async
+    // request here because toolbar handlers are intentionally synchronous.
+    if (typeof saveAnnotationsToDB === 'function') {
+        Promise.resolve(saveAnnotationsToDB(docId, state.annotations[docId]))
+            .catch(err => console.warn('[history] Could not persist annotation history action:', err));
+    }
+}
+
 function undoLastAction() {
+    // Resolve the active document once per click. Each document owns an
+    // independent undo stack; never consume the other open PDF's history.
     const docId = getActiveHistoryDocId();
     if (!docId) return;
     const bucket = getHistoryBucket(docId, false);
     if (!bucket || bucket.pointer <= 0) {
         // Keep legacy stroke undo available, but restrict it to the active PDF.
-        if (typeof undoLastStroke === 'function') undoLastStroke();
+        if (typeof undoLastStroke === 'function') {
+            undoLastStroke();
+            persistHistoryDocument(docId);
+            renderHistoryDocument(docId);
+        }
         return;
     }
     const action = bucket.stack[bucket.pointer - 1];
-    try { action.undo(); }
-    catch (err) { console.warn('[undo] action.undo() threw:', err); }
-    bucket.pointer--;
-    renderHistoryDocument(docId);
+    try {
+        action.undo();
+        bucket.pointer--;
+        persistHistoryDocument(docId);
+        renderHistoryDocument(docId);
+    } catch (err) {
+        console.warn('[undo] action.undo() threw:', err);
+    }
 }
 
 function redoNextAction() {
+    // Resolve the active document once per click. Redo is scoped to the same
+    // per-document timeline as undo.
     const docId = getActiveHistoryDocId();
     if (!docId) return;
     const bucket = getHistoryBucket(docId, false);
     if (!bucket || bucket.pointer >= bucket.stack.length) return;
     const action = bucket.stack[bucket.pointer];
-    try { action.redo(); }
-    catch (err) { console.warn('[redo] action.redo() threw:', err); }
-    bucket.pointer++;
-    renderHistoryDocument(docId);
+    try {
+        action.redo();
+        bucket.pointer++;
+        persistHistoryDocument(docId);
+        renderHistoryDocument(docId);
+    } catch (err) {
+        console.warn('[redo] action.redo() threw:', err);
+    }
 }
 
 function clearHistory(docId = null) {
