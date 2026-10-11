@@ -278,6 +278,25 @@ body.left-sidebar-collapsed .toggle-left-btn i { transform: rotate(180deg); }
 }
 #tag-rail::-webkit-scrollbar { display: none; }
 body.left-sidebar-collapsed #tag-rail { display: flex; }
+/* The sidebar toggle stays fixed and visible at the top of the minimal left rail. */
+.tag-rail-toggle {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    flex: 0 0 44px;
+    width: 44px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    background: #fff;
+    border: 0;
+    border-radius: 0;
+    cursor: pointer;
+}
+.tag-rail-toggle:hover { background: #f3f4f6; color: #2563eb; }
+.tag-rail-toggle i { transform: none !important; }
 .tag-rail-head {
     color: #9ca3af;
     font-size: 10px;

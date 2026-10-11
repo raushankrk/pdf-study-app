@@ -905,6 +905,16 @@ function renderTagRail() {
     if (!rail) return;
     rail.innerHTML = '';
 
+    // Keep the explorer toggle pinned at the top of the minimal left rail.
+    const toggleButton = document.createElement('button');
+    toggleButton.type = 'button';
+    toggleButton.className = 'toggle-left-btn tag-rail-toggle';
+    toggleButton.title = 'Expand file sidebar (Ctrl+B)';
+    toggleButton.setAttribute('aria-label', 'Expand file sidebar');
+    toggleButton.innerHTML = '<i class="fa-solid fa-bars"></i>';
+    toggleButton.onclick = toggleLeftSidebar;
+    rail.appendChild(toggleButton);
+
     // Compact quick-search action sits above the tagged-PDF shortcuts.
     const head = document.createElement('div');
     head.className = 'tag-rail-head';
