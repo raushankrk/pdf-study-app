@@ -284,6 +284,28 @@ body.left-sidebar-collapsed #tag-rail { display: flex; }
     line-height: 1;
     margin-bottom: 2px;
     flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+.tag-rail-search {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #eff6ff;
+    color: #2563eb;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background .15s ease, color .15s ease;
+}
+.tag-rail-search:hover {
+    background: #dbeafe;
+    color: #1d4ed8;
 }
 .tag-chip {
     width: 34px;

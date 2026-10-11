@@ -64,7 +64,7 @@ const state = {
     // Search/filter string for the file explorer (separate from global doc-search across PDF content).
     fileExplorerQuery: '',
     // Unified search mode: 'files' (filter file tree by name) or 'content' (search PDF text content).
-    searchMode: 'files',
+    searchMode: 'content',
     view: {
         left: { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false },
         right: { docId: null, pageId: null, pageNum: 1, scale: 1.5, scrollTop: 0, locked: false }

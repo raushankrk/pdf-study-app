@@ -53,11 +53,11 @@ assert.deepStrictEqual = (a, b, msg) => {
     if (sa !== sbb) throw new Error(msg || `expected ${sbb}, got ${sa}`);
 };
 
-// Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
+// Version chain — ipadcolor-v23 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
     'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+const CURRENT_VERSION = 'ipadcolor-v23';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as test_float_toolbar.js)
@@ -345,7 +345,7 @@ test('3.2 groups stand up: their buttons stack in a centered column', () => {
 });
 
 test('3.3 no separators in the rail; no inline slider in the rail', () => {
-    // ipadcolor-v22: the tool separators are GONE (user request — they cost
+    // ipadcolor-v23: the tool separators are GONE (user request — they cost
     // horizontal space in the ribbon and vertical height in the rail), so
     // the vertical-mode hairline restyle rule must be gone too. cssBlock
     // THROWS on a missing selector, so absence is asserted via try/catch.

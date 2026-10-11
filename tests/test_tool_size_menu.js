@@ -75,7 +75,7 @@ const eventsSrc = fs.readFileSync(EVENTS_JS, 'utf8');
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
     'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+const CURRENT_VERSION = 'ipadcolor-v23';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as the sibling suites)
@@ -305,7 +305,7 @@ function makeSizeMenuSandbox(opts = {}) {
     };
     // Extra DOM surface for the REAL setAnnoTool (loaded on demand by the
     // integration tests): body classes + the image input. (The colorPicker
-    // element stub is gone with the native input itself — ipadcolor-v22.)
+    // element stub is gone with the native input itself — ipadcolor-v23.)
     sb.document.body = { classList: makeClassSync() };
     sb.els = { imageInput: makeNode('input') };
     vm.createContext(sb);

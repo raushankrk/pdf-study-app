@@ -35,7 +35,7 @@
 //   * No tool separators: index.html carries NO w-px / #pen-customization-sep
 //     inside the #float-toolbar aside and style.css carries NO
 //     '#float-toolbar.ft-vertical .w-px' hairline rule.
-//   * Version bumped ftsize-v21 -> ipadcolor-v22 everywhere + colormenu.js
+//   * Version bumped ftsize-v21 -> ipadcolor-v23 everywhere + colormenu.js
 //     added to the script list (after sizemenu.js).
 // ============================================================================
 const fs = require('fs');
@@ -79,11 +79,11 @@ const configSrc = fs.readFileSync(CONFIG_JS, 'utf8');
 const utilsSrc = fs.readFileSync(UTILS_JS, 'utf8');
 const eventsSrc = fs.readFileSync(EVENTS_JS, 'utf8');
 
-// Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
+// Version chain — ipadcolor-v23 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
     'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+const CURRENT_VERSION = 'ipadcolor-v23';
 
 // ---------------------------------------------------------------------------
 // Helpers (same harness conventions as the sibling suites)
@@ -803,7 +803,7 @@ test('5.6 events.js: pointerdown inside #tool-color-menu never starts a PDF stro
 test('5.7 settings blob persists annoColor AND the per-tool buckets (survive reloads)', () => {
     const dbSrc = fs.readFileSync(path.join(ROOT, 'static', 'js', 'database.js'), 'utf8');
     assert(dbSrc.includes('annoColor: state.annoColor'), 'settings save must carry annoColor');
-    // ipadcolor-v22 fix: toolSettings was NEVER persisted — per-tool colors
+    // ipadcolor-v23 fix: toolSettings was NEVER persisted — per-tool colors
     // AND sizes silently reset to defaults on every reload.
     assert(/toolSettings:\s*state\.toolSettings/.test(dbSrc),
         'settings save must carry the per-tool toolSettings buckets');

@@ -228,6 +228,23 @@ async function performGlobalSearch() {
         }
     }
 
+    // Prefer results from the active PDF, and put its current page first.
+    // This keeps the unified sidebar search useful without a second per-PDF search box.
+    const activeSide = state.lastActiveSide || 'left';
+    const activeDocId = state.view[activeSide] && state.view[activeSide].docId;
+    const activePage = state.view[activeSide] && state.view[activeSide].pageNum;
+    allMatches.sort((a, b) => {
+        const aActiveDoc = a.docId === activeDocId ? 0 : 1;
+        const bActiveDoc = b.docId === activeDocId ? 0 : 1;
+        if (aActiveDoc !== bActiveDoc) return aActiveDoc - bActiveDoc;
+        if (a.docId === activeDocId && b.docId === activeDocId) {
+            const aActivePage = a.page === activePage ? 0 : 1;
+            const bActivePage = b.page === activePage ? 0 : 1;
+            if (aActivePage !== bActivePage) return aActivePage - bActivePage;
+        }
+        return a.docName.localeCompare(b.docName) || a.page - b.page;
+    });
+
     container.innerHTML = '';
     if (allMatches.length === 0) {
         container.innerHTML = '<div class="text-xs text-gray-500 p-2">No matches found.</div>';
@@ -263,8 +280,10 @@ async function performGlobalSearch() {
             
             const input = document.getElementById(`${side}-search-input`);
             input.value = query;
-            input.classList.remove('hidden');
-            document.getElementById(`${side}-search-nav`).classList.remove('hidden');
+            // Keep the legacy per-viewport search controls hidden. The sidebar
+            // query drives result selection and the existing PDF highlight layer.
+            input.classList.add('hidden');
+            document.getElementById(`${side}-search-nav`).classList.add('hidden');
 
             await performViewportSearch(side, match.page);
             

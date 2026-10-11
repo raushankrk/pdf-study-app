@@ -1,3 +1,28 @@
+# Search UX Improvements
+
+## Unified PDF-content search
+
+- Made the sidebar's unified search default to **PDF content** search, while
+  preserving the Files mode toggle for filename/folder filtering.
+- Prioritized matches from the active PDF, with matches on its current page
+  shown first.
+- Removed the duplicate per-viewport Find controls from the active-PDF toolbar.
+  The underlying hidden search inputs remain available to the existing PDF
+  highlight/navigation engine when a sidebar result is opened.
+- Added a quick-search button above the tagged-PDF chips in the collapsed
+  sidebar rail. It expands the explorer, switches to content search if needed,
+  and focuses the unified search field.
+
+## Validation
+
+- JavaScript syntax checks passed for all frontend JavaScript files.
+- Relevant regression suites passed: tag rail, active-PDF toolbar, frontend bug
+  checks, undo/Yjs rebuild, minimize panel, and other standalone Node tests.
+- Backend integration tests require the local server to be running; they could
+  not be validated in this environment.
+
+---
+
 # Annotation / Touch Interaction Bug Fixes
 
 This document summarizes the root-cause fixes applied in this patch.

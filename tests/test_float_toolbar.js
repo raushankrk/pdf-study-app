@@ -52,11 +52,11 @@ assert.deepStrictEqual = (a, b, msg) => {
     if (sa !== sbb) throw new Error(msg || `expected ${sbb}, got ${sa}`);
 };
 
-// Version chain — ipadcolor-v22 must be new (never reuse a shipped string).
+// Version chain — ipadcolor-v23 must be new (never reuse a shipped string).
 const SHIPPED_VERSIONS = ['comment-v9', 'activepdf-v11', 'touchfix-v12', 'panelmin-v13',
     'posresume-v14', 'tagrail-v15', 'floatside-v16', 'floatdrag-v17', 'liquidglass-v18',
     'floattools-v19', 'ftorient-v20', 'ftsize-v21'];
-const CURRENT_VERSION = 'ipadcolor-v22';
+const CURRENT_VERSION = 'ipadcolor-v23';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -309,11 +309,11 @@ test('1.4 pen-customization moved into the toolbar; separators + native input GO
     // (#tool-size-menu, body level) — only the color preview remains inline.
     assert(!block.includes('id="thickness-picker"'), 'inline thickness slider must be gone');
     assert(block.includes('id="thickness-preview-canvas"'), 'color preview canvas missing');
-    // ipadcolor-v22: the hidden native <input type="color"> is GONE — iOS
+    // ipadcolor-v23: the hidden native <input type="color"> is GONE — iOS
     // Safari never supported it, which is why color selection did nothing
     // on iPad. The preview canvas now opens the custom #tool-color-menu.
     assert(!block.includes('id="color-picker"'), 'hidden native color input must be gone');
-    // ipadcolor-v22: the tool separators are GONE (user request) — the
+    // ipadcolor-v23: the tool separators are GONE (user request) — the
     // groups' own rounded trays separate them and the bar gets narrower.
     assert(!block.includes('class="w-px'), 'no w-px separator may remain inside the toolbar');
     assert(!block.includes('pen-customization-sep'), 'pen-customization-sep must be gone');

@@ -643,6 +643,23 @@ window.addEventListener('click', (e) => {
 });
 
 // ---- Unified search mode toggle ----
+function focusUnifiedContentSearch() {
+    // The tag rail is only visible while the explorer is collapsed.
+    if (document.body.classList.contains('left-sidebar-collapsed') &&
+        typeof toggleLeftSidebar === 'function') {
+        toggleLeftSidebar();
+    }
+    if (state.searchMode !== 'content') {
+        state.searchMode = 'files'; // toggleSearchMode switches to content from here.
+        toggleSearchMode();
+    }
+    const input = document.getElementById('unified-search-input');
+    if (input) {
+        input.focus();
+        input.select();
+    }
+}
+
 function toggleSearchMode() {
     state.searchMode = state.searchMode === 'files' ? 'content' : 'files';
     const input = document.getElementById('unified-search-input');
@@ -888,10 +905,20 @@ function renderTagRail() {
     if (!rail) return;
     rail.innerHTML = '';
 
-    // Header: tiny pin icon (doubles as the hint when nothing is tagged).
+    // Compact quick-search action sits above the tagged-PDF shortcuts.
     const head = document.createElement('div');
     head.className = 'tag-rail-head';
-    head.innerHTML = '<i class="fa-solid fa-thumbtack"></i>';
+    const searchButton = document.createElement('button');
+    searchButton.type = 'button';
+    searchButton.className = 'tag-rail-search';
+    searchButton.title = 'Search inside PDF files';
+    searchButton.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i>';
+    searchButton.onclick = focusUnifiedContentSearch;
+    head.appendChild(searchButton);
+    const pinHint = document.createElement('span');
+    pinHint.innerHTML = '<i class="fa-solid fa-thumbtack"></i>';
+    pinHint.title = 'Tagged PDFs';
+    head.appendChild(pinHint);
     rail.appendChild(head);
 
     const ids = (Array.isArray(state.taggedDocIds) ? state.taggedDocIds : [])
