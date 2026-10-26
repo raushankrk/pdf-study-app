@@ -85,6 +85,16 @@
             <div class="flex items-center gap-1">
 
                 <!-- Active PDF switcher: PDF A | PDF B -->
+                <!-- Compact layout toggle: OFF = two PDFs, ON = one PDF -->
+                <button id="pdf-layout-toggle" type="button"
+                    onclick="togglePdfLayout()"
+                    class="pdf-layout-toggle"
+                    aria-pressed="false"
+                    aria-label="Switch to single-PDF layout"
+                    title="Two-PDF layout">
+                    <i class="fa-solid fa-table-columns"></i>
+                </button>
+
                 <div id="pdf-switcher" class="flex items-center bg-gray-100 rounded-lg p-1 gap-0.5" role="tablist" aria-label="Active PDF">
                     <button id="pdf-tab-left" onclick="setActivePdf('left')"
                         class="pdf-tab" role="tab" aria-label="Activate PDF A"
@@ -723,8 +733,26 @@
         </main>
 
         <!-- Compact right-side command rail. Header controls are moved here at startup. -->
-        <aside id="right-mini-rail" aria-label="PDF tools and project actions">
-            <div id="right-rail-controls"></div>
+        <aside id="right-mini-rail" aria-label="Compact PDF controls">
+            <nav id="fresh-pdf-rail" aria-label="PDF controls">
+                <button type="button" class="fresh-rail-btn" id="fresh-layout-toggle" onclick="togglePdfLayout()" title="Switch PDF layout" aria-label="Switch PDF layout"><i class="fa-solid fa-table-columns"></i></button>
+                <button type="button" class="fresh-rail-btn" onclick="freshToggleChat()" title="Chat" aria-label="Chat"><i class="fa-regular fa-comment"></i></button>
+                <button type="button" class="fresh-rail-btn live-indicator is-unknown" id="fresh-live-status" onclick="freshShowLiveStatus()" title="Live status: check connection" aria-label="Live status"><i class="fa-solid fa-tower-broadcast"></i></button>
+                <div class="fresh-rail-divider"></div>
+                <button type="button" class="fresh-rail-btn" id="fresh-lock" onclick="freshRunForActive('lock')" title="Lock/unlock PDF view" aria-label="Lock/unlock PDF view" aria-pressed="false"><i class="fa-solid fa-lock-open"></i></button>
+                <button type="button" class="fresh-rail-btn" onclick="freshRunForActive('zoomOut')" title="Zoom out" aria-label="Zoom out"><i class="fa-solid fa-minus"></i></button>
+                <output id="fresh-zoom-level" aria-live="polite" title="Current zoom">100%</output>
+                <button type="button" class="fresh-rail-btn" onclick="freshRunForActive('zoomIn')" title="Zoom in" aria-label="Zoom in"><i class="fa-solid fa-plus"></i></button>
+                <button type="button" class="fresh-rail-btn" onclick="freshRunForActive('fit')" title="Fit view" aria-label="Fit view"><i class="fa-solid fa-expand"></i></button>
+                <button type="button" class="fresh-rail-btn" onclick="undoLastAction()" title="Undo" aria-label="Undo"><i class="fa-solid fa-rotate-left"></i></button>
+                <button type="button" class="fresh-rail-btn" onclick="redoNextAction()" title="Redo" aria-label="Redo"><i class="fa-solid fa-rotate-right"></i></button>
+                <button type="button" class="fresh-rail-btn fresh-danger" onclick="deleteSelection()" title="Delete selection" aria-label="Delete selection"><i class="fa-regular fa-trash-can"></i></button>
+                <div class="fresh-rail-divider"></div>
+                <button type="button" class="fresh-rail-btn" onclick="freshRunForActive('prevPage')" title="Previous page" aria-label="Previous page"><i class="fa-solid fa-chevron-up"></i></button>
+                <input id="fresh-page-input" type="number" min="1" inputmode="numeric" placeholder="—" aria-label="Current page number" title="Current page number" onchange="freshJumpToPage()" />
+                <button type="button" class="fresh-rail-btn" onclick="freshRunForActive('nextPage')" title="Next page" aria-label="Next page"><i class="fa-solid fa-chevron-down"></i></button>
+            </nav>
+            <div id="right-rail-controls" aria-hidden="true"></div>
         </aside>
     </div>
 
@@ -822,7 +850,7 @@
                 <!-- 1. Model Selection -->
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 mb-1">Model Selection (Ollama API)</label>
-                    <input type="text" id="ai-setting-model" class="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g., gemma3:1b, llama3.2">
+                    <input type="text" id="ai-setting-model" class="w-full p-2 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500" placeholder="e.g., llama3.2:latest, llama3.2">
                 </div>
 
                 <!-- 2. System Prompt -->
@@ -947,7 +975,7 @@
     <script src="/js/api.js?v=ipadcolor-v23"></script>
     <script src="/js/state.js?v=ipadcolor-v23"></script>
     <script src="/js/database.js?v=ipadcolor-v23"></script>
-    <script src="/js/ui.js?v=ipadcolor-v23"></script>
+    <script src="/js/ui.js?v=compact-lock-fix-v1"></script>
     <script src="/js/floattools.js?v=ipadcolor-v23"></script>
     <script src="/js/sizemenu.js?v=ipadcolor-v23"></script>
     <script src="/js/colormenu.js?v=ipadcolor-v23"></script>

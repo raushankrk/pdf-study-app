@@ -67,7 +67,7 @@ THUMBNAIL_DIR = os.path.join(DATA_DIR, "thumbnails")
 # ---- Ollama ----
 OLLAMA_URL = _get("ollama", "url", "http://localhost:11434").rstrip("/")
 OLLAMA_EMBEDDING_MODEL = _get("ollama", "embedding_model", "nomic-embed-text")
-OLLAMA_LLM_MODEL = _get("ollama", "llm_model", "gemma3:1b")
+OLLAMA_LLM_MODEL = _get("ollama", "llm_model", "llama3.2:latest")
 
 # ---- AI settings ----
 AI_MAX_PAGES_PER_DOC = _get_int("ai", "max_pages_per_doc", 50)

@@ -182,6 +182,7 @@ function minimizePanel(side, save = true) {
     if (state.lastActiveSide === side) setActivePdf(otherSide(side), false);
 
     applyPanelMinimizeVisuals(side);
+    updatePdfLayoutToggleVisuals();
     if (save) saveSettings();
 }
 
@@ -200,6 +201,7 @@ function restorePanel(side, save = true) {
     }
 
     applyPanelMinimizeVisuals(null);
+    updatePdfLayoutToggleVisuals();
 
     // Layout changed (the restored panel gets its width back) — refresh the
     // rect-derived overlays exactly like the splitter's pointerup does.
@@ -217,6 +219,159 @@ function restorePanel(side, save = true) {
 
 window.minimizePanel = minimizePanel;
 window.restorePanel = restorePanel;
+
+/**
+ * Toggle between the split two-PDF workspace and a single-PDF workspace.
+ * In single-PDF mode, hide the inactive panel without unloading its document,
+ * annotations, links, or history. Clicking a PDF in the workspace still makes
+ * it active; toggling back restores the split view.
+ */
+function togglePdfLayout() {
+    const btn = document.getElementById('pdf-layout-toggle');
+    if (state.minimizedSide) {
+        restorePanel(state.minimizedSide);
+    } else {
+        const active = state.lastActiveSide === 'right' ? 'right' : 'left';
+        minimizePanel(otherSide(active));
+    }
+    updatePdfLayoutToggleVisuals();
+}
+
+function updatePdfLayoutToggleVisuals() {
+    const btn = document.getElementById('pdf-layout-toggle');
+    if (!btn) return;
+    const single = !!state.minimizedSide;
+    btn.classList.toggle('is-single-layout', single);
+    btn.setAttribute('aria-pressed', single ? 'true' : 'false');
+    btn.setAttribute('aria-label', single ? 'Switch to two-PDF layout' : 'Switch to single-PDF layout');
+    btn.title = single ? 'Single-PDF layout — click to show both PDFs' : 'Two-PDF layout — click to show one PDF';
+    const icon = btn.querySelector('i');
+    if (icon) {
+        icon.classList.toggle('fa-table-columns', !single);
+        icon.classList.toggle('fa-square', single);
+    }
+}
+window.togglePdfLayout = togglePdfLayout;
+
+// Fresh compact side rail: controls route to whichever PDF is active.
+function freshActiveSide() {
+    return (typeof state !== 'undefined' && state.lastActiveSide === 'right') ? 'right' : 'left';
+}
+function freshRunForActive(action) {
+    const side = freshActiveSide();
+    if (action === 'lock') toggleLock(side);
+    else if (action === 'zoomOut') zoomViewport(side, -0.25);
+    else if (action === 'zoomIn') zoomViewport(side, 0.25);
+    else if (action === 'fit') resetZoom(side);
+    else if (action === 'prevPage') navigatePage(side, -1);
+    else if (action === 'nextPage') navigatePage(side, 1);
+    freshSyncPageInput();
+}
+function freshSyncZoomLevel() {
+    const side = freshActiveSide();
+    const fresh = document.getElementById('fresh-zoom-level');
+    const legacy = document.getElementById(side + '-zoom-level');
+    if (fresh && legacy) {
+        const value = (legacy.textContent || '').trim();
+        fresh.textContent = value || '100%';
+        fresh.title = 'Current zoom: ' + fresh.textContent;
+    }
+}
+function freshSyncLockIcon() {
+    const side = freshActiveSide();
+    const fresh = document.getElementById('fresh-lock');
+    const legacy = document.getElementById('lock-' + side + '-btn');
+    if (!fresh || !legacy) return;
+    const sourceIcon = legacy.querySelector('i');
+    const targetIcon = fresh.querySelector('i');
+    if (!sourceIcon || !targetIcon) return;
+
+    // Mirror the exact icon classes maintained by toggleLock() in the original UI.
+    targetIcon.className = sourceIcon.className;
+    const locked = sourceIcon.classList.contains('fa-lock') &&
+                   !sourceIcon.classList.contains('fa-lock-open');
+    fresh.classList.toggle('is-locked', locked);
+    fresh.setAttribute('aria-pressed', locked ? 'true' : 'false');
+    fresh.setAttribute('aria-label', locked ? 'Unlock PDF view' : 'Lock PDF view');
+    fresh.title = locked ? 'Unlock PDF view' : 'Lock PDF view';
+}
+function freshJumpToPage() {
+    const input = document.getElementById('fresh-page-input');
+    if (!input) return;
+    const side = freshActiveSide();
+    const legacy = document.getElementById(side + '-page-input');
+    if (legacy) {
+        legacy.value = input.value;
+        jumpToPage(side);
+    }
+}
+function freshSyncPageInput() {
+    const side = freshActiveSide();
+    const input = document.getElementById('fresh-page-input');
+    const legacy = document.getElementById(side + '-page-input');
+    if (input && legacy && document.activeElement !== input) input.value = legacy.value || '';
+}
+function freshToggleChat() {
+    // Always open the existing AI chat panel from the compact rail.
+    const sidebar = document.getElementById('float-sidebar');
+    const chatTab = document.getElementById('fs-tab-chat');
+
+    if (typeof setFloatSidebarMode === 'function') {
+        setFloatSidebarMode('chat');
+    } else if (chatTab) {
+        chatTab.click();
+    }
+
+    // The existing UI uses this body class to reveal the floating sidebar.
+    document.body.classList.add('float-sidebar-open');
+    document.body.classList.remove('float-sidebar-closed');
+
+    if (sidebar) {
+        sidebar.classList.remove('hidden');
+        sidebar.setAttribute('aria-hidden', 'false');
+    }
+
+    if (typeof updateFloatSidebarVisuals === 'function') updateFloatSidebarVisuals();
+    if (typeof syncFloatSidebarVisuals === 'function') syncFloatSidebarVisuals();
+}
+function freshShowLiveStatus() {
+    const btn = document.getElementById('fresh-live-status');
+    const connected = !!(window.yjsProvider && window.yjsProvider.wsconnected);
+    const status = connected ? 'Connected' : 'Connection status unavailable or disconnected';
+    if (btn) btn.title = 'Live status: ' + status;
+    if (typeof showToast === 'function') showToast(status);
+    else console.info('PDF Linker live status:', status);
+}
+window.freshRunForActive = freshRunForActive;
+window.freshJumpToPage = freshJumpToPage;
+window.freshToggleChat = freshToggleChat;
+window.freshShowLiveStatus = freshShowLiveStatus;
+document.addEventListener('DOMContentLoaded', () => {
+    freshSyncPageInput();
+    freshSyncZoomLevel();
+    freshSyncLockIcon();
+    ['left-zoom-level', 'right-zoom-level'].forEach(id => {
+        const node = document.getElementById(id);
+        if (node) new MutationObserver(freshSyncZoomLevel).observe(node, {childList:true, characterData:true, subtree:true});
+    });
+    ['lock-left-btn', 'lock-right-btn'].forEach(id => {
+        const node = document.getElementById(id);
+        const icon = node && node.querySelector('i');
+        if (icon) new MutationObserver(freshSyncLockIcon).observe(icon, {attributes:true, attributeFilter:['class']});
+    });
+    const layout = document.getElementById('pdf-layout-toggle');
+    const freshLayout = document.getElementById('fresh-layout-toggle');
+    if (layout && freshLayout) {
+        const sync = () => {
+            freshLayout.classList.toggle('is-single-layout', layout.classList.contains('is-single-layout'));
+            freshLayout.setAttribute('aria-pressed', layout.getAttribute('aria-pressed') || 'false');
+        };
+        sync();
+        const observer = new MutationObserver(sync);
+        observer.observe(layout, {attributes:true, attributeFilter:['class','aria-pressed']});
+    }
+    document.addEventListener('click', () => { freshSyncPageInput(); freshSyncZoomLevel(); });
+});
 
 function toggleLeftSidebar() {
     document.body.classList.toggle('left-sidebar-collapsed');
@@ -747,7 +902,7 @@ async function saveAiSettings() {
     const oldChunkSize = state.aiSettings.chunkSize;
     
     state.aiSettings = {
-        model: els.aiSettingModel.value.trim() || "gemma3:1b",
+        model: els.aiSettingModel.value.trim() || "llama3.2:latest",
         systemPrompt: els.aiSettingPrompt.value.trim() || "You are a helpful assistant answering questions based on the provided PDF context.",
         responseStyle: els.aiSettingStyle.value,
         temperature: parseFloat(els.aiSettingTemp.value),
@@ -774,7 +929,7 @@ async function saveAiSettings() {
 function resetAiSettings() {
     if(confirm("Reset all AI settings to default?")) {
         state.aiSettings = {
-            model: "gemma3:1b",
+            model: "llama3.2:latest",
             systemPrompt: "You are a helpful assistant answering questions based on the provided PDF context.",
             responseStyle: "Detailed",
             temperature: 0.7,

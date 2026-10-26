@@ -3053,3 +3053,137 @@ body.right-rail-layout > .flex.flex-1.overflow-hidden { min-width: 0; min-height
 #right-rail-controls .right-rail-section-1 input[type="number"] { width: 30px; }
 #right-rail-controls .right-rail-section-1 .pdf-controls .relative { position: static; }
 @media (max-width: 640px) { #right-mini-rail { width: 68px; min-width: 68px; flex-basis: 68px; } }
+
+
+/* ---- Compact PDF layout toggle / right mini-rail refinements ---- */
+.pdf-layout-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 30px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #4b5563;
+    cursor: pointer;
+    transition: background-color .15s, color .15s, border-color .15s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.pdf-layout-toggle:hover {
+    color: #2563eb;
+    background: #eff6ff;
+}
+.pdf-layout-toggle.is-single-layout {
+    color: #2563eb;
+    background: #eff6ff;
+    border-color: #bfdbfe;
+}
+.pdf-layout-toggle i { font-size: 14px; }
+
+/* The single layout button replaces the visible A/B labels in the narrow rail.
+   The tabs remain in the DOM for legacy activation and minimized-panel restore. */
+#right-rail-controls #pdf-switcher {
+    display: none !important;
+}
+#right-rail-controls #pdf-layout-toggle {
+    margin: 0 auto 4px;
+}
+#right-rail-controls #fs-mode-switch .fs-tab span {
+    display: none;
+}
+#right-rail-controls #fs-mode-switch .fs-tab {
+    min-width: 30px;
+    width: 30px;
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+}
+#right-rail-controls #fs-mode-switch .fs-tab i {
+    margin: 0;
+}
+
+/* Fresh compact rail: only the purpose-built controls are visible. */
+#right-mini-rail {
+    width: 48px !important;
+    min-width: 48px !important;
+    padding: 8px 5px !important;
+    overflow-y: auto;
+}
+#fresh-pdf-rail {
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:5px;
+    width:100%;
+}
+.fresh-rail-btn {
+    width:34px;
+    height:34px;
+    min-width:34px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border:1px solid transparent;
+    border-radius:8px;
+    background:transparent;
+    color:#5b616a;
+    cursor:pointer;
+    touch-action:manipulation;
+    -webkit-tap-highlight-color:transparent;
+    transition:background .15s,color .15s,border-color .15s;
+}
+.fresh-rail-btn:hover,.fresh-rail-btn:focus-visible {
+    background:#eef4ff;
+    color:#2563eb;
+    outline:none;
+}
+.fresh-rail-btn.is-single-layout {
+    background:#eaf2ff;
+    color:#2563eb;
+    border-color:#bfd5ff;
+}
+.fresh-rail-btn i {font-size:16px; pointer-events:none;}
+.fresh-rail-btn.live-indicator {position:relative;}
+.fresh-rail-btn.live-indicator::after {
+    content:""; position:absolute; width:7px; height:7px; right:3px; top:3px;
+    border:1px solid white; border-radius:50%; background:#9ca3af;
+}
+.fresh-rail-btn.live-indicator.is-connected::after {background:#16a34a;}
+.fresh-rail-btn.live-indicator.is-connecting::after {background:#eab308;}
+.fresh-rail-btn.live-indicator.is-disconnected::after {background:#dc2626;}
+.fresh-rail-btn.live-indicator.is-unknown::after {background:#9ca3af;}
+.fresh-rail-divider {width:27px;height:1px;background:#e5e7eb;margin:5px 0;}
+#fresh-page-input {
+    width:34px;height:34px;box-sizing:border-box;text-align:center;
+    border:1px solid #d1d5db;border-radius:7px;background:#fff;
+    color:#374151;font-size:12px;padding:2px;outline:none;
+}
+#fresh-page-input:focus {border-color:#3b82f6;box-shadow:0 0 0 2px #dbeafe;}
+#fresh-page-input::-webkit-inner-spin-button,#fresh-page-input::-webkit-outer-spin-button {-webkit-appearance:none;margin:0;}
+#fresh-page-input {-moz-appearance:textfield;}
+#right-rail-controls {display:none !important;}
+
+#fresh-zoom-level {
+    width: 34px;
+    min-height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    font-size: 10px;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    user-select: none;
+}
+
+#fresh-lock.is-locked {
+    color: #2563eb;
+    background: #eaf2ff;
+    border-color: #bfd5ff;
+}
+#fresh-lock.is-locked i { color: #2563eb; }

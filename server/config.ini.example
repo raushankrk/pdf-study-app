@@ -27,8 +27,8 @@ url = http://localhost:11434
 # Default embedding model. Pull with: ollama pull nomic-embed-text
 embedding_model = nomic-embed-text
 
-# Default LLM model. Pull with: ollama pull gemma3:1b
-llm_model = gemma3:1b
+# Default LLM model. Pull with: ollama pull llama3.2:latest
+llm_model = llama3.2:latest
 
 [ai]
 # Maximum number of PDF pages to extract text from per document during indexing.

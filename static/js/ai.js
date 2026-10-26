@@ -201,7 +201,7 @@ async function indexDocuments(force = false) {
         updateAIStatus("Indexing failed. Is Ollama running on the server?");
         showModal("Indexing Error",
             `Could not index documents. Make sure Ollama is running on the server PC<br>` +
-            `and the embedding model ("${state.aiSettings?.model || 'gemma3:1b'}") is pulled.<br><br>` +
+            `and the embedding model ("${state.aiSettings?.model || 'llama3.2:latest'}") is pulled.<br><br>` +
             `Error: ${escapeHtml(String(err))}`);
     } finally {
         state.isIndexing = false;

@@ -189,7 +189,7 @@ const state = {
     },
     // ---- New AI Settings Control ----
     aiSettings: {
-        model: "gemma3:1b", // Default Ollama model
+        model: "llama3.2:latest", // Default Ollama model
         systemPrompt: "You are a helpful assistant answering questions based on the provided PDF context.",
         responseStyle: "Detailed", // Concise, Detailed, Expert
         temperature: 0.7,

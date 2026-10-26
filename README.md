@@ -290,7 +290,7 @@ The `default` project cannot be deleted (to prevent accidental loss of migrated 
 ## How to install (unchanged from previous version)
 
 1. Install Python 3.9+ (with "Add to PATH" checked) and Ollama from ollama.com
-2. Pull models: `ollama pull nomic-embed-text` and `ollama pull gemma3:1b`
+2. Pull models: `ollama pull nomic-embed-text` and `ollama pull llama3.2:latest`
 3. Unzip the archive and double-click `run.bat`
 
 See the previous README sections for full Windows setup, firewall, and LAN access instructions.
