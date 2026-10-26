@@ -2605,7 +2605,7 @@ body > header > * {
        The floating tool sidebar is an overlay (no flex space) — slightly
        narrower on tablets so more of the PDF stays visible behind it. */
     #left-sidebar { width: 14rem !important; }
-    #float-sidebar { width: min(320px, calc(100vw - 24px)); padding: 46px 8px 8px; }
+    #float-sidebar { width: min(320px, calc(100vw - 24px)); padding: 8px 8px 8px; }
 
     /* Floating panel-minimize buttons: 36px tap target on touch
        (Apple HIG-friendly) with a slightly larger icon. */
@@ -3187,3 +3187,98 @@ body.right-rail-layout > .flex.flex-1.overflow-hidden { min-width: 0; min-height
     border-color: #bfd5ff;
 }
 #fresh-lock.is-locked i { color: #2563eb; }
+
+
+/* Compact floating sidebar header: icon-only mode tabs.
+   Accessible names and tooltips remain in static/index.html. */
+#fs-header {
+    flex-wrap: nowrap;
+    min-width: 0;
+}
+
+#fs-mode-switch {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    gap: 4px;
+}
+
+#fs-mode-switch .fs-tab {
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    gap: 0;
+}
+
+#fs-mode-switch .fs-tab span {
+    display: none !important;
+}
+
+#fs-mode-switch .fs-tab i {
+    margin: 0;
+    font-size: 16px;
+}
+
+#fs-header-actions {
+    flex: 0 0 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+}
+
+#fs-header-actions button {
+    flex-shrink: 0;
+}
+
+/* Tighten the header on narrow phones without making controls too small. */
+@media (max-width: 420px) {
+    #fs-mode-switch .fs-tab {
+        flex-basis: 40px;
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+    }
+
+    #fs-header {
+        gap: 6px;
+    }
+}
+
+
+/* Reduce the unnecessary top gap above the floating sidebar header. */
+#fs-header {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+#fs-sidebar,
+#fs-panel,
+#fs-container {
+    /* Avoid adding extra top offset around the header when these wrappers exist. */
+    margin-top: 0;
+}
+
+
+/* Fix the actual blank strip above the floating sidebar header.
+   The mobile rule reserved 46px of top padding for an older header layout. */
+@media (max-width: 640px) {
+    #float-sidebar {
+        padding-top: 8px !important;
+    }
+}
+
+
+/* Definitive fix: no reserved blank strip above the floating sidebar header.
+   Keep normal 8px inner spacing while overriding older desktop/mobile rules. */
+body #float-sidebar {
+    padding-top: 8px !important;
+}
+
+@media (max-width: 640px) {
+    body #float-sidebar {
+        padding-top: 8px !important;
+    }
+}
