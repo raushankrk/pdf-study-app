@@ -3282,3 +3282,11 @@ body #float-sidebar {
         padding-top: 8px !important;
     }
 }
+
+/* AI chat: stable touch scrolling while answers stream */
+#chat-history {
+    scroll-behavior: auto;   /* smooth scrolling animates every auto-scroll and fights the finger */
+    overflow-anchor: none;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}

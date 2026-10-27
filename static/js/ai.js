@@ -284,6 +284,61 @@ function insertCitationChips(html, scoredEmbeddings) {
     }).join('');
 }
 
+// ---- Auto-scroll that the user can override ----
+// While an answer streams we follow the bottom, but the moment the user
+// scrolls up to read, we stop. Scrolling back to the bottom resumes following.
+let chatStickToBottom = true;
+let chatScrollListenerAttached = false;
+let chatTouching = false;          // finger currently on the chat pane
+let chatQuietUntil = 0;            // don't auto-scroll until touch momentum has settled
+let chatLastTouchY = null;
+
+function ensureChatScrollListener() {
+    if (chatScrollListenerAttached || !els.chatHistory) return;
+    chatScrollListenerAttached = true;
+    const el = els.chatHistory;
+
+    // Any gesture that moves the view UP (reading earlier text) stops following
+    // immediately — no need to wait for a scroll event or get yanked back.
+    el.addEventListener('wheel', (e) => {
+        if (e.deltaY < 0) chatStickToBottom = false;
+    }, { passive: true });
+
+    el.addEventListener('touchstart', (e) => {
+        chatTouching = true;
+        chatLastTouchY = e.touches[0].clientY;
+    }, { passive: true });
+
+    el.addEventListener('touchmove', (e) => {
+        const y = e.touches[0].clientY;
+        // Finger moving DOWN the screen = content scrolls up.
+        if (chatLastTouchY !== null && y > chatLastTouchY) chatStickToBottom = false;
+        chatLastTouchY = y;
+    }, { passive: true });
+
+    const endTouch = () => {
+        chatTouching = false;
+        chatLastTouchY = null;
+        chatQuietUntil = Date.now() + 1500;   // let fling/momentum finish
+    };
+    el.addEventListener('touchend', endTouch, { passive: true });
+    el.addEventListener('touchcancel', endTouch, { passive: true });
+
+    el.addEventListener('scroll', () => {
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distanceFromBottom >= 40) {
+            chatStickToBottom = false;           // scrolled away
+        } else if (distanceFromBottom <= 4) {
+            chatStickToBottom = true;            // reached the very bottom again
+        }
+        // between 4 and 40 px: keep whatever the user's gesture decided
+    }, { passive: true });
+}
+
+function scrollChatToBottom() {
+    els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+}
+
 async function handleChat() {
     const question = els.chatInput.value.trim();
     if (!question) return;
@@ -294,6 +349,10 @@ async function handleChat() {
 
     // Mark streaming BEFORE any save so the sync refresh can't wipe the chat pane.
     state.streamingChatId = chat.id;
+
+    // A new question starts at the bottom; the user can scroll away any time after.
+    ensureChatScrollListener();
+    chatStickToBottom = true;
 
     if (chat.messages.length === 0) {
         chat.title = question.substring(0, 30) + (question.length > 30 ? "..." : "");
@@ -333,7 +392,7 @@ async function handleChat() {
 
     let scoredEmbeddings = [];
 
-    // Re-render markdown at most once per animation frame (smooth, cheap).
+    // Re-render markdown at most ~12 times per second (smooth, cheap).
     let rafPending = false;
     let latestText = '';
     const paintTokens = () => {
@@ -341,7 +400,10 @@ async function handleChat() {
         let htmlText = renderMarkdownToHtml(latestText);
         htmlText = insertCitationChips(htmlText, scoredEmbeddings);
         contentBubble.innerHTML = htmlText;
-        els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+        // Never fight the user's finger or its momentum.
+        if (chatStickToBottom && !chatTouching && Date.now() > chatQuietUntil) {
+            scrollChatToBottom();
+        }
     };
 
     // Build the chat request — the server will handle retrieval + LLM streaming.
@@ -382,7 +444,7 @@ async function handleChat() {
                 latestText = fullText;
                 if (!rafPending) {
                     rafPending = true;
-                    requestAnimationFrame(paintTokens);
+                    setTimeout(paintTokens, 80);   // ~12 repaints/s: smooth, and light on phones
                 }
             },
             onDone: (answer) => {
