@@ -1,0 +1,22 @@
+/* layout-v2: edge-rail layout. No top/bottom bars; AI chat + annotation tools are docked, not floating. */
+body > .flex.flex-1.overflow-hidden{position:relative}
+#left-rail{width:44px;flex:0 0 44px;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;background:#fff;border-right:1px solid #e5e7eb;z-index:26}
+.lr-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:0;border-radius:8px;background:transparent;color:#5b616a;cursor:pointer;font-size:15px}
+.lr-btn:hover{background:#eef4ff;color:#2563eb}
+.lr-btn.on{background:#eff6ff;color:#2563eb}
+#float-sidebar{position:relative!important;left:auto!important;top:auto!important;transform:none!important;height:100%!important;max-height:none!important;width:var(--ai-w,340px)!important;flex:0 0 auto;border-radius:0!important;border:0!important;border-left:1px solid #e5e7eb!important;box-shadow:none!important;background:#fff!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;padding:8px!important;z-index:24!important}
+#fs-resizer{position:absolute;left:0;top:0;bottom:0;width:5px;cursor:col-resize;z-index:5}
+#fs-resizer:hover{background:#bfdbfe}
+#float-toolbar{position:relative!important;left:auto!important;top:auto!important;transform:none!important;height:100%!important;max-height:none!important;max-width:none!important;flex:0 0 auto;flex-wrap:nowrap!important;border-radius:0!important;border:0!important;border-left:1px solid #e5e7eb!important;box-shadow:none!important;background:#fff!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;overflow-y:auto!important;overflow-x:hidden!important;z-index:24!important}
+#ft-drag-handle,#ft-orient-toggle,#fs-drag-handle{display:none!important}
+body[data-active-pdf="left"] #left-panel{box-shadow:inset 3px 0 0 #2563eb}
+body[data-active-pdf="right"] #right-panel{box-shadow:inset 3px 0 0 #2563eb}
+@media (max-width:700px){#float-sidebar{position:absolute!important;right:0;top:0;width:min(92vw,360px)!important;box-shadow:-8px 0 24px rgba(15,23,42,.18)!important;z-index:1200!important}}
+#left-rail{display:none!important}
+#float-sidebar{width:var(--ai-w,300px)!important;padding:6px!important}
+#fs-mode-switch .fs-tab{width:32px!important;height:32px!important;border-radius:8px!important;box-shadow:none!important;font-size:14px!important}
+#fs-header-actions button{box-shadow:none!important;background:transparent!important;border:0!important;width:30px!important;height:30px!important}
+#float-toolbar{border-left:1px solid #e5e7eb!important;padding:6px 4px!important;gap:4px!important;margin-right:-1px}
+#float-toolbar .bg-gray-100{background:transparent!important;padding:0!important}
+#float-toolbar .bg-gray-100:not(:first-of-type){border-top:1px solid #eef0f3;padding-top:6px!important}
+#right-mini-rail{border-left:0!important}

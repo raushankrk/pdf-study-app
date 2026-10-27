@@ -287,9 +287,13 @@ function insertCitationChips(html, scoredEmbeddings) {
 async function handleChat() {
     const question = els.chatInput.value.trim();
     if (!question) return;
+    if (state.streamingChatId) return;  // one answer at a time
 
     const chat = state.chats.find(c => c.id === state.currentChatId);
     if (!chat) return;
+
+    // Mark streaming BEFORE any save so the sync refresh can't wipe the chat pane.
+    state.streamingChatId = chat.id;
 
     if (chat.messages.length === 0) {
         chat.title = question.substring(0, 30) + (question.length > 30 ? "..." : "");
@@ -329,6 +333,17 @@ async function handleChat() {
 
     let scoredEmbeddings = [];
 
+    // Re-render markdown at most once per animation frame (smooth, cheap).
+    let rafPending = false;
+    let latestText = '';
+    const paintTokens = () => {
+        rafPending = false;
+        let htmlText = renderMarkdownToHtml(latestText);
+        htmlText = insertCitationChips(htmlText, scoredEmbeddings);
+        contentBubble.innerHTML = htmlText;
+        els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+    };
+
     // Build the chat request — the server will handle retrieval + LLM streaming.
     const request = {
         question: question,
@@ -364,13 +379,14 @@ async function handleChat() {
                 }
             },
             onToken: (chunk, fullText) => {
-                let htmlText = renderMarkdownToHtml(fullText);
-                htmlText = insertCitationChips(htmlText, scoredEmbeddings);
-                contentBubble.innerHTML = htmlText;
-                if (typeof renderMath === 'function') renderMath(contentBubble);
-                els.chatHistory.scrollTop = els.chatHistory.scrollHeight;
+                latestText = fullText;
+                if (!rafPending) {
+                    rafPending = true;
+                    requestAnimationFrame(paintTokens);
+                }
             },
             onDone: (answer) => {
+                latestText = answer;
                 let finalHtml = renderMarkdownToHtml(answer);
                 finalHtml = insertCitationChips(finalHtml, scoredEmbeddings);
                 contentBubble.innerHTML = finalHtml;
@@ -387,7 +403,11 @@ async function handleChat() {
     } catch (err) {
         console.error('Chat failed:', err);
         contentBubble.innerHTML = `<span class="text-red-500">Error: ${escapeHtml(String(err))}</span>`;
+        assistantMsg.html = `<div class="streaming-content"><span class="text-red-500">Error: ${escapeHtml(String(err))}</span></div>`;
+        try { await saveChatToDB(chat); } catch (e) {}
         updateAIStatus("Error");
+    } finally {
+        state.streamingChatId = null;
     }
 }
 

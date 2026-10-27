@@ -73,31 +73,25 @@ def generate_stream(prompt: str, model: Optional[str] = None,
     )
     timeout = config.AI_REQUEST_TIMEOUT
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        buffer = ""
+        # NOTE: do NOT use resp.read(N) here — it blocks until N bytes have
+        # arrived, which batches ~10+ tokens together and makes the stream
+        # look frozen. readline() returns as soon as one JSON line (one token)
+        # is available.
         while True:
-            chunk = resp.read(1024)
-            if not chunk:
+            raw = resp.readline()
+            if not raw:
                 break
-            buffer += chunk.decode("utf-8", errors="replace")
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    if "response" in obj and obj["response"]:
-                        yield obj["response"]
-                except json.JSONDecodeError:
-                    continue
-        # Drain any leftover buffer
-        if buffer.strip():
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
             try:
-                obj = json.loads(buffer.strip())
-                if "response" in obj and obj["response"]:
-                    yield obj["response"]
+                obj = json.loads(line)
             except json.JSONDecodeError:
-                pass
+                continue
+            if obj.get("response"):
+                yield obj["response"]
+            if obj.get("done"):
+                break
 
 
 def check_connection() -> bool:

@@ -166,6 +166,7 @@ const state = {
     measureCanvas: document.createElement('canvas'),
     embeddings: [],
     isIndexing: false,
+    streamingChatId: null,
     currentContextChunks: [],
     linkCreation: { active: false, sourceData: null, sourceSide: null },
     // ---- Comment feature ----

@@ -301,7 +301,20 @@ async function smartRefreshFromServer(silent = false) {
         state.links = links;
 
         // ---- 5. Update chats (preserve current chat selection) ----
+        // While an AI answer is streaming, the in-memory chat holds the live
+        // assistant message. Our own chat saves echo back as revision_changed,
+        // so never let the server copy replace it mid-stream (that used to
+        // blank the whole chat until the answer finished).
+        const prevChat = state.chats.find(c => c.id === state.currentChatId);
+        const prevSig = prevChat ? JSON.stringify(prevChat.messages) : '';
+        const liveChat = state.streamingChatId
+            ? state.chats.find(c => c.id === state.streamingChatId)
+            : null;
         state.chats = chats;
+        if (liveChat) {
+            const i = state.chats.findIndex(c => c.id === liveChat.id);
+            if (i >= 0) state.chats[i] = liveChat; else state.chats.unshift(liveChat);
+        }
         if (state.chats.length > 0 && !state.chats.find(c => c.id === state.currentChatId)) {
             state.currentChatId = state.chats[0].id;
         } else if (state.chats.length === 0) {
@@ -357,7 +370,14 @@ async function smartRefreshFromServer(silent = false) {
         // ---- 8. Re-render the affected UI parts ----
         if (typeof renderDocList === 'function') renderDocList();
         if (typeof renderChatList === 'function') renderChatList();
-        if (typeof renderChatMessages === 'function') renderChatMessages();
+        // Only rebuild the chat pane if its content really changed and we are
+        // not in the middle of streaming — avoids flicker/disappearing.
+        const curChat = state.chats.find(c => c.id === state.currentChatId);
+        const curSig = curChat ? JSON.stringify(curChat.messages) : '';
+        if (!state.streamingChatId && curSig !== prevSig &&
+            typeof renderChatMessages === 'function') {
+            renderChatMessages();
+        }
         ['left', 'right'].forEach(side => {
             if (state.view[side].docId) {
                 if (typeof renderMarkersForView === 'function') renderMarkersForView(side);

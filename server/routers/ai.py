@@ -178,7 +178,15 @@ def chat_endpoint(req: ChatRequest, project_id: str = Depends(get_current_projec
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # stop nginx from buffering the stream
+        },
+    )
 
 
 @router.get("/embeddings/{doc_id}")
